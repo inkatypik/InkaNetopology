@@ -21,7 +21,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up QEMU (Multi-arch support: amd64 / arm64)
+      - name: "Set up QEMU (multi-architecture amd64 / arm64)"
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
@@ -34,7 +34,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract Docker metadata (tags, labels)
+      - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
