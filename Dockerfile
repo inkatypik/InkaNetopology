@@ -35,6 +35,9 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server.ts ./server.ts
 COPY --from=builder /app/src/types ./src/types
 
+# Répertoire de persistance de l'inventaire
+RUN mkdir -p /app/data
+
 EXPOSE 3000
 
 # Utiliser tsx pour exécuter server.ts en production

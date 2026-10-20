@@ -115,7 +115,18 @@ export default function App() {
         setIsScanning(false);
         setScanProgress(100);
         if (payload.devices) setDevices(payload.devices);
-        showToast('Scan réseau terminé avec succès.');
+        if (payload.newlyAddedCount > 0) {
+          showToast(`Scan terminé: ${payload.newlyAddedCount} nouvel(s) équipement(s) ajouté(s) à l'inventaire (${payload.devices?.length || 0} au total).`);
+        } else if (payload.updatedCount > 0) {
+          showToast(`Scan terminé: ${payload.updatedCount} équipement(s) mis à jour (${payload.devices?.length || 0} au total).`);
+        } else {
+          showToast(`Scan terminé: ${payload.devices?.length || 0} équipements dans l'inventaire.`);
+        }
+      });
+
+      evtSource.addEventListener('topology_reset', (e) => {
+        const resetDevices: Device[] = JSON.parse(e.data);
+        setDevices(resetDevices);
       });
 
       evtSource.addEventListener('device_updated', (e) => {

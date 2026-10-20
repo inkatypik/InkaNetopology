@@ -18,6 +18,7 @@ services:
       - NODE_ENV=production
       - PORT=3000
     volumes:
+      # Persistance de l'inventaire des équipements découverts sur le disque hôte
+      - ./data:/app/data
       # Montage optionnel du socket Docker pour l'identification automatique des conteneurs locaux
-      # (Note: en network_mode 'host', /proc/net et les interfaces réseau sont déjà nativement partagés)
       - /var/run/docker.sock:/var/run/docker.sock:ro

@@ -52,6 +52,8 @@ export const DockerDeployModal: React.FC<DockerDeployModalProps> = ({ isOpen, on
       - PORT=3000
 
     volumes:
+      # Persistance de l'inventaire et des équipements découverts
+      - ./data:/app/data
       # Montage optionnel du socket Docker pour l'identification native des conteneurs locaux
       - /var/run/docker.sock:/var/run/docker.sock:ro`;
 
@@ -61,6 +63,7 @@ export const DockerDeployModal: React.FC<DockerDeployModalProps> = ({ isOpen, on
   --net=host \\
   --cap-add=NET_ADMIN \\
   --cap-add=NET_RAW \\
+  -v $(pwd)/data:/app/data \\
   -v /var/run/docker.sock:/var/run/docker.sock:ro \\
   -e PORT=3000 \\
   -e NODE_ENV=production \\

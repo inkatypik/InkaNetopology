@@ -121,8 +121,9 @@ services:
       - PORT=3000
 
     volumes:
+      # Persistance de l'inventaire et des équipements découverts sur le disque hôte
+      - ./data:/app/data
       # Montage optionnel du socket Docker pour l'inventaire dynamique des conteneurs
-      # (Note: en network_mode 'host', /proc/net et les interfaces réseau sont nativement partagés)
       - /var/run/docker.sock:/var/run/docker.sock:ro
 ```
 
