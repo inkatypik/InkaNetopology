@@ -1,0 +1,23 @@
+services:
+  inkanetopology:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: inkatypik/inkanetopology:latest
+    container_name: inkanetopology-scanner
+    restart: unless-stopped
+    # IMPORTANT: network_mode 'host' permet d'accéder directement aux interfaces
+    # réseau physiques de la machine hôte pour le scan ARP, mDNS et sockets sans NAT.
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    volumes:
+      # Montages optionnels pour lecture directe ARP et interfaces noyau
+      - /proc/net:/proc/net:ro
+      - /sys/class/net:/sys/class/net:ro
+      # Montage optionnel du socket Docker pour l'identification native des conteneurs
+      - /var/run/docker.sock:/var/run/docker.sock:ro

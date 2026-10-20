@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Documentation InkaNetopology - Scanner Réseau & Docker</title>
+  <meta name="description" content="Guide complet d'installation Docker Compose, architecture et guide d'utilisation d'InkaNetopology.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --surface: #111827;
+      --surface-border: #1f2937;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --accent: #06b6d4;
+      --accent-glow: rgba(6, 182, 212, 0.15);
+      --code-bg: #030712;
+      --sidebar-w: 280px;
+    }
+
+    @media print {
+      body {
+        background: #ffffff !important;
+        color: #0f172a !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+      .main-content {
+        margin-left: 0 !important;
+        max-width: 100% !important;
+      }
+      pre {
+        background: #f1f5f9 !important;
+        color: #0f172a !important;
+        border: 1px solid #cbd5e1 !important;
+      }
+      .card {
+        background: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      background-color: var(--bg);
+      color: var(--text-main);
+      line-height: 1.65;
+      font-size: 15px;
+    }
+
+    code, pre {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    /* Layout */
+    .layout {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* Sticky Sidebar TOC */
+    .sidebar {
+      width: var(--sidebar-w);
+      height: 100vh;
+      position: sticky;
+      top: 0;
+      background: var(--surface);
+      border-right: 1px solid var(--surface-border);
+      padding: 24px 20px;
+      overflow-y: auto;
+      flex-shrink: 0;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 17px;
+      color: #ffffff;
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--surface-border);
+    }
+
+    .brand-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      background: rgba(6, 182, 212, 0.15);
+      border: 1px solid rgba(6, 182, 212, 0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--accent);
+    }
+
+    .toc-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+      font-weight: 600;
+    }
+
+    .toc-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .toc-link {
+      display: block;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      color: var(--text-muted);
+      transition: all 0.15s ease;
+    }
+
+    .toc-link:hover {
+      background: rgba(255, 255, 255, 0.05);
+      color: #ffffff;
+      text-decoration: none;
+    }
+
+    /* Main Content */
+    .main-content {
+      flex: 1;
+      padding: 48px 56px;
+      max-width: 1050px;
+    }
+
+    .top-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 36px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--surface-border);
+    }
+
+    .btn-print {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(6, 182, 212, 0.15);
+      border: 1px solid rgba(6, 182, 212, 0.4);
+      color: var(--accent);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn-print:hover {
+      background: rgba(6, 182, 212, 0.25);
+    }
+
+    h1 {
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 12px;
+      color: #ffffff;
+    }
+
+    h2 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-top: 48px;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--surface-border);
+      color: #ffffff;
+    }
+
+    h3 {
+      font-size: 17px;
+      font-weight: 600;
+      margin-top: 28px;
+      margin-bottom: 12px;
+      color: #e2e8f0;
+    }
+
+    p {
+      margin-bottom: 16px;
+      color: #cbd5e1;
+    }
+
+    ul, ol {
+      margin-left: 24px;
+      margin-bottom: 20px;
+      color: #cbd5e1;
+    }
+
+    li {
+      margin-bottom: 8px;
+    }
+
+    /* Cards & Containers */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--surface-border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+
+    .callout-info {
+      background: rgba(6, 182, 212, 0.08);
+      border: 1px solid rgba(6, 182, 212, 0.3);
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+    }
+
+    .callout-title {
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 6px;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Code Blocks */
+    .code-container {
+      position: relative;
+      margin-bottom: 24px;
+    }
+
+    .code-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #0f172a;
+      border: 1px solid var(--surface-border);
+      border-bottom: none;
+      padding: 8px 16px;
+      border-top-left-radius: 10px;
+      border-top-right-radius: 10px;
+      font-size: 12px;
+      color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .btn-copy {
+      background: rgba(255, 255, 255, 0.08);
+      border: none;
+      color: var(--text-muted);
+      padding: 3px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+    }
+
+    .btn-copy:hover {
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--surface-border);
+      border-bottom-left-radius: 10px;
+      border-bottom-right-radius: 10px;
+      padding: 16px 20px;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.6;
+      color: #e2e8f0;
+    }
+
+    p code, li code {
+      background: rgba(255, 255, 255, 0.08);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 13px;
+      color: #38bdf8;
+    }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 24px;
+      font-size: 14px;
+      background: var(--surface);
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid var(--surface-border);
+    }
+
+    th {
+      background: #0f172a;
+      text-align: left;
+      padding: 12px 16px;
+      font-weight: 600;
+      color: var(--text-muted);
+      font-size: 12px;
+      border-bottom: 1px solid var(--surface-border);
+    }
+
+    td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--surface-border);
+      color: #cbd5e1;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .badge-cyan { background: rgba(6, 182, 212, 0.15); color: #22d3ee; }
+  </style>
+</head>
+<body>
+
+<div class="layout">
+  <!-- Sidebar Navigation -->
+  <aside class="sidebar no-print">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <path d="m16 12-4-4-4 4"></path>
+          <path d="M12 16V8"></path>
+        </svg>
+      </div>
+      <span>InkaNetopology</span>
+    </div>
+
+    <div class="toc-title">Table des matières</div>
+    <ul class="toc-list">
+      <li><a class="toc-link" href="#presentation">1. Présentation Générale</a></li>
+      <li><a class="toc-link" href="#fonctionnalites">2. Fonctionnalités Clés</a></li>
+      <li><a class="toc-link" href="#image-emplacement">3. Où se trouve l'image Docker ?</a></li>
+      <li><a class="toc-link" href="#compose">4. Fichier Docker Compose</a></li>
+      <li><a class="toc-link" href="#installation">5. Procédure d'Installation</a></li>
+      <li><a class="toc-link" href="#guide">6. Guide d'Utilisation</a></li>
+      <li><a class="toc-link" href="#topologie">7. Cartographie & Liens</a></li>
+      <li><a class="toc-link" href="#dependances">8. Gestion des Dépendances</a></li>
+      <li><a class="toc-link" href="#personnalisation">9. Métadonnées & Images</a></li>
+      <li><a class="toc-link" href="#proxy">10. Reverse Proxy HTTPS</a></li>
+      <li><a class="toc-link" href="#faq">11. Dépannage & FAQ</a></li>
+    </ul>
+
+    <div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--surface-border);">
+      <button class="btn-print" style="width: 100%; justify-content: center;" onclick="window.print()">
+        📄 Imprimer / Enregistrer en PDF
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main Documentation -->
+  <main class="main-content">
+    <div class="top-actions">
+      <div>
+        <span class="badge badge-cyan" style="margin-bottom: 8px;">Documentation Officielle v1.0</span>
+        <h1 style="margin-bottom: 0;">InkaNetopology - Scanner Réseau & Docker</h1>
+        <p style="color: var(--text-muted); font-size: 13px; margin: 4px 0 0 0;">
+          Cartographie interactive physique, virtuelle (VM), conteneurs Docker et IoT avec journalisation en temps réel.
+        </p>
+      </div>
+      <div class="no-print">
+        <button class="btn-print" onclick="window.print()">
+          🖨️ Imprimer / PDF
+        </button>
+      </div>
+    </div>
+
+    <!-- 1. Présentation -->
+    <section id="presentation">
+      <h2>1. Présentation Générale</h2>
+      <p>
+        <strong>InkaNetopology</strong> est une application web conçue pour explorer et cartographier automatiquement l'infrastructure d'un réseau local (LAN). L'application s'exécute sous forme de conteneur Docker et met l'accent sur la lisibilité des topologies hybrides combinant équipements physiques, hyperviseurs de virtualisation (Proxmox, VMware), conteneurs microservices (Docker) et flotte d'objets connectés (IoT).
+      </p>
+    </section>
+
+    <!-- 2. Fonctionnalités -->
+    <section id="fonctionnalites">
+      <h2>2. Fonctionnalités Clés</h2>
+      <div class="card">
+        <ul style="margin-bottom: 0;">
+          <li><strong>Scan et identification automatique</strong> : Détection dynamique du sous-réseau (ex: <code>192.168.1.0/24</code>), balayage ARP, ping ICMP et sondage des ports ouverts (80, 443, 22, 8006, 5000, 1883, 554 RTSP).</li>
+          <li><strong>Différenciation graphique réaliste</strong> : Représentations distinctes pour les machines physiques (serveurs rack, switches manageables, routeurs, NAS), les machines virtuelles (VM), les conteneurs Docker et les équipements IoT (caméras IP 4K, capteurs radar mmWave, sondes ESP32, prises wattmètres).</li>
+          <li><strong>Gestion dynamique des dépendances</strong> : Rattachement dynamique des machines virtuelles et des conteneurs Docker à leurs hôtes physiques respectifs, avec possibilité de réassignation ou migration à chaud.</li>
+          <li><strong>Personnalisation complète</strong> : Remplacement des visuels par des images réalistes (URL personnalisée ou préréglages haute-fidélité), ajout d'étiquettes libres (Tags) et de métadonnées techniques clé-valeur (CPU, RAM, consommation électrique, flux RTSP).</li>
+          <li><strong>Journalisation temps réel (Streaming SSE)</strong> : Flux d'événements continus sans rafraîchissement via Server-Sent Events, filtrable par niveau (DISCOVERY, INFO, WARN, ALERT) et par catégorie (ARP, PORT, DOCKER, VM, IOT).</li>
+          <li><strong>Mode sombre natif</strong> : Interface moderne, typographie soignée et chiffres tabulaires monospaces (JetBrains Mono).</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 3. Où se trouve l'image Docker -->
+    <section id="image-emplacement">
+      <h2>3. Où se trouve l'image du conteneur ?</h2>
+      <div class="callout-info">
+        <div class="callout-title">📦 Emplacement & Registre de l'image Docker</div>
+        <p>L'image du conteneur d'<strong>InkaNetopology</strong> peut être gérée selon deux modalités :</p>
+        <ul style="margin-bottom: 0;">
+          <li>
+            <strong>1. Construction locale (sur votre machine hôte) :</strong><br>
+            L'image est construite directement depuis le fichier <code>Dockerfile</code> présent à la racine du projet avec la commande :
+            <pre style="margin: 8px 0;">docker build -t inkatypik/inkanetopology:latest .</pre>
+            Dans ce cas, l'image est stockée localement dans le moteur Docker de votre système (sous <code>/var/lib/docker/overlay2</code> sur Linux) et apparaît dans la commande <code>docker images</code> sous le nom <strong><code>inkatypik/inkanetopology:latest</code></strong>.
+          </li>
+          <li style="margin-top: 10px;">
+            <strong>2. Registre distant Docker Hub / GHCR (Déploiement direct) :</strong><br>
+            L'image porte l'identifiant canonique :
+            <pre style="margin: 8px 0;">inkatypik/inkanetopology:latest</pre>
+            Pour la publier sur Docker Hub :
+            <pre style="margin: 8px 0;">docker push inkatypik/inkanetopology:latest</pre>
+            Pour la déployer sur un autre serveur sans cloner les sources :
+            <pre style="margin: 8px 0;">docker pull inkatypik/inkanetopology:latest</pre>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 4. Docker Compose -->
+    <section id="compose">
+      <h2>4. Fichier Docker Compose (`docker-compose.yml`)</h2>
+      <p>
+        Voici le fichier <code>docker-compose.yml</code> complet requis pour le déploiement. Ce fichier est optimisé pour permettre au conteneur d'accéder directement au réseau physique local de la machine hôte.
+      </p>
+
+      <div class="code-container">
+        <div class="code-header">
+          <span>docker-compose.yml</span>
+          <button class="btn-copy" onclick="copyCode('compose-code')">Copier</button>
+        </div>
+        <pre id="compose-code">services:
+  inkanetopology:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: inkatypik/inkanetopology:latest
+    container_name: inkanetopology-scanner
+    restart: unless-stopped
+
+    # CRITIQUE : Le mode 'host' permet au conteneur de partager la pile réseau
+    # de l'hôte afin d'émettre des requêtes ARP broadcast sur le réseau local physique
+    # et de recevoir les annonces mDNS/SSDP des équipements IoT sans isolation NAT.
+    network_mode: host
+
+    # Capacités Linux nécessaires pour forger des raw sockets (ping ICMP / ARP)
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+
+    volumes:
+      # Montage en lecture seule de la table ARP et des interfaces réseau du noyau Linux
+      - /proc/net:/proc/net:ro
+      - /sys/class/net:/sys/class/net:ro
+      # Montage en lecture seule du socket Docker pour l'inventaire dynamique des conteneurs
+      - /var/run/docker.sock:/var/run/docker.sock:ro</pre>
+      </div>
+
+      <h3>Détail des directives critiques</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Directive</th>
+            <th>Rôle & Rationale</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>network_mode: host</code></td>
+            <td><strong>Indispensable pour un scanner réseau</strong>. En mode pont par défaut (bridge), Docker confine le conteneur dans un sous-réseau NAT virtuel (172.17.x.x) bloquant les broadcasts ARP vers votre LAN physique (192.168.1.x). Le mode host supprime cette barrière.</td>
+          </tr>
+          <tr>
+            <td><code>cap_add: [NET_ADMIN, NET_RAW]</code></td>
+            <td>Donne au processus Node.js la capacité de créer des raw sockets ICMP et ARP sans devoir exécuter tout le conteneur avec le privilège <code>--privileged</code> global.</td>
+          </tr>
+          <tr>
+            <td><code>/proc/net:/proc/net:ro</code></td>
+            <td>Permet à l'application de lire directement <code>/proc/net/arp</code> sur l'hôte Linux pour récupérer instantanément les correspondances IP/MAC connues du noyau.</td>
+          </tr>
+          <tr>
+            <td><code>/var/run/docker.sock:ro</code></td>
+            <td>Permet d'interroger le moteur Docker de la machine hôte pour inventorier automatiquement les conteneurs actifs et les relier à l'hôte physique.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 5. Installation -->
+    <section id="installation">
+      <h2>5. Procédure d'Installation</h2>
+
+      <h3>Méthode 1 : Déploiement avec Docker Compose (Recommandé)</h3>
+      <ol>
+        <li>
+          <strong>Créer le répertoire de travail :</strong>
+          <pre>mkdir -p /opt/inkanetopology && cd /opt/inkanetopology</pre>
+        </li>
+        <li>
+          <strong>Créer le fichier <code>docker-compose.yml</code> :</strong>
+          Collez le contenu ci-dessus dans ce fichier.
+        </li>
+        <li>
+          <strong>Construire et démarrer l'application :</strong>
+          <pre>docker compose up -d --build</pre>
+        </li>
+        <li>
+          <strong>Vérifier que le conteneur fonctionne :</strong>
+          <pre>docker compose ps
+docker compose logs -f</pre>
+        </li>
+      </ol>
+
+      <h3>Méthode 2 : Lancement en une ligne (Docker CLI)</h3>
+      <div class="code-container">
+        <div class="code-header">
+          <span>Bash (Terminal)</span>
+          <button class="btn-copy" onclick="copyCode('cli-code')">Copier</button>
+        </div>
+        <pre id="cli-code">docker run -d \
+  --name inkanetopology-scanner \
+  --restart unless-stopped \
+  --net=host \
+  --cap-add=NET_ADMIN \
+  --cap-add=NET_RAW \
+  -v /proc/net:/proc/net:ro \
+  -v /sys/class/net:/sys/class/net:ro \
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  -e PORT=3000 \
+  -e NODE_ENV=production \
+  inkatypik/inkanetopology:latest</pre>
+      </div>
+    </section>
+
+    <!-- 6. Guide d'utilisation -->
+    <section id="guide">
+      <h2>6. Guide d'Utilisation Pas à Pas</h2>
+
+      <h3>6.1 Accéder à l'application</h3>
+      <p>
+        Dans votre navigateur, accédez à :<br>
+        <code>http://&lt;IP_DE_VOTRE_SERVEUR&gt;:3000</code> (par exemple <code>http://192.168.1.10:3000</code>).
+      </p>
+
+      <h3>6.2 Lancer un scan réseau</h3>
+      <p>
+        Dans la barre d'outils supérieure :
+      </p>
+      <ul>
+        <li><strong>Sous-réseau</strong> : Vérifiez ou saisissez le CIDR à explorer (ex: <code>192.168.1.0/24</code>).</li>
+        <li><strong>Mode de scan</strong> :
+          <ul>
+            <li><em>Découverte Rapide (ARP/ICMP)</em> : Détecte les équipements sous tension et récupère les adresses MAC.</li>
+            <li><em>Scan Approfondi (Ports & OS)</em> : Vérifie les ports d'administration pour identifier l'OS et les services.</li>
+            <li><em>Audit Spécialisé IoT & Domotique</em> : Détecte les flux RTSP des caméras, brokers MQTT et modules ESP32.</li>
+          </ul>
+        </li>
+        <li>Cliquez sur <strong>« Scanner le réseau »</strong>. Une jauge temps réel indique la progression et chaque équipement découvert est ajouté au schéma.</li>
+      </ul>
+    </section>
+
+    <!-- 7. Cartographie -->
+    <section id="topologie">
+      <h2>7. Cartographie & Visualisation des Liens</h2>
+      <p>
+        L'onglet <strong>« Topologie Réseau »</strong> propose un espace infini interactif :
+      </p>
+      <div class="card">
+        <ul style="margin-bottom: 0;">
+          <li><strong>Navigation</strong> : Cliquez-glissez pour vous déplacer (pan), utilisez la molette de la souris ou les boutons <code>+</code> / <code>-</code> pour zoomer.</li>
+          <li><strong>Repositionnement (Drag & Drop)</strong> : Cliquez sur n'importe quel nœud pour le déplacer. Sa position est automatiquement mémorisée.</li>
+          <li><strong>Lignes continues bleues</strong> : Câbles physiques reliant les équipements au switch ou routeur avec libellé du port et du débit (ex: <code>Port 4 (1Gbps)</code>, <code>PoE 7.5W</code>).</li>
+          <li><strong>Lignes pointillées avec flèches</strong> : Liens de virtualisation reliant chaque VM (violet) et conteneur Docker (cyan) à sa machine physique hôte.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- 8. Dépendances -->
+    <section id="dependances">
+      <h2>8. Gestion des Dépendances & Hôtes Physiques</h2>
+      <p>
+        L'onglet <strong>« Hôtes & Dépendances »</strong> regroupe vos serveurs physiques (Serveur Proxmox, hôte Docker HP, NAS Synology) :
+      </p>
+      <ul>
+        <li>Chaque hôte liste ses <strong>Machines Virtuelles</strong> et ses <strong>Conteneurs Docker</strong>.</li>
+        <li><strong>Migration / Réassignation dynamique</strong> : Sur chaque VM ou conteneur, un menu déroulant permet de changer d'hôte parent ou de détacher l'équipement en un clic.</li>
+        <li><strong>Création rapide</strong> : Utilisez les boutons <em>« Ajouter VM »</em> ou <em>« Ajouter Conteneur »</em> pour provisionner un nouvel équipement directement rattaché à cet hôte.</li>
+      </ul>
+    </section>
+
+    <!-- 9. Personnalisation -->
+    <section id="personnalisation">
+      <h2>9. Personnalisation des Images & Métadonnées</h2>
+      <p>
+        Cliquez sur l'icône <strong>Crayon (Éditer)</strong> sur un équipement pour ouvrir l'inspecteur :
+      </p>
+      <ul>
+        <li><strong>Image réaliste</strong> : Renseignez une URL d'image personnalisée ou sélectionnez l'un des préréglages visuels (serveur rack Dell, routeur UniFi, switch 24P, NAS Synology, caméra IP 4K, capteur mmWave, etc.).</li>
+        <li><strong>Étiquettes (Tags)</strong> : Ajoutez des étiquettes (ex: <code>Production</code>, <code>DMZ</code>, <code>VLAN 20</code>, <code>Critique</code>).</li>
+        <li><strong>Métadonnées clé/valeur</strong> : Définissez des spécifications techniques précises (CPU, RAM, consommation électrique, flux RTSP, version firmware).</li>
+        <li><strong>Test Ping</strong> : Cliquez sur <em>« Tester Ping »</em> pour mesurer la latence en millisecondes et vérifier les ports ouverts.</li>
+      </ul>
+    </section>
+
+    <!-- 10. Proxy HTTPS -->
+    <section id="proxy">
+      <h2>10. Intégration Reverse Proxy HTTPS (Nginx)</h2>
+      <p>
+        Pour exposer InkaNetopology avec un domaine et un certificat SSL/TLS via Nginx :
+      </p>
+
+      <div class="code-container">
+        <div class="code-header">
+          <span>/etc/nginx/sites-available/inkanetopology.conf</span>
+          <button class="btn-copy" onclick="copyCode('nginx-code')">Copier</button>
+        </div>
+        <pre id="nginx-code">server {
+    listen 80;
+    server_name topology.mondomaine.local;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name topology.mondomaine.local;
+
+    ssl_certificate /etc/letsencrypt/live/topology.mondomaine.local/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/topology.mondomaine.local/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+
+        # OBLIGATOIRE : Configuration pour le streaming temps réel (Server-Sent Events)
+        proxy_set_header Connection '';
+        proxy_set_header Host $host;
+        proxy_buffering off;
+        proxy_cache off;
+        chunked_transfer_encoding off;
+        proxy_read_timeout 86400s;
+
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}</pre>
+      </div>
+
+      <div class="callout-info">
+        <div class="callout-title">⚠️ Directive essentielle pour le streaming SSE</div>
+        <p style="margin-bottom: 0;">
+          La directive <code>proxy_buffering off;</code> est obligatoire pour éviter que le proxy Nginx ne stocke les paquets du journal en mémoire tampon au lieu de les transmettre instantanément au navigateur.
+        </p>
+      </div>
+    </section>
+
+    <!-- 11. FAQ -->
+    <section id="faq">
+      <h2>11. Dépannage & FAQ</h2>
+      <div class="card">
+        <h3>Q1. Pourquoi aucun équipement n'est découvert lors d'un scan ?</h3>
+        <p>
+          Le conteneur a très probablement été démarré sans <code>network_mode: host</code>. Sans ce mode, les paquets ARP ne peuvent pas sortir du réseau virtuel NAT de Docker. Vérifiez également que le sous-réseau indiqué dans la barre d'outils correspond à votre adressage réseau.
+        </p>
+
+        <h3>Q2. Comment changer le port 3000 ?</h3>
+        <p>
+          En mode host, modifiez la variable d'environnement <code>PORT</code> dans votre <code>docker-compose.yml</code> (par exemple <code>PORT=8080</code>).
+        </p>
+
+        <h3>Q3. Comment exporter ou sauvegarder la topologie ?</h3>
+        <p style="margin-bottom: 0;">
+          Cliquez sur le bouton de téléchargement (Export) dans la barre d'outils supérieure pour télécharger un fichier <code>inkanetopology-export.json</code> contenant la totalité des équipements, positions et métadonnées.
+        </p>
+      </div>
+    </section>
+
+    <footer style="margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--surface-border); font-size: 13px; color: var(--text-muted); display: flex; justify-content: space-between;">
+      <span>InkaNetopology v1.0 · Licence Apache 2.0</span>
+      <span>Document généré pour déploiement Docker</span>
+    </footer>
+  </main>
+</div>
+
+<script>
+  function copyCode(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    navigator.clipboard.writeText(el.innerText).then(() => {
+      alert('Code copié dans le presse-papier !');
+    });
+  }
+</script>
+
+</body>
+</html>

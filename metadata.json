@@ -1,0 +1,6 @@
+{
+  "name": "NetTopology - Scanner Réseau & Docker",
+  "description": "Scanner de réseau local, cartographie interactive physique/VM/Docker/IoT et journalisation en temps réel.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
