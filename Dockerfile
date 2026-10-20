@@ -7,11 +7,11 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# Installation des outils réseau légers (iproute2 pour interfaces, ethtool si besoin)
+# Installation des outils réseau légers
 RUN apk add --no-cache iproute2
 
 COPY package.json ./
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 COPY . .
 
@@ -30,12 +30,10 @@ ENV NODE_ENV=production
 ENV PORT=3000
 
 COPY package.json ./
-RUN npm install --omit=dev
-
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server.ts ./server.ts
 COPY --from=builder /app/src/types ./src/types
-COPY --from=builder /app/node_modules/tsx ./node_modules/tsx
 
 EXPOSE 3000
 
