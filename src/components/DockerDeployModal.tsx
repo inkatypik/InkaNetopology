@@ -52,10 +52,7 @@ export const DockerDeployModal: React.FC<DockerDeployModalProps> = ({ isOpen, on
       - PORT=3000
 
     volumes:
-      # Lecture directe de la table ARP et interfaces de la machine hôte
-      - /proc/net:/proc/net:ro
-      - /sys/class/net:/sys/class/net:ro
-      # Détection dynamique des conteneurs Docker locaux
+      # Montage optionnel du socket Docker pour l'identification native des conteneurs locaux
       - /var/run/docker.sock:/var/run/docker.sock:ro`;
 
   const cliCode = `docker run -d \\
@@ -64,8 +61,6 @@ export const DockerDeployModal: React.FC<DockerDeployModalProps> = ({ isOpen, on
   --net=host \\
   --cap-add=NET_ADMIN \\
   --cap-add=NET_RAW \\
-  -v /proc/net:/proc/net:ro \\
-  -v /sys/class/net:/sys/class/net:ro \\
   -v /var/run/docker.sock:/var/run/docker.sock:ro \\
   -e PORT=3000 \\
   -e NODE_ENV=production \\
@@ -279,9 +274,9 @@ server {
                   </span>
                 </div>
                 <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-lg">
-                  <span className="font-semibold text-cyan-300 block mb-1">Table ARP de l'Hôte</span>
+                  <span className="font-semibold text-cyan-300 block mb-1">Table ARP Native</span>
                   <span className="text-slate-400 text-[11px]">
-                    Le montage en lecture seule de <code className="text-slate-300 font-mono">/proc/net</code> permet au scanner d'interroger la table ARP du noyau Linux pour un inventaire MAC immédiat.
+                    Grâce à <code className="text-slate-300 font-mono">network_mode: host</code>, le conteneur accède nativement à la table ARP et aux interfaces réseau réelles du noyau Linux sans montage complexe.
                   </span>
                 </div>
                 <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-lg">

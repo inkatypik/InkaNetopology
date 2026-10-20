@@ -121,10 +121,8 @@ services:
       - PORT=3000
 
     volumes:
-      # Montage en lecture seule de la table ARP et des interfaces noyau Linux
-      - /proc/net:/proc/net:ro
-      - /sys/class/net:/sys/class/net:ro
-      # Montage en lecture seule du socket Docker pour l'inventaire dynamique des conteneurs
+      # Montage optionnel du socket Docker pour l'inventaire dynamique des conteneurs
+      # (Note: en network_mode 'host', /proc/net et les interfaces réseau sont nativement partagés)
       - /var/run/docker.sock:/var/run/docker.sock:ro
 ```
 
@@ -181,8 +179,6 @@ docker run -d \
   --net=host \
   --cap-add=NET_ADMIN \
   --cap-add=NET_RAW \
-  -v /proc/net:/proc/net:ro \
-  -v /sys/class/net:/sys/class/net:ro \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
   -e PORT=3000 \
   -e NODE_ENV=production \

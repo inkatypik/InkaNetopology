@@ -470,10 +470,8 @@
       - PORT=3000
 
     volumes:
-      # Montage en lecture seule de la table ARP et des interfaces réseau du noyau Linux
-      - /proc/net:/proc/net:ro
-      - /sys/class/net:/sys/class/net:ro
-      # Montage en lecture seule du socket Docker pour l'inventaire dynamique des conteneurs
+      # Montage optionnel du socket Docker pour l'inventaire dynamique des conteneurs
+      # (Note: en network_mode 'host', /proc/net et les interfaces réseau sont nativement partagés)
       - /var/run/docker.sock:/var/run/docker.sock:ro</pre>
       </div>
 
@@ -492,15 +490,11 @@
           </tr>
           <tr>
             <td><code>network_mode: host</code></td>
-            <td><strong>Indispensable pour un scanner réseau</strong>. En mode pont par défaut (bridge), Docker confine le conteneur dans un sous-réseau NAT virtuel (172.17.x.x) bloquant les broadcasts ARP vers votre LAN physique (192.168.1.x). Le mode host supprime cette barrière.</td>
+            <td><strong>Indispensable pour un scanner réseau</strong>. En mode pont par défaut (bridge), Docker isole le conteneur dans un sous-réseau NAT virtuel (172.17.x.x) bloquant les broadcasts ARP vers votre LAN physique (192.168.1.x). De plus, ce mode partage nativement la table ARP de l'hôte sans nécessiter de montage de <code>/proc/net</code>.</td>
           </tr>
           <tr>
             <td><code>cap_add: [NET_ADMIN, NET_RAW]</code></td>
             <td>Donne au processus Node.js la capacité de créer des raw sockets ICMP et ARP sans devoir exécuter tout le conteneur avec le privilège <code>--privileged</code> global.</td>
-          </tr>
-          <tr>
-            <td><code>/proc/net:/proc/net:ro</code></td>
-            <td>Permet à l'application de lire directement <code>/proc/net/arp</code> sur l'hôte Linux pour récupérer instantanément les correspondances IP/MAC connues du noyau.</td>
           </tr>
           <tr>
             <td><code>/var/run/docker.sock:ro</code></td>
@@ -558,8 +552,6 @@ cd /opt/inkanetopology</pre>
   --net=host \
   --cap-add=NET_ADMIN \
   --cap-add=NET_RAW \
-  -v /proc/net:/proc/net:ro \
-  -v /sys/class/net:/sys/class/net:ro \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
   -e PORT=3000 \
   -e NODE_ENV=production \
