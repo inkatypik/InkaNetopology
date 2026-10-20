@@ -1,9 +1,11 @@
 services:
   inkanetopology:
+    # Image hébergée sur GitHub Container Registry (GHCR)
+    image: ghcr.io/inkatypik/inkanetopology:latest
+    # Build local optionnel lors de l'exécution avec 'docker compose up --build'
     build:
       context: .
       dockerfile: Dockerfile
-    image: inkatypik/inkanetopology:latest
     container_name: inkanetopology-scanner
     restart: unless-stopped
     # IMPORTANT: network_mode 'host' permet d'accéder directement aux interfaces

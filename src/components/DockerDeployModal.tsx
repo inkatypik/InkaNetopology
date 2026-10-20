@@ -29,10 +29,11 @@ export const DockerDeployModal: React.FC<DockerDeployModalProps> = ({ isOpen, on
 
   const composeCode = `services:
   inkanetopology:
+    # Image GitHub Container Registry (GHCR)
+    image: ghcr.io/inkatypik/inkanetopology:latest
     build:
       context: .
       dockerfile: Dockerfile
-    image: inkatypik/inkanetopology:latest
     container_name: inkanetopology-scanner
     restart: unless-stopped
 
@@ -68,7 +69,7 @@ export const DockerDeployModal: React.FC<DockerDeployModalProps> = ({ isOpen, on
   -v /var/run/docker.sock:/var/run/docker.sock:ro \\
   -e PORT=3000 \\
   -e NODE_ENV=production \\
-  inkatypik/inkanetopology:latest`;
+  ghcr.io/inkatypik/inkanetopology:latest`;
 
   const nginxCode = `server {
     listen 80;

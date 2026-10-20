@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Documentation InkaNetopology - Scanner Réseau & Docker</title>
-  <meta name="description" content="Guide complet d'installation Docker Compose, architecture et guide d'utilisation d'InkaNetopology.">
+  <meta name="description" content="Guide complet GitHub, installation Docker Compose GHCR, architecture et guide d'utilisation d'InkaNetopology.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -365,16 +365,15 @@
     <div class="toc-title">Table des matières</div>
     <ul class="toc-list">
       <li><a class="toc-link" href="#presentation">1. Présentation Générale</a></li>
-      <li><a class="toc-link" href="#fonctionnalites">2. Fonctionnalités Clés</a></li>
-      <li><a class="toc-link" href="#image-emplacement">3. Où se trouve l'image Docker ?</a></li>
-      <li><a class="toc-link" href="#compose">4. Fichier Docker Compose</a></li>
-      <li><a class="toc-link" href="#installation">5. Procédure d'Installation</a></li>
-      <li><a class="toc-link" href="#guide">6. Guide d'Utilisation</a></li>
-      <li><a class="toc-link" href="#topologie">7. Cartographie & Liens</a></li>
-      <li><a class="toc-link" href="#dependances">8. Gestion des Dépendances</a></li>
-      <li><a class="toc-link" href="#personnalisation">9. Métadonnées & Images</a></li>
-      <li><a class="toc-link" href="#proxy">10. Reverse Proxy HTTPS</a></li>
-      <li><a class="toc-link" href="#faq">11. Dépannage & FAQ</a></li>
+      <li><a class="toc-link" href="#github-ghcr">2. GitHub & Image GHCR</a></li>
+      <li><a class="toc-link" href="#compose">3. Fichier Docker Compose</a></li>
+      <li><a class="toc-link" href="#installation">4. Procédure d'Installation</a></li>
+      <li><a class="toc-link" href="#guide">5. Guide d'Utilisation</a></li>
+      <li><a class="toc-link" href="#topologie">6. Cartographie & Liens</a></li>
+      <li><a class="toc-link" href="#dependances">7. Gestion des Dépendances</a></li>
+      <li><a class="toc-link" href="#personnalisation">8. Métadonnées & Images</a></li>
+      <li><a class="toc-link" href="#proxy">9. Reverse Proxy HTTPS</a></li>
+      <li><a class="toc-link" href="#faq">10. Dépannage & FAQ</a></li>
     </ul>
 
     <div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--surface-border);">
@@ -388,10 +387,10 @@
   <main class="main-content">
     <div class="top-actions">
       <div>
-        <span class="badge badge-cyan" style="margin-bottom: 8px;">Documentation Officielle v1.0</span>
+        <span class="badge badge-cyan" style="margin-bottom: 8px;">Documentation Officielle GitHub & Docker</span>
         <h1 style="margin-bottom: 0;">InkaNetopology - Scanner Réseau & Docker</h1>
         <p style="color: var(--text-muted); font-size: 13px; margin: 4px 0 0 0;">
-          Cartographie interactive physique, virtuelle (VM), conteneurs Docker et IoT avec journalisation en temps réel.
+          Dépôt GitHub : <a href="https://github.com/inkatypik/InkaNetopology" target="_blank">github.com/inkatypik/InkaNetopology</a> · Image GHCR : <code>ghcr.io/inkatypik/inkanetopology:latest</code>
         </p>
       </div>
       <div class="no-print">
@@ -409,52 +408,35 @@
       </p>
     </section>
 
-    <!-- 2. Fonctionnalités -->
-    <section id="fonctionnalites">
-      <h2>2. Fonctionnalités Clés</h2>
-      <div class="card">
-        <ul style="margin-bottom: 0;">
-          <li><strong>Scan et identification automatique</strong> : Détection dynamique du sous-réseau (ex: <code>192.168.1.0/24</code>), balayage ARP, ping ICMP et sondage des ports ouverts (80, 443, 22, 8006, 5000, 1883, 554 RTSP).</li>
-          <li><strong>Différenciation graphique réaliste</strong> : Représentations distinctes pour les machines physiques (serveurs rack, switches manageables, routeurs, NAS), les machines virtuelles (VM), les conteneurs Docker et les équipements IoT (caméras IP 4K, capteurs radar mmWave, sondes ESP32, prises wattmètres).</li>
-          <li><strong>Gestion dynamique des dépendances</strong> : Rattachement dynamique des machines virtuelles et des conteneurs Docker à leurs hôtes physiques respectifs, avec possibilité de réassignation ou migration à chaud.</li>
-          <li><strong>Personnalisation complète</strong> : Remplacement des visuels par des images réalistes (URL personnalisée ou préréglages haute-fidélité), ajout d'étiquettes libres (Tags) et de métadonnées techniques clé-valeur (CPU, RAM, consommation électrique, flux RTSP).</li>
-          <li><strong>Journalisation temps réel (Streaming SSE)</strong> : Flux d'événements continus sans rafraîchissement via Server-Sent Events, filtrable par niveau (DISCOVERY, INFO, WARN, ALERT) et par catégorie (ARP, PORT, DOCKER, VM, IOT).</li>
-          <li><strong>Mode sombre natif</strong> : Interface moderne, typographie soignée et chiffres tabulaires monospaces (JetBrains Mono).</li>
-        </ul>
-      </div>
-    </section>
-
-    <!-- 3. Où se trouve l'image Docker -->
-    <section id="image-emplacement">
-      <h2>3. Où se trouve l'image du conteneur ?</h2>
+    <!-- 2. GitHub & Image GHCR -->
+    <section id="github-ghcr">
+      <h2>2. Dépôt GitHub & Image GitHub Container Registry (GHCR)</h2>
       <div class="callout-info">
-        <div class="callout-title">📦 Emplacement & Registre de l'image Docker</div>
-        <p>L'image du conteneur d'<strong>InkaNetopology</strong> peut être gérée selon deux modalités :</p>
+        <div class="callout-title">📦 Intégration GitHub & Registre GHCR</div>
+        <p>Le projet étant hébergé sur GitHub, l'image Docker officielle est distribuée directement via le registre de conteneurs de GitHub (GHCR) :</p>
         <ul style="margin-bottom: 0;">
           <li>
-            <strong>1. Construction locale (sur votre machine hôte) :</strong><br>
-            L'image est construite directement depuis le fichier <code>Dockerfile</code> présent à la racine du projet avec la commande :
-            <pre style="margin: 8px 0;">docker build -t inkatypik/inkanetopology:latest .</pre>
-            Dans ce cas, l'image est stockée localement dans le moteur Docker de votre système (sous <code>/var/lib/docker/overlay2</code> sur Linux) et apparaît dans la commande <code>docker images</code> sous le nom <strong><code>inkatypik/inkanetopology:latest</code></strong>.
+            <strong>Dépôt GitHub officiel :</strong><br>
+            <a href="https://github.com/inkatypik/InkaNetopology" target="_blank">https://github.com/inkatypik/InkaNetopology</a>
           </li>
           <li style="margin-top: 10px;">
-            <strong>2. Registre distant Docker Hub / GHCR (Déploiement direct) :</strong><br>
-            L'image porte l'identifiant canonique :
-            <pre style="margin: 8px 0;">inkatypik/inkanetopology:latest</pre>
-            Pour la publier sur Docker Hub :
-            <pre style="margin: 8px 0;">docker push inkatypik/inkanetopology:latest</pre>
-            Pour la déployer sur un autre serveur sans cloner les sources :
-            <pre style="margin: 8px 0;">docker pull inkatypik/inkanetopology:latest</pre>
+            <strong>Image Docker officielle (GHCR) :</strong><br>
+            <code style="font-size: 14px; color: #22d3ee;">ghcr.io/inkatypik/inkanetopology:latest</code><br>
+            Compatible avec les architectures serveurs <strong>x86_64 (amd64)</strong> et <strong>ARM64 (Raspberry Pi 4/5)</strong>.
+          </li>
+          <li style="margin-top: 10px;">
+            <strong>Intégration continue (CI/CD) :</strong><br>
+            Le workflow GitHub Actions (<code>.github/workflows/docker-publish.yml</code>) compile et publie automatiquement la dernière version de l'image sur GHCR à chaque commit sur la branche principale ou création de release.
           </li>
         </ul>
       </div>
     </section>
 
-    <!-- 4. Docker Compose -->
+    <!-- 3. Docker Compose -->
     <section id="compose">
-      <h2>4. Fichier Docker Compose (`docker-compose.yml`)</h2>
+      <h2>3. Fichier Docker Compose (`docker-compose.yml`)</h2>
       <p>
-        Voici le fichier <code>docker-compose.yml</code> complet requis pour le déploiement. Ce fichier est optimisé pour permettre au conteneur d'accéder directement au réseau physique local de la machine hôte.
+        Voici le fichier <code>docker-compose.yml</code> optimisé. Il tire directement l'image pré-compilée depuis GitHub Container Registry (GHCR), tout en conservant la directive <code>build: .</code> pour les utilisateurs souhaitant compiler localement depuis les sources :
       </p>
 
       <div class="code-container">
@@ -464,10 +446,12 @@
         </div>
         <pre id="compose-code">services:
   inkanetopology:
+    # Image officielle pré-construite sur GitHub Container Registry (GHCR)
+    image: ghcr.io/inkatypik/inkanetopology:latest
+    # Build local optionnel en cas de clonage des sources
     build:
       context: .
       dockerfile: Dockerfile
-    image: inkatypik/inkanetopology:latest
     container_name: inkanetopology-scanner
     restart: unless-stopped
 
@@ -503,6 +487,10 @@
         </thead>
         <tbody>
           <tr>
+            <td><code>image: ghcr.io/inkatypik/inkanetopology:latest</code></td>
+            <td>Permet de déployer instantanément l'application sans avoir à installer Node.js ou compiler le code source sur le serveur cible.</td>
+          </tr>
+          <tr>
             <td><code>network_mode: host</code></td>
             <td><strong>Indispensable pour un scanner réseau</strong>. En mode pont par défaut (bridge), Docker confine le conteneur dans un sous-réseau NAT virtuel (172.17.x.x) bloquant les broadcasts ARP vers votre LAN physique (192.168.1.x). Le mode host supprime cette barrière.</td>
           </tr>
@@ -522,32 +510,43 @@
       </table>
     </section>
 
-    <!-- 5. Installation -->
+    <!-- 4. Installation -->
     <section id="installation">
-      <h2>5. Procédure d'Installation</h2>
+      <h2>4. Procédure d'Installation</h2>
 
-      <h3>Méthode 1 : Déploiement avec Docker Compose (Recommandé)</h3>
+      <h3>Méthode 1 : Déploiement express en 1 ligne (sans cloner le dépôt)</h3>
+      <p>
+        Sur votre serveur Linux (Debian, Ubuntu, Proxmox, Raspberry Pi), téléchargez directement le <code>docker-compose.yml</code> depuis GitHub et lancez-le :
+      </p>
+      <div class="code-container">
+        <div class="code-header">
+          <span>Terminal (Serveur)</span>
+          <button class="btn-copy" onclick="copyCode('quick-code')">Copier</button>
+        </div>
+        <pre id="quick-code">mkdir -p /opt/inkanetopology && cd /opt/inkanetopology
+curl -sSL https://raw.githubusercontent.com/inkatypik/InkaNetopology/main/docker-compose.yml -o docker-compose.yml
+docker compose pull
+docker compose up -d</pre>
+      </div>
+
+      <h3>Méthode 2 : Déploiement en clonant le dépôt GitHub</h3>
       <ol>
         <li>
-          <strong>Créer le répertoire de travail :</strong>
-          <pre>mkdir -p /opt/inkanetopology && cd /opt/inkanetopology</pre>
+          <strong>Cloner le projet depuis GitHub :</strong>
+          <pre>git clone https://github.com/inkatypik/InkaNetopology.git /opt/inkanetopology
+cd /opt/inkanetopology</pre>
         </li>
         <li>
-          <strong>Créer le fichier <code>docker-compose.yml</code> :</strong>
-          Collez le contenu ci-dessus dans ce fichier.
+          <strong>Démarrer avec Docker Compose :</strong>
+          <pre>docker compose up -d</pre>
         </li>
         <li>
-          <strong>Construire et démarrer l'application :</strong>
+          <strong>Ou compiler localement depuis les sources :</strong>
           <pre>docker compose up -d --build</pre>
-        </li>
-        <li>
-          <strong>Vérifier que le conteneur fonctionne :</strong>
-          <pre>docker compose ps
-docker compose logs -f</pre>
         </li>
       </ol>
 
-      <h3>Méthode 2 : Lancement en une ligne (Docker CLI)</h3>
+      <h3>Méthode 3 : Lancement direct en ligne de commande (Docker CLI)</h3>
       <div class="code-container">
         <div class="code-header">
           <span>Bash (Terminal)</span>
@@ -564,21 +563,21 @@ docker compose logs -f</pre>
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
   -e PORT=3000 \
   -e NODE_ENV=production \
-  inkatypik/inkanetopology:latest</pre>
+  ghcr.io/inkatypik/inkanetopology:latest</pre>
       </div>
     </section>
 
-    <!-- 6. Guide d'utilisation -->
+    <!-- 5. Guide d'utilisation -->
     <section id="guide">
-      <h2>6. Guide d'Utilisation Pas à Pas</h2>
+      <h2>5. Guide d'Utilisation Pas à Pas</h2>
 
-      <h3>6.1 Accéder à l'application</h3>
+      <h3>5.1 Accéder à l'application</h3>
       <p>
         Dans votre navigateur, accédez à :<br>
         <code>http://&lt;IP_DE_VOTRE_SERVEUR&gt;:3000</code> (par exemple <code>http://192.168.1.10:3000</code>).
       </p>
 
-      <h3>6.2 Lancer un scan réseau</h3>
+      <h3>5.2 Lancer un scan réseau</h3>
       <p>
         Dans la barre d'outils supérieure :
       </p>
@@ -595,9 +594,9 @@ docker compose logs -f</pre>
       </ul>
     </section>
 
-    <!-- 7. Cartographie -->
+    <!-- 6. Cartographie -->
     <section id="topologie">
-      <h2>7. Cartographie & Visualisation des Liens</h2>
+      <h2>6. Cartographie & Visualisation des Liens</h2>
       <p>
         L'onglet <strong>« Topologie Réseau »</strong> propose un espace infini interactif :
       </p>
@@ -611,9 +610,9 @@ docker compose logs -f</pre>
       </div>
     </section>
 
-    <!-- 8. Dépendances -->
+    <!-- 7. Dépendances -->
     <section id="dependances">
-      <h2>8. Gestion des Dépendances & Hôtes Physiques</h2>
+      <h2>7. Gestion des Dépendances & Hôtes Physiques</h2>
       <p>
         L'onglet <strong>« Hôtes & Dépendances »</strong> regroupe vos serveurs physiques (Serveur Proxmox, hôte Docker HP, NAS Synology) :
       </p>
@@ -624,9 +623,9 @@ docker compose logs -f</pre>
       </ul>
     </section>
 
-    <!-- 9. Personnalisation -->
+    <!-- 8. Personnalisation -->
     <section id="personnalisation">
-      <h2>9. Personnalisation des Images & Métadonnées</h2>
+      <h2>8. Personnalisation des Images & Métadonnées</h2>
       <p>
         Cliquez sur l'icône <strong>Crayon (Éditer)</strong> sur un équipement pour ouvrir l'inspecteur :
       </p>
@@ -638,9 +637,9 @@ docker compose logs -f</pre>
       </ul>
     </section>
 
-    <!-- 10. Proxy HTTPS -->
+    <!-- 9. Proxy HTTPS -->
     <section id="proxy">
-      <h2>10. Intégration Reverse Proxy HTTPS (Nginx)</h2>
+      <h2>9. Intégration Reverse Proxy HTTPS (Nginx)</h2>
       <p>
         Pour exposer InkaNetopology avec un domaine et un certificat SSL/TLS via Nginx :
       </p>
@@ -690,18 +689,20 @@ server {
       </div>
     </section>
 
-    <!-- 11. FAQ -->
+    <!-- 10. FAQ -->
     <section id="faq">
-      <h2>11. Dépannage & FAQ</h2>
+      <h2>10. Dépannage & FAQ</h2>
       <div class="card">
         <h3>Q1. Pourquoi aucun équipement n'est découvert lors d'un scan ?</h3>
         <p>
           Le conteneur a très probablement été démarré sans <code>network_mode: host</code>. Sans ce mode, les paquets ARP ne peuvent pas sortir du réseau virtuel NAT de Docker. Vérifiez également que le sous-réseau indiqué dans la barre d'outils correspond à votre adressage réseau.
         </p>
 
-        <h3>Q2. Comment changer le port 3000 ?</h3>
+        <h3>Q2. Comment mettre à jour le conteneur avec la dernière version de GitHub ?</h3>
         <p>
-          En mode host, modifiez la variable d'environnement <code>PORT</code> dans votre <code>docker-compose.yml</code> (par exemple <code>PORT=8080</code>).
+          Exécutez simplement dans le dossier de votre projet :
+          <pre>docker compose pull
+docker compose up -d</pre>
         </p>
 
         <h3>Q3. Comment exporter ou sauvegarder la topologie ?</h3>
@@ -712,8 +713,8 @@ server {
     </section>
 
     <footer style="margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--surface-border); font-size: 13px; color: var(--text-muted); display: flex; justify-content: space-between;">
-      <span>InkaNetopology v1.0 · Licence Apache 2.0</span>
-      <span>Document généré pour déploiement Docker</span>
+      <span>InkaNetopology v1.0 · <a href="https://github.com/inkatypik/InkaNetopology" target="_blank">Projet GitHub</a> · Licence Apache 2.0</span>
+      <span>Document généré pour déploiement Docker & GitHub</span>
     </footer>
   </main>
 </div>

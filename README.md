@@ -1,35 +1,56 @@
 # InkaNetopology - Scanner Réseau Local & Cartographie Interactive
 
+[![Docker Publish (GHCR)](https://github.com/inkatypik/InkaNetopology/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/inkatypik/InkaNetopology/actions/workflows/docker-publish.yml)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![Image](https://img.shields.io/badge/Docker_Image-GHCR-cyan.svg)](https://github.com/inkatypik/InkaNetopology/pkgs/container/inkanetopology)
+
 **InkaNetopology** est une application web conteneurisée sous Docker conçue pour scanner le réseau local (LAN), identifier automatiquement les équipements connectés, modéliser avec précision leurs relations physiques et de virtualisation (machines physiques, machines virtuelles, conteneurs Docker, objets connectés IoT), et fournir une journalisation en temps réel dans une interface soignée avec mode sombre.
+
+- **Dépôt GitHub** : [https://github.com/inkatypik/InkaNetopology](https://github.com/inkatypik/InkaNetopology)
+- **Image officielle (GHCR)** : `ghcr.io/inkatypik/inkanetopology:latest`
 
 ---
 
 ## Sommaire
 
-1. [Fonctionnalités Clés](#1-fonctionnalités-clés)
-2. [Où se trouve l'image du conteneur ?](#2-où-se-trouve-limage-du-conteneur-)
-3. [Architecture Technique](#3-architecture-technique)
-4. [Prérequis Système](#4-prérequis-système)
-5. [Fichier Docker Compose](#5-fichier-docker-compose)
-6. [Guide d'Installation Pas à Pas](#6-guide-dinstallation-pas-à-pas)
-   - [Méthode 1 : Déploiement avec Docker Compose (Recommandé)](#méthode-1--déploiement-avec-docker-compose-recommandé)
-   - [Méthode 2 : Lancement direct en ligne de commande (Docker CLI)](#méthode-2--lancement-direct-en-ligne-de-commande-docker-cli)
-   - [Méthode 3 : Compilation et Build local depuis les sources](#méthode-3--compilation-et-build-local-depuis-les-sources)
-7. [Guide d'Utilisation](#7-guide-dutilisation)
-   - [7.1 Accès à l'interface](#71-accès-à-linterface)
-   - [7.2 Lancer un scan réseau](#72-lancer-un-scan-réseau)
-   - [7.3 Cartographie interactive (Topologie Réseau)](#73-cartographie-interactive-topologie-réseau)
-   - [7.4 Vue Hôtes & Dépendances de Virtualisation](#74-vue-hôtes--dépendances-de-virtualisation)
-   - [7.5 Personnalisation graphique et métadonnées d'un équipement](#75-personnalisation-graphique-et-métadonnées-dun-équipement)
-   - [7.6 Inventaire détaillé et filtrage dynamique](#76-inventaire-détaillé-et-filtrage-dynamique)
-   - [7.7 Journalisation en temps réel (SSE)](#77-journalisation-en-temps-réel-sse)
-   - [7.8 Export de la configuration](#78-export-de-la-configuration)
-8. [Intégration Reverse Proxy (HTTPS)](#8-intégration-reverse-proxy-https)
-9. [Dépannage & FAQ](#9-dépannage--faq)
+1. [Démarrage Express en 1 Minute (via GitHub & GHCR)](#1-démarrage-express-en-1-minute-via-github--ghcr)
+2. [Fonctionnalités Clés](#2-fonctionnalités-clés)
+3. [Architecture Technique & CI/CD](#3-architecture-technique--cicd)
+4. [Fichier Docker Compose](#4-fichier-docker-compose)
+5. [Méthodes de Déploiement](#5-méthodes-de-déploiement)
+   - [Méthode 1 : Déploiement sans clonage (Recommandé)](#méthode-1--déploiement-sans-clonage-recommandé)
+   - [Méthode 2 : Déploiement en clonant le dépôt GitHub](#méthode-2--déploiement-en-clonant-le-dépôt-github)
+   - [Méthode 3 : Lancement direct en ligne de commande (Docker CLI)](#méthode-3--lancement-direct-en-ligne-de-commande-docker-cli)
+6. [Guide d'Utilisation](#6-guide-dutilisation)
+   - [6.1 Accès à l'interface](#61-accès-à-linterface)
+   - [6.2 Lancer un scan réseau](#62-lancer-un-scan-réseau)
+   - [6.3 Cartographie interactive (Topologie Réseau)](#63-cartographie-interactive-topologie-réseau)
+   - [6.4 Vue Hôtes & Dépendances de Virtualisation](#64-vue-hôtes--dépendances-de-virtualisation)
+   - [6.5 Personnalisation graphique et métadonnées d'un équipement](#65-personnalisation-graphique-et-métadonnées-dun-équipement)
+   - [6.6 Inventaire détaillé et filtrage dynamique](#66-inventaire-détaillé-et-filtrage-dynamique)
+   - [6.7 Journalisation en temps réel (SSE)](#67-journalisation-en-temps-réel-sse)
+   - [6.8 Export de la configuration](#68-export-de-la-configuration)
+7. [Intégration Reverse Proxy (HTTPS & Nginx)](#7-intégration-reverse-proxy-https--nginx)
+8. [Dépannage & FAQ](#8-dépannage--faq)
 
 ---
 
-## 1. Fonctionnalités Clés
+## 1. Démarrage Express en 1 Minute (via GitHub & GHCR)
+
+Vous n'avez même pas besoin d'installer Node.js ou de cloner tout le dépôt sur votre serveur :
+
+```bash
+mkdir -p /opt/inkanetopology && cd /opt/inkanetopology
+curl -sSL https://raw.githubusercontent.com/inkatypik/InkaNetopology/main/docker-compose.yml -o docker-compose.yml
+docker compose pull
+docker compose up -d
+```
+
+Ouvrez ensuite votre navigateur sur `http://<IP-DU-SERVEUR>:3000`.
+
+---
+
+## 2. Fonctionnalités Clés
 
 - **Détection Automatique & Scan Multi-Modes** :
   - Découverte des sous-réseaux locaux (ex: `192.168.1.0/24`, `10.0.0.0/24`).
@@ -57,69 +78,37 @@
 
 ---
 
-## 2. Où se trouve l'image du conteneur ?
-
-L'image Docker de l'application peut résider à deux endroits selon votre mode d'utilisation :
-
-### 1. Construction locale (sur votre machine hôte)
-L'image est construite directement depuis le fichier `Dockerfile` situé à la racine du projet avec la commande :
-```bash
-docker build -t inkatypik/inkanetopology:latest .
-```
-Dans ce cas :
-- L'image est stockée localement dans le stockage interne de votre moteur Docker (habituellement situé dans `/var/lib/docker/overlay2` sous Linux).
-- Elle apparaît dans la liste locale de vos images lorsque vous exécutez `docker images` sous le nom **`inkatypik/inkanetopology:latest`**.
-
-### 2. Registre distant Docker Hub / GHCR (Déploiement direct)
-Si vous publiez ou téléchargez l'image depuis un registre conteneurs :
-- **Identifiant officiel / canonique** : `inkatypik/inkanetopology:latest`
-- **Pour télécharger l'image prête à l'emploi** :
-  ```bash
-  docker pull inkatypik/inkanetopology:latest
-  ```
-- **Pour publier votre image personnalisée** :
-  ```bash
-  docker push inkatypik/inkanetopology:latest
-  ```
-
----
-
-## 3. Architecture Technique
+## 3. Architecture Technique & CI/CD
 
 - **Frontend** : React 19, TypeScript, Tailwind CSS, Lucide Icons, Canvas SVG dynamique.
 - **Backend** : Node.js, Express, Server-Sent Events (SSE) pour le flux live, inspection des interfaces réseau locales via l'API `os` et `/proc/net/arp`.
-- **Conteneurisation** : Image Docker multi-stage basée sur `node:22-alpine` avec paquet `iproute2` pour la manipulation des interfaces réseau.
+- **Registre de Conteneurs GitHub (GHCR)** :
+  - Image officielle : `ghcr.io/inkatypik/inkanetopology:latest`
+  - Multi-architecture : `linux/amd64` (serveurs x86) et `linux/arm64` (Raspberry Pi 4/5, NAS ARM).
+- **Intégration Continue (GitHub Actions)** :
+  - Le fichier `.github/workflows/docker-publish.yml` compile automatiquement l'image Docker multi-plateformes et la publie sur GHCR à chaque commit sur `main` ou création de tag de version.
 
 ---
 
-## 4. Prérequis Système
-
-- Un système d'exploitation hôte Linux (Debian, Ubuntu Server, Proxmox VE, Raspberry Pi OS, Synology DSM avec Docker, TrueNAS SCALE, etc.).
-- **Docker Engine** (version 24.0 ou supérieure).
-- **Docker Compose** (version v2.20 ou supérieure).
-- Droits `sudo` ou utilisateur appartenant au groupe `docker`.
-- Le port `3000` libre sur la machine hôte (ou personnalisable via la variable `PORT`).
-
----
-
-## 5. Fichier Docker Compose
+## 4. Fichier Docker Compose
 
 Voici le fichier `docker-compose.yml` complet et optimisé :
 
 ```yaml
 services:
   inkanetopology:
+    # Image officielle pré-construite hébergée sur GitHub Container Registry (GHCR)
+    image: ghcr.io/inkatypik/inkanetopology:latest
+    # Build local optionnel lors d'une compilation depuis les sources
     build:
       context: .
       dockerfile: Dockerfile
-    image: inkatypik/inkanetopology:latest
     container_name: inkanetopology-scanner
     restart: unless-stopped
 
     # CRITIQUE: Le mode 'host' permet au conteneur de partager directement
-    # les interfaces réseau physiques de la machine hôte. Cela est nécessaire
-    # pour envoyer des requêtes ARP broadcast sur le LAN et recevoir les paquets
-    # mDNS/SSDP des équipements IoT sans subir l'isolation NAT de Docker.
+    # les interfaces réseau physiques de la machine hôte pour émettre
+    # des requêtes ARP broadcast sur le LAN et écouter les paquets mDNS/SSDP.
     network_mode: host
 
     # Capacités Linux nécessaires pour forger des raw sockets (ping ICMP / ARP)
@@ -139,51 +128,51 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
 ```
 
-### Explications des directives importantes :
-
-| Directive | Utilité |
-| :--- | :--- |
-| `network_mode: host` | Indispensable pour un scanner réseau. Un conteneur en mode `bridge` standard se trouve confiné dans son sous-réseau virtuel (ex: `172.17.0.0/16`) et ne peut pas émettre de broadcasts ARP vers votre réseau physique local (`192.168.1.x`). |
-| `cap_add: [NET_ADMIN, NET_RAW]` | Autorise le conteneur à forger des trames ICMP (ping) et à interroger les interfaces réseau physiques avec des sockets bruts. |
-| `/proc/net:/proc/net:ro` | Permet à l'application de lire directement `/proc/net/arp` de l'hôte pour obtenir la liste instantanée des adresses MAC et IPs déjà connues par le noyau Linux. |
-| `/var/run/docker.sock:/var/run/docker.sock:ro` | Permet au scanner d'identifier les conteneurs Docker s'exécutant sur le serveur hôte et de les rattacher dynamiquement dans la cartographie. |
-
 ---
 
-## 6. Guide d'Installation Pas à Pas
+## 5. Méthodes de Déploiement
 
-### Méthode 1 : Déploiement avec Docker Compose (Recommandé)
+### Méthode 1 : Déploiement sans clonage (Recommandé)
 
 1. **Créer le répertoire de travail** :
    ```bash
    mkdir -p /opt/inkanetopology && cd /opt/inkanetopology
    ```
 
-2. **Créer le fichier `docker-compose.yml`** :
-   Copiez le contenu de la section 5 dans un fichier nommé `docker-compose.yml`.
-
-3. **Télécharger le code source ou construire l'image** :
-   Si vous disposez du code source dans ce dossier :
+2. **Télécharger le `docker-compose.yml` officiel depuis GitHub** :
    ```bash
-   docker compose build
+   curl -sSL https://raw.githubusercontent.com/inkatypik/InkaNetopology/main/docker-compose.yml -o docker-compose.yml
    ```
 
-4. **Démarrer l'application en arrière-plan** :
+3. **Démarrer avec Docker Compose** :
    ```bash
+   docker compose pull
    docker compose up -d
-   ```
-
-5. **Vérifier l'état du conteneur** :
-   ```bash
-   docker compose ps
-   docker compose logs -f
    ```
 
 ---
 
-### Méthode 2 : Lancement direct en ligne de commande (Docker CLI)
+### Méthode 2 : Déploiement en clonant le dépôt GitHub
 
-Si vous ne souhaitez pas utiliser de fichier Compose, vous pouvez lancer le conteneur en une seule commande :
+Pour les utilisateurs qui souhaitent cloner le code source ou apporter des modifications :
+
+```bash
+# 1. Cloner le dépôt GitHub
+git clone https://github.com/inkatypik/InkaNetopology.git /opt/inkanetopology
+cd /opt/inkanetopology
+
+# 2. Lancer directement avec l'image GHCR pré-construite
+docker compose up -d
+
+# 3. (Optionnel) Ou recompiler localement depuis les sources
+docker compose up -d --build
+```
+
+---
+
+### Méthode 3 : Lancement direct en ligne de commande (Docker CLI)
+
+Sans fichier Compose, vous pouvez lancer l'image GHCR en une seule commande :
 
 ```bash
 docker run -d \
@@ -197,34 +186,14 @@ docker run -d \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
   -e PORT=3000 \
   -e NODE_ENV=production \
-  inkatypik/inkanetopology:latest
+  ghcr.io/inkatypik/inkanetopology:latest
 ```
 
 ---
 
-### Méthode 3 : Compilation et Build local depuis les sources
+## 6. Guide d'Utilisation
 
-Pour compiler et lancer l'application directement depuis les sources sans conteneur :
-
-```bash
-# 1. Cloner le dépôt et installer les dépendances
-git clone <url-du-depot>
-cd inkanetopology
-npm install
-
-# 2. Lancer en mode développement (avec rechargement à chaud)
-npm run dev
-
-# 3. Ou compiler pour la production
-npm run build
-npm start
-```
-
----
-
-## 7. Guide d'Utilisation
-
-### 7.1 Accès à l'interface
+### 6.1 Accès à l'interface
 
 Une fois le conteneur démarré, ouvrez votre navigateur web et accédez à :
 ```text
@@ -234,7 +203,7 @@ http://<ADRESSE_IP_DU_SERVEUR>:3000
 
 ---
 
-### 7.2 Lancer un scan réseau
+### 6.2 Lancer un scan réseau
 
 1. **Vérifier le sous-réseau** :
    Dans la barre d'outils supérieure, le champ **Sous-réseau** affiche automatiquement le masque détecté sur votre machine hôte (ex: `192.168.1.0/24`). Vous pouvez le modifier si vous souhaitez scanner un autre VLAN ou segment réseau (ex: `192.168.20.0/24`).
@@ -247,7 +216,7 @@ http://<ADRESSE_IP_DU_SERVEUR>:3000
 
 ---
 
-### 7.3 Cartographie interactive (Topologie Réseau)
+### 6.3 Cartographie interactive (Topologie Réseau)
 
 L'onglet **« Topologie Réseau »** offre une représentation graphique complète :
 - **Navigation fluide** :
@@ -260,7 +229,7 @@ L'onglet **« Topologie Réseau »** offre une représentation graphique complè
 
 ---
 
-### 7.4 Vue Hôtes & Dépendances de Virtualisation
+### 6.4 Vue Hôtes & Dépendances de Virtualisation
 
 L'onglet **« Hôtes & Dépendances »** permet de gérer facilement les infrastructures hybrides :
 - Chaque serveur physique (Serveur Proxmox, hôte Docker, NAS) est présenté dans une carte récapitulative listant ses spécifications (CPU, RAM, OS, emplacement).
@@ -274,7 +243,7 @@ L'onglet **« Hôtes & Dépendances »** permet de gérer facilement les infrast
 
 ---
 
-### 7.5 Personnalisation graphique et métadonnées d'un équipement
+### 6.5 Personnalisation graphique et métadonnées d'un équipement
 
 Sur n'importe quel équipement (sur le graphique, dans l'inventaire ou dans la vue dépendances) :
 1. Cliquez sur l'icône **Crayon (Éditer)** pour ouvrir le panneau d'inspection.
@@ -290,7 +259,7 @@ Sur n'importe quel équipement (sur le graphique, dans l'inventaire ou dans la v
 
 ---
 
-### 7.6 Inventaire détaillé et filtrage dynamique
+### 6.6 Inventaire détaillé et filtrage dynamique
 
 L'onglet **« Inventaire Équipements »** présente une vue tabulaire dense :
 - **Filtres de types** : Boutons d'accès direct pour n'afficher que les machines *Physiques*, les *VMs*, les conteneurs *Docker* ou les périphériques *IoT*.
@@ -300,7 +269,7 @@ L'onglet **« Inventaire Équipements »** présente une vue tabulaire dense :
 
 ---
 
-### 7.7 Journalisation en temps réel (SSE)
+### 6.7 Journalisation en temps réel (SSE)
 
 L'onglet **« Journal Temps Réel »** affiche une console de télémétrie en direct :
 - Chaque événement est horodaté à la milliseconde (`HH:mm:ss.sss`) et typé par niveau (`INFO`, `DISCOVERY`, `WARN`, `ALERT`) et catégorie (`ARP`, `PORT`, `DOCKER`, `VM`, `IOT`, `SYSTEM`).
@@ -310,13 +279,13 @@ L'onglet **« Journal Temps Réel »** affiche une console de télémétrie en d
 
 ---
 
-### 7.8 Export de la configuration
+### 6.8 Export de la configuration
 
 Dans la barre d'outils, cliquez sur l'icône **Téléchargement (Export)** pour générer un fichier `inkanetopology-export.json`. Ce fichier contient l'intégralité de la topologie réseau, les coordonnées des nœuds, les liaisons de dépendance et l'historique des journaux.
 
 ---
 
-## 8. Intégration Reverse Proxy (HTTPS)
+## 7. Intégration Reverse Proxy (HTTPS & Nginx)
 
 Si vous souhaitez exposer InkaNetopology avec un certificat SSL Let's Encrypt, voici un exemple de configuration pour **Nginx** ou **Nginx Proxy Manager** :
 
@@ -357,20 +326,23 @@ server {
 
 ---
 
-## 9. Dépannage & FAQ
+## 8. Dépannage & FAQ
 
 ### Q1. Pourquoi les équipements du réseau ne sont pas découverts lors d'un scan ?
 - **Cause fréquente** : Le conteneur Docker a été lancé sans `network_mode: host`.
 - **Solution** : Assurez-vous que la directive `network_mode: host` est bien présente dans votre `docker-compose.yml` (ou `--net=host` en CLI). Sans cela, les paquets ARP ne peuvent pas franchir la barrière NAT de Docker.
 - Vérifiez également que le sous-réseau sélectionné dans l'interface correspond bien à votre plan d'adressage (ex: `192.168.1.0/24`).
 
-### Q2. Erreur d'accès au socket Docker (`/var/run/docker.sock`)
-- Si vous souhaitez que le scanner liste automatiquement les conteneurs Docker présents sur la machine hôte, le fichier `/var/run/docker.sock` doit être monté en volume.
-- Si le conteneur indique une permission refusée, assurez-vous que l'utilisateur exécutant Docker possède les droits de lecture sur ce socket.
+### Q2. Comment mettre à jour vers la dernière version publiée sur GitHub ?
+Exécutez simplement :
+```bash
+docker compose pull
+docker compose up -d
+```
 
 ### Q3. Comment changer le port d'écoute ?
-- En mode `network_mode: host`, le conteneur écoute directement sur le port configuré par la variable d'environnement `PORT`.
-- Modifiez la variable `PORT=8080` dans votre `docker-compose.yml` pour utiliser le port 8080 au lieu du port 3000 par défaut.
+En mode `network_mode: host`, le conteneur écoute directement sur le port configuré par la variable d'environnement `PORT`.
+Modifiez la variable `PORT=8080` dans votre `docker-compose.yml` pour utiliser le port 8080 au lieu du port 3000 par défaut.
 
 ---
 
