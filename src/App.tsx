@@ -9,6 +9,7 @@ import { LiveLogViewer } from './components/LiveLogViewer';
 import { DeviceEditModal } from './components/DeviceEditModal';
 import { AddDeviceModal } from './components/AddDeviceModal';
 import { DockerDeployModal } from './components/DockerDeployModal';
+import { autoLayoutTopology } from './utils/topologyLayout';
 
 export default function App() {
   const [devices, setDevices] = useState<Device[]>([]);
@@ -127,6 +128,11 @@ export default function App() {
       evtSource.addEventListener('topology_reset', (e) => {
         const resetDevices: Device[] = JSON.parse(e.data);
         setDevices(resetDevices);
+      });
+
+      evtSource.addEventListener('topology_updated', (e) => {
+        const updatedList: Device[] = JSON.parse(e.data);
+        setDevices(updatedList);
       });
 
       evtSource.addEventListener('device_updated', (e) => {
@@ -298,6 +304,23 @@ export default function App() {
     }
   };
 
+  // Reorganise & auto-layout topology into hierarchical schema
+  const handleAutoLayout = async () => {
+    try {
+      const res = await fetch('/api/topology/autolayout', { method: 'POST' });
+      const data = await res.json();
+      if (data.devices) {
+        setDevices(data.devices);
+      }
+      showToast('Schéma de topologie réorganisé automatiquement.');
+    } catch {
+      // Fallback client-side auto-layout
+      const arranged = autoLayoutTopology(devices);
+      setDevices(arranged);
+      showToast('Schéma de topologie réorganisé.');
+    }
+  };
+
   // Export JSON
   const handleExportTopology = () => {
     window.location.href = '/api/export';
@@ -430,6 +453,7 @@ export default function App() {
           setAddModalPresetType(undefined);
           setIsAddModalOpen(true);
         }}
+        onAutoLayout={handleAutoLayout}
         onExport={handleExportTopology}
         onResetTopology={handleResetTopology}
       />
@@ -444,6 +468,7 @@ export default function App() {
             onEditDevice={(dev) => setEditingDevice(dev)}
             onPingDevice={handlePingDevice}
             onUpdateDevicePosition={handleUpdatePosition}
+            onAutoLayout={handleAutoLayout}
             groupByHost={groupByHost}
           />
         )}

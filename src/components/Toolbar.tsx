@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, Plus, Filter, Download, RotateCcw, X, SlidersHorizontal } from 'lucide-react';
+import { Search, Plus, Filter, Download, RotateCcw, X, SlidersHorizontal, LayoutGrid } from 'lucide-react';
 import type { DeviceType } from '../types/network';
 
 interface ToolbarProps {
@@ -26,6 +26,7 @@ interface ToolbarProps {
   scanMode: 'fast' | 'deep' | 'iot';
   onScanModeChange: (mode: 'fast' | 'deep' | 'iot') => void;
   onOpenAddModal: () => void;
+  onAutoLayout?: () => void;
   onExport: () => void;
   onResetTopology: () => void;
 }
@@ -48,6 +49,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   scanMode,
   onScanModeChange,
   onOpenAddModal,
+  onAutoLayout,
   onExport,
   onResetTopology
 }) => {
@@ -101,6 +103,17 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
         {/* Action buttons */}
         <div className="flex items-center gap-2">
+          {onAutoLayout && (
+            <button
+              onClick={onAutoLayout}
+              title="Organiser et générer automatiquement le schéma hiérarchique"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-cyan-700/90 hover:bg-cyan-600 border border-cyan-500/40 rounded-lg transition-all active:scale-95 whitespace-nowrap shadow-xs"
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span>Générer le schéma</span>
+            </button>
+          )}
+
           <button
             onClick={onOpenAddModal}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-cyan-300 bg-cyan-950/50 hover:bg-cyan-900/50 border border-cyan-800/60 rounded-lg transition-colors whitespace-nowrap"

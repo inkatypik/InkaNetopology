@@ -11,6 +11,7 @@ import { execFile, exec } from 'child_process';
 import { promisify } from 'util';
 import { fileURLToPath } from 'url';
 import type { Device, DeviceType, DeviceSubType, NetworkLog, ScanStatus } from './src/types/network.js';
+import { autoLayoutTopology } from './src/utils/topologyLayout.js';
 
 const execPromise = promisify(exec);
 const execFilePromise = promisify(execFile);
@@ -1717,10 +1718,13 @@ app.post('/api/scan', async (req, res) => {
         }
       }
 
-      // 8. PERSISTENCE: Save all changes to data/devices.json
+      // 8. AUTO-LAYOUT: Organiser automatiquement tout le schéma et résoudre les liaisons
+      devices = autoLayoutTopology(devices);
+
+      // 9. PERSISTENCE: Sauvegarde dans data/devices.json
       saveDevicesToFile();
 
-      // 9. Complete scan & notify
+      // 10. Complete scan & notify
       scanStatus.isScanning = false;
       scanStatus.progressPercent = 100;
       scanStatus.devicesFound = devices.length;
@@ -1816,6 +1820,21 @@ app.post('/api/reset-topology', (req, res) => {
 
   broadcastSse('topology_reset', devices);
   broadcastSse('scan_complete', { devices, scanStatus });
+  res.json({ success: true, devices });
+});
+
+// Auto-layout / Automatic diagram generation endpoint
+app.post('/api/topology/autolayout', (req, res) => {
+  devices = autoLayoutTopology(devices);
+  saveDevicesToFile();
+
+  addLog({
+    level: 'INFO',
+    category: 'SYSTEM',
+    message: 'Schéma de topologie réorganisé et centré automatiquement par niveaux hiérarchiques.'
+  });
+
+  broadcastSse('topology_updated', devices);
   res.json({ success: true, devices });
 });
 

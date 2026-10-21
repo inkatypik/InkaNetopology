@@ -1,7 +1,7 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import type { Device } from '../types/network';
 import { DeviceNode } from './DeviceNode';
-import { ZoomIn, ZoomOut, Maximize2, Move } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, LayoutGrid, Focus, AlertCircle } from 'lucide-react';
 
 interface TopologyCanvasProps {
   devices: Device[];
@@ -10,6 +10,7 @@ interface TopologyCanvasProps {
   onEditDevice: (device: Device) => void;
   onPingDevice: (device: Device) => void;
   onUpdateDevicePosition: (id: string, pos: { x: number; y: number }) => void;
+  onAutoLayout?: () => void;
   groupByHost: boolean;
 }
 
@@ -20,11 +21,12 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   onEditDevice,
   onPingDevice,
   onUpdateDevicePosition,
+  onAutoLayout,
   groupByHost
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
-  const [offset, setOffset] = useState({ x: 40, y: 30 });
+  const [scale, setScale] = useState(0.85);
+  const [offset, setOffset] = useState({ x: 50, y: 30 });
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
 
@@ -32,19 +34,62 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
 
+  // Auto-fit view to center all devices on canvas
+  const fitToView = useCallback(() => {
+    if (!containerRef.current || devices.length === 0) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+
+    devices.forEach((d) => {
+      const x = d.position?.x ?? 100;
+      const y = d.position?.y ?? 100;
+      if (x < minX) minX = x;
+      if (x + 270 > maxX) maxX = x + 270;
+      if (y < minY) minY = y;
+      if (y + 190 > maxY) maxY = y + 190;
+    });
+
+    if (minX === Infinity || maxX === -Infinity) return;
+
+    const graphW = Math.max(maxX - minX, 300);
+    const graphH = Math.max(maxY - minY, 200);
+    const padding = 70;
+
+    const scaleX = (rect.width - padding * 2) / graphW;
+    const scaleY = (rect.height - padding * 2) / graphH;
+    const newScale = Math.min(Math.max(Math.min(scaleX, scaleY), 0.35), 1.15);
+
+    const newOffsetX = (rect.width - graphW * newScale) / 2 - minX * newScale;
+    const newOffsetY = (rect.height - graphH * newScale) / 2 - minY * newScale;
+
+    setScale(+newScale.toFixed(2));
+    setOffset({ x: Math.round(newOffsetX), y: Math.round(newOffsetY) });
+  }, [devices]);
+
+  // Run fitToView on initial mount and when devices count changes significantly
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fitToView();
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [devices.length, fitToView]);
+
   // Zoom handlers
   const handleZoom = (delta: number) => {
-    setScale((prev) => Math.min(Math.max(prev + delta, 0.4), 2.0));
+    setScale((prev) => Math.min(Math.max(prev + delta, 0.3), 2.0));
   };
 
   const handleResetView = () => {
-    setScale(1);
-    setOffset({ x: 40, y: 30 });
+    fitToView();
   };
 
   // Pan handlers
   const handleMouseDown = (e: React.MouseEvent) => {
-    // If clicking on canvas background, unselect and start pan
     if (e.target === containerRef.current || (e.target as HTMLElement).tagName === 'svg') {
       onSelectDevice(null);
       setIsPanning(true);
@@ -88,17 +133,22 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
     }
   };
 
-  // Calculate links between devices
-  // 1. Physical / Network links (connectedToSwitchId)
-  // 2. Virtualization dependency links (parentHostId)
+  // Map for fast node lookups
   const deviceMap = new Map<string, Device>();
   devices.forEach((d) => deviceMap.set(d.id, d));
 
-  const physicalLinks: Array<{ from: Device; to: Device; label?: string }> = [];
+  // Determine root switch or router for fallback automatic link drawing
+  const rootSwitchOrRouter =
+    devices.find((d) => d.subType === 'switch') ||
+    devices.find((d) => d.subType === 'router') ||
+    devices.find((d) => d.ip.endsWith('.1') || d.ip.endsWith('.254')) ||
+    devices[0];
+
+  const physicalLinks: Array<{ from: Device; to: Device; label?: string; isAuto?: boolean }> = [];
   const virtualLinks: Array<{ host: Device; guest: Device; isDocker: boolean }> = [];
 
   devices.forEach((dev) => {
-    // Parent host link (VM or Docker container)
+    // 1. Virtualization link (VM or Docker container to host)
     if (dev.parentHostId && deviceMap.has(dev.parentHostId)) {
       const host = deviceMap.get(dev.parentHostId)!;
       virtualLinks.push({
@@ -106,15 +156,27 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
         guest: dev,
         isDocker: dev.deviceType === 'docker'
       });
+      return;
     }
 
-    // Network switch link
+    // 2. Explicit network switch link
     if (dev.connectedToSwitchId && deviceMap.has(dev.connectedToSwitchId)) {
       const sw = deviceMap.get(dev.connectedToSwitchId)!;
       physicalLinks.push({
         from: sw,
         to: dev,
         label: dev.portOrInterface
+      });
+      return;
+    }
+
+    // 3. AUTOMATIC FALLBACK LINK: connect any unlinked device to core router or switch
+    if (rootSwitchOrRouter && dev.id !== rootSwitchOrRouter.id) {
+      physicalLinks.push({
+        from: rootSwitchOrRouter,
+        to: dev,
+        label: dev.portOrInterface || (dev.deviceType === 'iot' ? 'Wi-Fi / LAN' : 'LAN'),
+        isAuto: true
       });
     }
   });
@@ -132,7 +194,46 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
         backgroundSize: '24px 24px'
       }}
     >
-      {/* Zoom / Pan Controls Overlay */}
+      {/* Empty State Banner if no devices */}
+      {devices.length === 0 && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center z-10 pointer-events-none">
+          <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500 mb-3">
+            <AlertCircle className="w-6 h-6 text-cyan-400" />
+          </div>
+          <h3 className="text-base font-semibold text-slate-200">Aucun équipement sur la topologie</h3>
+          <p className="text-xs text-slate-400 max-w-sm mt-1">
+            Lancez un scan réseau ou ajoutez un équipement manuellement pour générer automatiquement le schéma.
+          </p>
+        </div>
+      )}
+
+      {/* Floating Canvas Action Toolbar (Top-Right) */}
+      <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+        {onAutoLayout && (
+          <button
+            onClick={() => {
+              onAutoLayout();
+              setTimeout(fitToView, 200);
+            }}
+            title="Réorganiser automatiquement le schéma hiérarchique"
+            className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold bg-cyan-600/90 hover:bg-cyan-500 text-white rounded-lg shadow-xl backdrop-blur-md transition-all active:scale-95 border border-cyan-400/40"
+          >
+            <LayoutGrid className="w-3.5 h-3.5" />
+            <span>Réorganiser le schéma</span>
+          </button>
+        )}
+
+        <button
+          onClick={fitToView}
+          title="Centrer et ajuster la vue sur l'ensemble des équipements"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-700/80 rounded-lg shadow-xl backdrop-blur-md transition-all active:scale-95"
+        >
+          <Focus className="w-3.5 h-3.5 text-cyan-400" />
+          <span>Centrer la vue</span>
+        </button>
+      </div>
+
+      {/* Zoom / Pan Controls Overlay (Bottom-Right) */}
       <div className="absolute bottom-5 right-5 z-20 flex items-center gap-1.5 p-1 bg-slate-900/90 border border-slate-800 rounded-lg shadow-xl backdrop-blur-md">
         <button
           onClick={() => handleZoom(0.15)}
@@ -150,7 +251,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
         </button>
         <button
           onClick={handleResetView}
-          title="Réinitialiser la vue"
+          title="Centrer la vue sur tous les équipements"
           className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded-md transition-colors"
         >
           <Maximize2 className="w-4 h-4" />
@@ -160,11 +261,11 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
         </div>
       </div>
 
-      {/* Legend / Overlay */}
+      {/* Legend / Overlay (Top-Left) */}
       <div className="absolute top-4 left-4 z-20 p-2.5 bg-slate-900/85 border border-slate-800 rounded-lg text-xs text-slate-400 space-y-1.5 pointer-events-none backdrop-blur-md shadow-lg">
         <div className="flex items-center gap-2">
           <span className="w-3 h-0.5 bg-sky-500 rounded-full" />
-          <span className="text-[11px] text-slate-300">Liaison réseau physique / Switch</span>
+          <span className="text-[11px] text-slate-300">Liaison réseau physique / Câble LAN</span>
         </div>
         <div className="flex items-center gap-2">
           <span className="w-3 h-0.5 border-b border-indigo-400 border-dashed" />
@@ -181,16 +282,15 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
         className="absolute inset-0 origin-top-left"
         style={{
           transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
-          transition: isPanning || draggedNodeId ? 'none' : 'transform 0.1s ease-out'
+          transition: isPanning || draggedNodeId ? 'none' : 'transform 0.15s ease-out'
         }}
       >
         {/* SVG Canvas for Links & Lines */}
         <svg
           className="absolute inset-0 pointer-events-none"
-          style={{ width: '4000px', height: '4000px' }}
+          style={{ width: '8000px', height: '8000px' }}
         >
           <defs>
-            {/* Arrow marker for virtualization dependencies */}
             <marker
               id="arrow-vm"
               viewBox="0 0 10 10"
@@ -216,9 +316,9 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
           </defs>
 
           {/* 1. Physical Network Cables (Solid Lines with Speed / Port Label) */}
-          {physicalLinks.map(({ from, to, label }, i) => {
-            const p1 = from.position || { x: 200, y: 100 };
-            const p2 = to.position || { x: 200, y: 300 };
+          {physicalLinks.map(({ from, to, label, isAuto }, i) => {
+            const p1 = from.position || { x: 400, y: 100 };
+            const p2 = to.position || { x: 400, y: 300 };
             const x1 = p1.x + 128;
             const y1 = p1.y + 70;
             const x2 = p2.x + 128;
@@ -232,9 +332,9 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
                 <path
                   d={`M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`}
                   fill="none"
-                  stroke="#38bdf8"
-                  strokeWidth="2"
-                  strokeOpacity="0.4"
+                  stroke={isAuto ? '#38bdf8' : '#0284c7'}
+                  strokeWidth={isAuto ? '1.5' : '2'}
+                  strokeOpacity={isAuto ? '0.35' : '0.55'}
                 />
                 {label && (
                   <text
@@ -255,8 +355,8 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
 
           {/* 2. Virtualization Dependency Links (Dashed Bezier Splines) */}
           {virtualLinks.map(({ host, guest, isDocker }, i) => {
-            const p1 = host.position || { x: 200, y: 200 };
-            const p2 = guest.position || { x: 200, y: 400 };
+            const p1 = host.position || { x: 400, y: 200 };
+            const p2 = guest.position || { x: 400, y: 400 };
             const x1 = p1.x + 128;
             const y1 = p1.y + 110;
             const x2 = p2.x + 128;

@@ -52,8 +52,13 @@ export const DockerDeployModal: React.FC<DockerDeployModalProps> = ({ isOpen, on
       - PORT=3000
 
     volumes:
-      # Persistance de l'inventaire et des équipements découverts
-      - ./data:/app/data
+      # CRITIQUE : Définissez ici votre chemin de stockage local (machine hôte)
+      # selon votre environnement (ex: OpenMediaVault, Synology, Debian, Ubuntu).
+      # Remplacez /chemin/vers/votre/dossier/data par votre chemin de stockage réel :
+      #   Ex. OpenMediaVault : /srv/dev-disk-by-uuid-.../DOCKER/inkanetopology/data:/app/data
+      #   Ex. Linux standard : /opt/inkanetopology/data:/app/data
+      #   Ex. Synology NAS   : /volume1/docker/inkanetopology/data:/app/data
+      - /chemin/vers/votre/dossier/data:/app/data
       # Montage optionnel du socket Docker pour l'identification native des conteneurs locaux
       - /var/run/docker.sock:/var/run/docker.sock:ro`;
 
@@ -63,7 +68,7 @@ export const DockerDeployModal: React.FC<DockerDeployModalProps> = ({ isOpen, on
   --net=host \\
   --cap-add=NET_ADMIN \\
   --cap-add=NET_RAW \\
-  -v $(pwd)/data:/app/data \\
+  -v /chemin/vers/votre/dossier/data:/app/data \\
   -v /var/run/docker.sock:/var/run/docker.sock:ro \\
   -e PORT=3000 \\
   -e NODE_ENV=production \\

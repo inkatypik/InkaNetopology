@@ -54,6 +54,11 @@ export const AddDeviceModal: React.FC<AddDeviceModalProps> = ({
       .map((t) => t.trim())
       .filter(Boolean);
 
+    const rootSwitchOrRouter =
+      allDevices.find((d) => d.subType === 'switch') ||
+      allDevices.find((d) => d.subType === 'router') ||
+      allDevices[0];
+
     onAdd({
       name,
       ip,
@@ -63,16 +68,13 @@ export const AddDeviceModal: React.FC<AddDeviceModalProps> = ({
       subType,
       status: 'online',
       parentHostId: parentHostId || undefined,
+      connectedToSwitchId: (deviceType === 'physical' || deviceType === 'iot') && rootSwitchOrRouter ? rootSwitchOrRouter.id : undefined,
       portOrInterface: portOrInterface || undefined,
       vlan,
       os: os || undefined,
       location: location || undefined,
       tags,
-      metadata: {},
-      position: {
-        x: 350 + Math.floor(Math.random() * 200),
-        y: 350 + Math.floor(Math.random() * 200)
-      }
+      metadata: {}
     });
 
     onClose();

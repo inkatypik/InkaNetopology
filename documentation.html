@@ -470,8 +470,13 @@
       - PORT=3000
 
     volumes:
-      # Persistance de l'inventaire et des équipements découverts sur le disque hôte
-      - ./data:/app/data
+      # CRITIQUE : Définissez ici votre chemin de stockage local (machine hôte)
+      # selon votre environnement (ex: OpenMediaVault, Synology, Debian, Ubuntu).
+      # Remplacez /chemin/vers/votre/dossier/data par votre chemin de stockage réel :
+      #   Ex. OpenMediaVault : /srv/dev-disk-by-uuid-.../DOCKER/inkanetopology/data:/app/data
+      #   Ex. Linux standard : /opt/inkanetopology/data:/app/data
+      #   Ex. Synology NAS   : /volume1/docker/inkanetopology/data:/app/data
+      - /chemin/vers/votre/dossier/data:/app/data
       # Montage optionnel du socket Docker pour l'inventaire dynamique des conteneurs
       - /var/run/docker.sock:/var/run/docker.sock:ro</pre>
       </div>
@@ -500,6 +505,10 @@
           <tr>
             <td><code>/var/run/docker.sock:ro</code></td>
             <td>Permet d'interroger le moteur Docker de la machine hôte pour inventorier automatiquement les conteneurs actifs et les relier à l'hôte physique.</td>
+          </tr>
+          <tr>
+            <td><code>/chemin/vers/votre/dossier/data:/app/data</code></td>
+            <td><strong>Persistance de l'inventaire</strong>. Remplacez le chemin hôte par un dossier existant sur votre machine (ex. <code>/srv/dev-disk-.../DOCKER/data</code> sur OpenMediaVault, ou <code>/opt/inkanetopology/data</code> sur Debian/Ubuntu) pour conserver définitivement les équipements découverts et les dispositions de schéma.</td>
           </tr>
         </tbody>
       </table>
