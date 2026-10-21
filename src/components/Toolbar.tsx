@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, Plus, Filter, Download, RotateCcw, X, SlidersHorizontal, LayoutGrid } from 'lucide-react';
+import { Search, Plus, Filter, Download, RotateCcw, X, SlidersHorizontal, LayoutGrid, Trash2 } from 'lucide-react';
 import type { DeviceType } from '../types/network';
 
 interface ToolbarProps {
@@ -29,6 +29,7 @@ interface ToolbarProps {
   onAutoLayout?: () => void;
   onExport: () => void;
   onResetTopology: () => void;
+  onClearInventory?: () => void;
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({
@@ -51,7 +52,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onOpenAddModal,
   onAutoLayout,
   onExport,
-  onResetTopology
+  onResetTopology,
+  onClearInventory
 }) => {
   return (
     <div className="w-full border-b border-slate-800 bg-slate-900/60 backdrop-blur-xs py-3 px-4 sm:px-6 lg:px-8 space-y-3">
@@ -116,24 +118,35 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
           <button
             onClick={onOpenAddModal}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-cyan-300 bg-cyan-950/50 hover:bg-cyan-900/50 border border-cyan-800/60 rounded-lg transition-colors whitespace-nowrap"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-cyan-300 bg-cyan-950/50 hover:bg-cyan-900/50 border border-cyan-800/60 rounded-lg transition-colors whitespace-nowrap cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Ajouter Équipement</span>
           </button>
 
+          {onClearInventory && (
+            <button
+              onClick={onClearInventory}
+              title="Vider entièrement l'inventaire pour repartir de zéro (0 équipement)"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-300 bg-rose-950/50 hover:bg-rose-900/60 border border-rose-800/60 rounded-lg transition-colors whitespace-nowrap cursor-pointer shadow-xs active:scale-95"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+              <span>Vider l'inventaire</span>
+            </button>
+          )}
+
           <button
             onClick={onExport}
             title="Exporter la topologie en JSON"
-            className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-slate-800 rounded-lg transition-colors"
+            className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-slate-800 rounded-lg transition-colors cursor-pointer"
           >
             <Download className="w-4 h-4" />
           </button>
 
           <button
             onClick={onResetTopology}
-            title="Réinitialiser la topologie"
-            className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-slate-800 rounded-lg transition-colors"
+            title="Recharger la topologie de démonstration par défaut"
+            className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-slate-800 rounded-lg transition-colors cursor-pointer"
           >
             <RotateCcw className="w-4 h-4" />
           </button>

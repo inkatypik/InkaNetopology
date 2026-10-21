@@ -9,7 +9,9 @@ import { LiveLogViewer } from './components/LiveLogViewer';
 import { DeviceEditModal } from './components/DeviceEditModal';
 import { AddDeviceModal } from './components/AddDeviceModal';
 import { DockerDeployModal } from './components/DockerDeployModal';
+import { ClearInventoryModal } from './components/ClearInventoryModal';
 import { autoLayoutTopology } from './utils/topologyLayout';
+import { XCircle, Square } from 'lucide-react';
 
 export default function App() {
   const [devices, setDevices] = useState<Device[]>([]);
@@ -37,6 +39,7 @@ export default function App() {
   const [editingDevice, setEditingDevice] = useState<Device | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
   const [isDockerModalOpen, setIsDockerModalOpen] = useState<boolean>(false);
+  const [isClearModalOpen, setIsClearModalOpen] = useState<boolean>(false);
   const [addModalPresetParentId, setAddModalPresetParentId] = useState<string | undefined>();
   const [addModalPresetType, setAddModalPresetType] = useState<DeviceType | undefined>();
 
@@ -125,6 +128,18 @@ export default function App() {
         }
       });
 
+      evtSource.addEventListener('scan_cancelled', () => {
+        setIsScanning(false);
+        setScanProgress(0);
+        showToast('Scan réseau interrompu manuellement.');
+      });
+
+      evtSource.addEventListener('inventory_cleared', () => {
+        setDevices([]);
+        setSelectedDevice(null);
+        showToast('Inventaire entièrement vidé.');
+      });
+
       evtSource.addEventListener('topology_reset', (e) => {
         const resetDevices: Device[] = JSON.parse(e.data);
         setDevices(resetDevices);
@@ -187,6 +202,37 @@ export default function App() {
       console.error(err);
       setIsScanning(false);
       showToast('Impossible de contacter le serveur de scan.');
+    }
+  };
+
+  // Cancel / interrupt network scan immediately
+  const handleCancelScan = async () => {
+    try {
+      await fetch('/api/scan/cancel', { method: 'POST' });
+      setIsScanning(false);
+      setScanProgress(0);
+      showToast('Scan réseau interrompu manuellement.');
+    } catch (err) {
+      console.error('Erreur interruption scan:', err);
+      setIsScanning(false);
+      showToast('Scan interrompu.');
+    }
+  };
+
+  // Clear entire inventory to clean slate (0 devices)
+  const handleClearInventory = async () => {
+    try {
+      const res = await fetch('/api/devices/clear', { method: 'POST' });
+      if (res.ok) {
+        setDevices([]);
+        setSelectedDevice(null);
+        showToast('Inventaire entièrement vidé (0 équipement). Prêt pour un nouveau scan.');
+      } else {
+        showToast('Erreur lors du vidage de l\'inventaire.');
+      }
+    } catch (err) {
+      console.error('Erreur vidage inventaire:', err);
+      showToast('Erreur de connexion au serveur.');
     }
   };
 
@@ -403,7 +449,9 @@ export default function App() {
           }
         }}
         isScanning={isScanning}
+        scanProgress={scanProgress}
         onTriggerScan={handleTriggerScan}
+        onCancelScan={handleCancelScan}
         isDark={isDark}
         onToggleTheme={() => setIsDark(!isDark)}
         onlineCount={onlineCount}
@@ -421,11 +469,21 @@ export default function App() {
             </span>
           </div>
 
-          <div className="w-48 bg-slate-900 rounded-full h-2 overflow-hidden border border-cyan-800/50">
-            <div
-              className="bg-cyan-400 h-full transition-all duration-300"
-              style={{ width: `${scanProgress}%` }}
-            />
+          <div className="flex items-center gap-3">
+            <div className="w-48 bg-slate-900 rounded-full h-2 overflow-hidden border border-cyan-800/50">
+              <div
+                className="bg-cyan-400 h-full transition-all duration-300"
+                style={{ width: `${scanProgress}%` }}
+              />
+            </div>
+            <button
+              onClick={handleCancelScan}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-rose-300 bg-rose-950/80 hover:bg-rose-900/90 border border-rose-700/60 rounded-md transition-colors shadow-xs cursor-pointer active:scale-95"
+              title="Interrompre immédiatement le scan réseau"
+            >
+              <XCircle className="w-3.5 h-3.5 text-rose-400" />
+              <span>Interrompre</span>
+            </button>
           </div>
         </div>
       )}
@@ -456,6 +514,7 @@ export default function App() {
         onAutoLayout={handleAutoLayout}
         onExport={handleExportTopology}
         onResetTopology={handleResetTopology}
+        onClearInventory={() => setIsClearModalOpen(true)}
       />
 
       {/* Main View Area by Tab */}
@@ -469,6 +528,9 @@ export default function App() {
             onPingDevice={handlePingDevice}
             onUpdateDevicePosition={handleUpdatePosition}
             onAutoLayout={handleAutoLayout}
+            onTriggerScan={handleTriggerScan}
+            onResetTopology={handleResetTopology}
+            onOpenAddModal={() => setIsAddModalOpen(true)}
             groupByHost={groupByHost}
           />
         )}
@@ -532,6 +594,14 @@ export default function App() {
       <DockerDeployModal
         isOpen={isDockerModalOpen}
         onClose={() => setIsDockerModalOpen(false)}
+      />
+
+      {/* Clear Entire Inventory Confirmation Modal */}
+      <ClearInventoryModal
+        isOpen={isClearModalOpen}
+        onClose={() => setIsClearModalOpen(false)}
+        onConfirmClear={handleClearInventory}
+        deviceCount={devices.length}
       />
 
       {/* Toast Notification */}

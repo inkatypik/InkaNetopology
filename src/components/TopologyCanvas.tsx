@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import type { Device } from '../types/network';
 import { DeviceNode } from './DeviceNode';
-import { ZoomIn, ZoomOut, Maximize2, LayoutGrid, Focus, AlertCircle } from 'lucide-react';
+import { ZoomIn, ZoomOut, Maximize2, LayoutGrid, Focus, AlertCircle, Radar, Plus, RotateCcw } from 'lucide-react';
 
 interface TopologyCanvasProps {
   devices: Device[];
@@ -11,6 +11,9 @@ interface TopologyCanvasProps {
   onPingDevice: (device: Device) => void;
   onUpdateDevicePosition: (id: string, pos: { x: number; y: number }) => void;
   onAutoLayout?: () => void;
+  onTriggerScan?: () => void;
+  onResetTopology?: () => void;
+  onOpenAddModal?: () => void;
   groupByHost: boolean;
 }
 
@@ -22,6 +25,9 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   onPingDevice,
   onUpdateDevicePosition,
   onAutoLayout,
+  onTriggerScan,
+  onResetTopology,
+  onOpenAddModal,
   groupByHost
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -411,6 +417,56 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
           );
         })}
       </div>
+
+      {/* Empty State Overlay when inventory is completely cleared (0 devices) */}
+      {devices.length === 0 && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center p-6 pointer-events-none">
+          <div className="max-w-md w-full bg-slate-900/95 border border-slate-700/80 rounded-2xl p-6 shadow-2xl backdrop-blur-md text-center pointer-events-auto animate-in fade-in zoom-in-95 duration-200">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 mb-4 shadow-sm">
+              <Radar className="w-7 h-7" />
+            </div>
+            <h3 className="text-base font-bold text-white tracking-tight">
+              Inventaire entièrement vide
+            </h3>
+            <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+              La base d'équipements a été réinitialisée à zéro. Vous pouvez lancer un scan actif de votre sous-réseau pour découvrir vos équipements réels, ou ajouter vos machines manuellement.
+            </p>
+
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 mt-6">
+              {onTriggerScan && (
+                <button
+                  onClick={onTriggerScan}
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white shadow-sm transition-all active:scale-95 cursor-pointer"
+                >
+                  <Radar className="w-4 h-4" />
+                  <span>Scanner le réseau local</span>
+                </button>
+              )}
+
+              {onOpenAddModal && (
+                <button
+                  onClick={onOpenAddModal}
+                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>Ajouter manuellement</span>
+                </button>
+              )}
+
+              {onResetTopology && (
+                <button
+                  onClick={onResetTopology}
+                  title="Recharger la topologie d'exemple"
+                  className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition-colors cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Recharger démo</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

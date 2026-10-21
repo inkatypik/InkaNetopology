@@ -41,8 +41,18 @@ export const DeviceInventoryTable: React.FC<DeviceInventoryTableProps> = ({
             <tbody className="divide-y divide-slate-800/60 text-xs">
               {devices.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-8 text-center text-slate-500">
-                    Aucun équipement ne correspond aux filtres sélectionnés.
+                  <td colSpan={8} className="py-12 text-center">
+                    <div className="flex flex-col items-center justify-center max-w-sm mx-auto space-y-2">
+                      <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400">
+                        <Activity className="w-5 h-5 text-cyan-400" />
+                      </div>
+                      <div className="text-sm font-semibold text-slate-200">
+                        Inventaire vide (0 équipement)
+                      </div>
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        Aucun équipement n'est actuellement répertorié. Vous pouvez lancer un scan réseau automatique ou ajouter un équipement manuellement.
+                      </p>
+                    </div>
                   </td>
                 </tr>
               ) : (

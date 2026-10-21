@@ -1,5 +1,5 @@
 import React from 'react';
-import { Radar, Moon, Sun, RefreshCw, Terminal, Layers, Network, Table } from 'lucide-react';
+import { Radar, Moon, Sun, RefreshCw, Terminal, Layers, Network, Table, Square } from 'lucide-react';
 
 export type ActiveTab = 'topology' | 'hosts' | 'inventory' | 'logs' | 'docker';
 
@@ -7,7 +7,9 @@ interface NavbarProps {
   activeTab: ActiveTab;
   onSelectTab: (tab: ActiveTab) => void;
   isScanning: boolean;
+  scanProgress?: number;
   onTriggerScan: () => void;
+  onCancelScan?: () => void;
   isDark: boolean;
   onToggleTheme: () => void;
   onlineCount: number;
@@ -18,7 +20,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
   onSelectTab,
   isScanning,
+  scanProgress = 0,
   onTriggerScan,
+  onCancelScan,
   isDark,
   onToggleTheme,
   onlineCount,
@@ -114,18 +118,32 @@ export const Navbar: React.FC<NavbarProps> = ({
             {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-300" />}
           </button>
 
-          <button
-            onClick={onTriggerScan}
-            disabled={isScanning}
-            className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg shadow-sm whitespace-nowrap transition-all duration-200 ${
-              isScanning
-                ? 'bg-cyan-900/50 text-cyan-300 cursor-not-allowed border border-cyan-700/50'
-                : 'bg-cyan-600 hover:bg-cyan-500 text-white active:scale-95'
-            }`}
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isScanning ? 'animate-spin' : ''}`} />
-            <span>{isScanning ? 'Scan en cours...' : 'Scanner le réseau'}</span>
-          </button>
+          {isScanning ? (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 px-3 py-2 text-xs font-semibold rounded-lg bg-cyan-950/80 text-cyan-300 border border-cyan-700/60 shadow-xs">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-400" />
+                <span className="font-mono">{scanProgress}%</span>
+              </div>
+              {onCancelScan && (
+                <button
+                  onClick={onCancelScan}
+                  title="Interrompre immédiatement le scan en cours"
+                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg bg-rose-600 hover:bg-rose-500 active:scale-95 text-white shadow-sm transition-all whitespace-nowrap cursor-pointer"
+                >
+                  <Square className="w-3.5 h-3.5 fill-current" />
+                  <span>Arrêter le scan</span>
+                </button>
+              )}
+            </div>
+          ) : (
+            <button
+              onClick={onTriggerScan}
+              className="flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg shadow-sm whitespace-nowrap transition-all duration-200 bg-cyan-600 hover:bg-cyan-500 text-white active:scale-95 cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Scanner le réseau</span>
+            </button>
+          )}
         </div>
       </div>
     </header>

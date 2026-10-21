@@ -730,7 +730,7 @@ function loadDevicesFromFile() {
     if (fs.existsSync(DEVICES_FILE)) {
       const content = fs.readFileSync(DEVICES_FILE, 'utf-8');
       const parsed = JSON.parse(content);
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed)) {
         devices = parsed;
         console.log(`[InkaNetopology] ${devices.length} équipements chargés depuis ${DEVICES_FILE}`);
         return;
@@ -739,13 +739,16 @@ function loadDevicesFromFile() {
   } catch (err) {
     console.error('Erreur lecture devices.json:', err);
   }
-  // Fallback to default initial topology
+  // Fallback to default initial topology only if file does not exist
   devices = [...defaultDevices];
   saveDevicesToFile();
 }
 
 // Initial load
 loadDevicesFromFile();
+
+// Global scan cancellation flag
+let isScanCancelled = false;
 
 // Diagnostic logs
 let logs: NetworkLog[] = [
@@ -1077,20 +1080,32 @@ function fetchDockerContainers(): Promise<any[]> {
   });
 }
 
-// Probe TCP port connectivity
-function probePort(ip: string, port: number, timeout = 250): Promise<{ open: boolean; rtt: number }> {
+// Probe TCP port connectivity with strict hard JS timer to guarantee abort on filtered ports
+function probePort(ip: string, port: number, timeout = 180): Promise<{ open: boolean; rtt: number }> {
   return new Promise((resolve) => {
     const start = Date.now();
     const socket = new net.Socket();
     let isResolved = false;
 
-    socket.setTimeout(timeout);
+    // Hard JavaScript timer to guarantee destruction even if kernel SYN hangs
+    const timer = setTimeout(() => {
+      if (!isResolved) {
+        isResolved = true;
+        try {
+          socket.destroy();
+        } catch {}
+        resolve({ open: false, rtt: timeout });
+      }
+    }, timeout);
 
     socket.on('connect', () => {
       if (!isResolved) {
         isResolved = true;
-        const rtt = Date.now() - start;
-        socket.destroy();
+        clearTimeout(timer);
+        const rtt = Math.max(1, Date.now() - start);
+        try {
+          socket.destroy();
+        } catch {}
         resolve({ open: true, rtt });
       }
     });
@@ -1098,7 +1113,10 @@ function probePort(ip: string, port: number, timeout = 250): Promise<{ open: boo
     socket.on('timeout', () => {
       if (!isResolved) {
         isResolved = true;
-        socket.destroy();
+        clearTimeout(timer);
+        try {
+          socket.destroy();
+        } catch {}
         resolve({ open: false, rtt: timeout });
       }
     });
@@ -1106,7 +1124,10 @@ function probePort(ip: string, port: number, timeout = 250): Promise<{ open: boo
     socket.on('error', () => {
       if (!isResolved) {
         isResolved = true;
-        socket.destroy();
+        clearTimeout(timer);
+        try {
+          socket.destroy();
+        } catch {}
         resolve({ open: false, rtt: timeout });
       }
     });
@@ -1116,6 +1137,7 @@ function probePort(ip: string, port: number, timeout = 250): Promise<{ open: boo
     } catch {
       if (!isResolved) {
         isResolved = true;
+        clearTimeout(timer);
         resolve({ open: false, rtt: timeout });
       }
     }
@@ -1126,69 +1148,124 @@ function probePort(ip: string, port: number, timeout = 250): Promise<{ open: boo
 async function pingIp(ip: string): Promise<{ alive: boolean; rtt: number }> {
   const start = Date.now();
   try {
-    await execFilePromise('ping', ['-c', '1', '-W', '1', ip], { timeout: 1200 });
+    await execFilePromise('ping', ['-c', '1', '-W', '1', ip], { timeout: 1000 });
     return { alive: true, rtt: Math.max(1, Date.now() - start) };
   } catch {
     return { alive: false, rtt: 0 };
   }
 }
 
-// Fetch HTTP web title (if port 80/443/8080/8006/5000 is open)
-function fetchWebTitle(ip: string, port: number): Promise<string | null> {
+// Fetch HTTP web title (if port 80/443/8080/8006/5000 is open) with strict timeout
+function fetchWebTitle(ip: string, port: number, timeoutMs = 300): Promise<string | null> {
   return new Promise((resolve) => {
-    const isHttps = port === 443 || port === 8443 || port === 8006 || port === 9443;
-    const client = isHttps ? https : http;
-    const timeout = 1200;
+    let settled = false;
+    let req: any = null;
 
-    const req = client.request(
-      {
-        host: ip,
-        port,
-        path: '/',
-        method: 'GET',
-        headers: { 'User-Agent': 'InkaNetopology/1.0 Scanner' },
-        rejectUnauthorized: false,
-        timeout
-      },
-      (res) => {
-        let data = '';
-        res.on('data', (chunk) => {
-          data += chunk;
-          if (data.length > 5000) req.destroy(); // Limit data read
-        });
-        res.on('end', () => {
-          const titleMatch = data.match(/<title[^>]*>([^<]+)<\/title>/i);
-          if (titleMatch && titleMatch[1]) {
-            resolve(titleMatch[1].trim());
-          } else if (res.headers.server) {
-            resolve(Array.isArray(res.headers.server) ? res.headers.server[0] : res.headers.server);
-          } else {
-            resolve(null);
-          }
-        });
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        try {
+          if (req) req.destroy();
+        } catch {}
+        resolve(null);
       }
-    );
+    }, timeoutMs);
 
-    req.on('error', () => resolve(null));
-    req.on('timeout', () => {
-      req.destroy();
-      resolve(null);
-    });
-    req.end();
+    try {
+      const isHttps = port === 443 || port === 8443;
+      const client = isHttps ? https : http;
+
+      req = client.request(
+        {
+          host: ip,
+          port,
+          path: '/',
+          method: 'GET',
+          headers: { 'User-Agent': 'InkaNetopology/1.0' },
+          rejectUnauthorized: false,
+          timeout: timeoutMs
+        },
+        (res: any) => {
+          let data = '';
+          res.on('data', (chunk: any) => {
+            data += chunk;
+            if (data.length > 2000) {
+              try {
+                if (req) req.destroy();
+              } catch {}
+            }
+          });
+          res.on('end', () => {
+            if (!settled) {
+              settled = true;
+              clearTimeout(timer);
+              const titleMatch = data.match(/<title[^>]*>([^<]+)<\/title>/i);
+              if (titleMatch && titleMatch[1]) {
+                resolve(titleMatch[1].trim().slice(0, 50));
+              } else if (res.headers.server) {
+                const s = res.headers.server;
+                resolve(Array.isArray(s) ? s[0].slice(0, 40) : s.slice(0, 40));
+              } else {
+                resolve(null);
+              }
+            }
+          });
+        }
+      );
+
+      req.on('error', () => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve(null);
+        }
+      });
+
+      req.on('timeout', () => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          try {
+            if (req) req.destroy();
+          } catch {}
+          resolve(null);
+        }
+      });
+
+      req.end();
+    } catch {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        resolve(null);
+      }
+    }
   });
 }
 
-// Reverse DNS lookup
-async function reverseDns(ip: string): Promise<string | null> {
-  try {
-    const hostnames = await dnsReversePromise(ip);
-    if (hostnames && hostnames.length > 0) {
-      return hostnames[0];
-    }
-  } catch {
-    // ignore
-  }
-  return null;
+// Reverse DNS lookup with strict 350ms timeout to prevent LAN hangs
+function reverseDns(ip: string, timeoutMs = 350): Promise<string | null> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        resolve(null);
+      }
+    }, timeoutMs);
+
+    dns.reverse(ip, (err, hostnames) => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timer);
+        if (!err && hostnames && hostnames.length > 0) {
+          resolve(hostnames[0]);
+        } else {
+          resolve(null);
+        }
+      }
+    });
+  });
 }
 
 // Classify device according to vendor, ports, hostname, titles
@@ -1490,7 +1567,42 @@ app.put('/api/devices/:id', (req, res) => {
   res.json(updated);
 });
 
-// Delete device
+// Clear entire inventory to restart from clean slate (0 devices)
+app.delete('/api/devices', (req, res) => {
+  const previousCount = devices.length;
+  devices = [];
+  saveDevicesToFile();
+
+  addLog({
+    level: 'WARN',
+    category: 'SYSTEM',
+    message: `Inventaire entièrement vidé (${previousCount} équipements supprimés). Base vierge prête pour un nouveau scan.`
+  });
+
+  broadcastSse('inventory_cleared', { count: 0 });
+  broadcastSse('topology_updated', []);
+  broadcastSse('scan_complete', { devices: [], scanStatus });
+  res.json({ success: true, count: 0, message: 'Inventaire entièrement vidé.' });
+});
+
+app.post(['/api/devices/clear', '/api/inventory/clear'], (req, res) => {
+  const previousCount = devices.length;
+  devices = [];
+  saveDevicesToFile();
+
+  addLog({
+    level: 'WARN',
+    category: 'SYSTEM',
+    message: `Inventaire entièrement vidé (${previousCount} équipements supprimés). Base vierge prête pour un nouveau scan.`
+  });
+
+  broadcastSse('inventory_cleared', { count: 0 });
+  broadcastSse('topology_updated', []);
+  broadcastSse('scan_complete', { devices: [], scanStatus });
+  res.json({ success: true, count: 0, message: 'Inventaire entièrement vidé.' });
+});
+
+// Delete single device
 app.delete('/api/devices/:id', (req, res) => {
   const { id } = req.params;
   const dev = devices.find((d) => d.id === id);
@@ -1564,6 +1676,27 @@ app.get('/api/scan/status', (req, res) => {
   });
 });
 
+// Cancel / interrupt running scan
+app.post(['/api/scan/cancel', '/api/scan/stop'], (req, res) => {
+  if (!scanStatus.isScanning) {
+    return res.json({ success: true, message: 'Aucun scan en cours.' });
+  }
+
+  isScanCancelled = true;
+  scanStatus.isScanning = false;
+  scanStatus.progressPercent = 0;
+
+  addLog({
+    level: 'WARN',
+    category: 'SYSTEM',
+    message: 'Scan réseau interrompu manuellement par l\'utilisateur.'
+  });
+
+  broadcastSse('scan_cancelled', { scanStatus });
+  broadcastSse('scan_complete', { devices, scanStatus, cancelled: true });
+  res.json({ success: true, message: 'Scan interrompu avec succès.' });
+});
+
 // ---------------- REAL NETWORK SCANNER ENGINE ----------------
 // Trigger Network Scan (Active Sweep + ARP Discovery + Port Probe + Automatic Inventory Addition)
 app.post('/api/scan', async (req, res) => {
@@ -1574,6 +1707,7 @@ app.post('/api/scan', async (req, res) => {
   const subnet = req.body.subnet || '192.168.1.0/24';
   const scanMode: 'fast' | 'deep' | 'iot' = req.body.scanMode || 'fast';
 
+  isScanCancelled = false;
   scanStatus = {
     isScanning: true,
     progressPercent: 0,
@@ -1654,10 +1788,12 @@ app.post('/api/scan', async (req, res) => {
       let completedCount = 0;
 
       for (let i = 0; i < candidateIps.length; i += BATCH_SIZE) {
+        if (isScanCancelled) break;
         const batch = candidateIps.slice(i, i + BATCH_SIZE);
 
         await Promise.all(
           batch.map(async (targetIp) => {
+            if (isScanCancelled) return;
             // First try quick ICMP ping
             const pingRes = await pingIp(targetIp);
             let isAlive = pingRes.alive;
@@ -1666,7 +1802,8 @@ app.post('/api/scan', async (req, res) => {
 
             // Probe a quick subset of ports (80, 443, 22) during sweep
             for (const port of [80, 443, 22, 8006, 5000]) {
-              const res = await probePort(targetIp, port, 180);
+              if (isScanCancelled) break;
+              const res = await probePort(targetIp, port, 160);
               if (res.open) {
                 isAlive = true;
                 openPortsFound.push(port);
@@ -1685,10 +1822,20 @@ app.post('/api/scan', async (req, res) => {
           })
         );
 
+        if (isScanCancelled) break;
+
         completedCount += batch.length;
         scanStatus.progressPercent = Math.min(80, Math.round((completedCount / totalIps) * 80));
         scanStatus.currentIp = batch[batch.length - 1];
         broadcastSse('scan_progress', scanStatus);
+      }
+
+      if (isScanCancelled) {
+        scanStatus.isScanning = false;
+        scanStatus.progressPercent = 0;
+        broadcastSse('scan_cancelled', { scanStatus });
+        broadcastSse('scan_complete', { devices, scanStatus, cancelled: true });
+        return;
       }
 
       // 4. Post-sweep: Re-read kernel ARP & neighbor table (populated after packet transmissions)
@@ -1709,6 +1856,14 @@ app.post('/api/scan', async (req, res) => {
       scanStatus.progressPercent = 85;
       broadcastSse('scan_progress', scanStatus);
 
+      if (isScanCancelled) {
+        scanStatus.isScanning = false;
+        scanStatus.progressPercent = 0;
+        broadcastSse('scan_cancelled', { scanStatus });
+        broadcastSse('scan_complete', { devices, scanStatus, cancelled: true });
+        return;
+      }
+
       // 5. Query local Docker daemon if mounted
       const dockerContainers = await fetchDockerContainers();
       if (dockerContainers.length > 0) {
@@ -1720,28 +1875,54 @@ app.post('/api/scan', async (req, res) => {
       }
 
       // 6. Deep inspection of discovered alive IPs (ports, reverse DNS, HTTP title)
-      scanStatus.progressPercent = 90;
-      broadcastSse('scan_progress', scanStatus);
-
       const aliveList = Array.from(aliveHosts.entries());
+      let inspectedCount = 0;
+
       for (const [ip, hostInfo] of aliveList) {
-        // Probe remaining ports
+        if (isScanCancelled) break;
+        inspectedCount++;
+
+        // Dynamically advance progress between 86% and 98%
+        const dynPercent = 85 + Math.round((inspectedCount / Math.max(1, aliveList.length)) * 13);
+        scanStatus.progressPercent = Math.min(98, dynPercent);
+        scanStatus.currentIp = ip;
+        broadcastSse('scan_progress', scanStatus);
+
+        // Probe remaining ports with 160ms hard limit
         const portPromises = portsToProbe.map(async (p) => {
           if (!hostInfo.openPorts.includes(p)) {
-            const probe = await probePort(ip, p, 200);
+            const probe = await probePort(ip, p, 160);
             if (probe.open) hostInfo.openPorts.push(p);
           }
         });
         await Promise.all(portPromises);
 
-        // Reverse DNS
-        hostInfo.hostname = await reverseDns(ip);
+        if (isScanCancelled) break;
 
-        // Web title grab if web port is open
-        const webPort = hostInfo.openPorts.find((p) => [80, 443, 8006, 5000, 8080, 8123].includes(p));
-        if (webPort) {
-          hostInfo.webTitle = await fetchWebTitle(ip, webPort);
+        // Reverse DNS with strict 200ms timeout
+        try {
+          hostInfo.hostname = await reverseDns(ip, 200);
+        } catch {
+          hostInfo.hostname = null;
         }
+
+        // Web title grab if web port is open (with strict 250ms timeout)
+        const webPort = hostInfo.openPorts.find((p) => [80, 443, 8006, 5000, 8080, 8123].includes(p));
+        if (webPort && !isScanCancelled) {
+          try {
+            hostInfo.webTitle = await fetchWebTitle(ip, webPort, 250);
+          } catch {
+            hostInfo.webTitle = null;
+          }
+        }
+      }
+
+      if (isScanCancelled) {
+        scanStatus.isScanning = false;
+        scanStatus.progressPercent = 0;
+        broadcastSse('scan_cancelled', { scanStatus });
+        broadcastSse('scan_complete', { devices, scanStatus, cancelled: true });
+        return;
       }
 
       // 7. CRITICAL STEP: MERGE INTO INVENTORY & ADD NEW DEVICES
