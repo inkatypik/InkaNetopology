@@ -87,9 +87,18 @@ export const DeviceInventoryTable: React.FC<DeviceInventoryTableProps> = ({
                             </div>
                           )}
                           <div>
-                            <div className="font-semibold text-slate-200 hover:text-cyan-400 transition-colors">
-                              {device.name}
-                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onEditDevice(device);
+                              }}
+                              title="Cliquer pour éditer la fiche complète de cet équipement"
+                              className="group/name flex items-center gap-1.5 font-semibold text-slate-100 hover:text-cyan-400 transition-colors text-left cursor-pointer"
+                            >
+                              <span className="group-hover/name:underline underline-offset-2">{device.name}</span>
+                              <Edit3 className="w-3 h-3 text-slate-500 opacity-60 group-hover/name:opacity-100 group-hover/name:text-cyan-400 transition-all shrink-0" />
+                            </button>
                             <div className="text-[10px] text-slate-400 capitalize">
                               {device.deviceType} · {device.subType.replace('_', ' ')}
                             </div>

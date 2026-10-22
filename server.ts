@@ -531,11 +531,84 @@ const defaultDevices: Device[] = [
 
 let devices: Device[] = [];
 
+// Helper: find or resolve the best candidate Docker host among physical servers/hosts
+function resolveDockerHost(devList: Device[]): Device {
+  // 1. Look for host with docker/portainer open ports (2375, 2376, 9000, 9443)
+  const byPort = devList.find(
+    (d) =>
+      d.deviceType === 'physical' &&
+      d.openPorts &&
+      d.openPorts.some((p) => [2375, 2376, 9000, 9443].includes(p))
+  );
+  if (byPort) return byPort;
+
+  // 2. Server or host with 'docker' in name or tags
+  const byName = devList.find(
+    (d) =>
+      d.deviceType === 'physical' &&
+      (d.name.toLowerCase().includes('docker') ||
+        d.tags?.some((t) => t.toLowerCase().includes('docker')))
+  );
+  if (byName) return byName;
+
+  // 3. Any physical server or NAS
+  const byServer = devList.find(
+    (d) => d.deviceType === 'physical' && (d.subType === 'server' || d.subType === 'nas')
+  );
+  if (byServer) return byServer;
+
+  // 4. Any physical host (excluding switches and routers)
+  const byPhysical = devList.find(
+    (d) =>
+      d.deviceType === 'physical' &&
+      d.subType !== 'switch' &&
+      d.subType !== 'router' &&
+      d.subType !== 'access_point'
+  );
+  if (byPhysical) return byPhysical;
+
+  // 5. If no physical server exists in inventory (e.g. fresh scan from empty),
+  // represent the local host machine running Docker Engine
+  const netInfo = getNetworkInterfaces();
+  const primaryIf = netInfo.interfaces[0];
+  const hostIp = primaryIf ? primaryIf.address : '192.168.1.15';
+  const hostMac = primaryIf && primaryIf.mac && primaryIf.mac !== '00:00:00:00:00:00' ? primaryIf.mac : '18:66:da:44:22:90';
+  const newHost: Device = {
+    id: 'dev-host-docker-srv',
+    name: `Serveur Hôte Docker (${os.hostname() || 'Docker-Host'})`,
+    ip: hostIp,
+    mac: hostMac,
+    vendor: lookupVendor(hostMac) || 'Serveur Linux Dédié',
+    deviceType: 'physical',
+    subType: 'server',
+    status: 'online',
+    vlan: 1,
+    os: 'Linux (Docker Engine Daemon)',
+    openPorts: [22, 2375, 80],
+    location: 'Serveur Principal d\'hébergement',
+    tags: ['Serveur', 'Hôte Docker', 'Production'],
+    metadata: {
+      'Hôte': os.hostname(),
+      'Plateforme': os.platform(),
+      'Architecture': os.arch(),
+      'Rôle': 'Hôte d\'exécution des conteneurs'
+    },
+    lastSeen: new Date().toISOString(),
+    latencyMs: 0.1,
+    position: { x: 400, y: 320 }
+  };
+  devList.unshift(newHost);
+  broadcastSse('device_added', newHost);
+  return newHost;
+}
+
 // Intelligent tiered auto-layout algorithm for network topology
 function autoLayoutTopology(devList: Device[]): Device[] {
   if (!devList || devList.length === 0) return [];
 
   const list: Device[] = devList.map((d) => ({ ...d }));
+  const devMap = new Map<string, Device>();
+  list.forEach((d) => devMap.set(d.id, d));
 
   // 1. Identify Root Gateway / Router
   let rootNode = list.find(
@@ -571,7 +644,15 @@ function autoLayoutTopology(devList: Device[]): Device[] {
       d.deviceType === 'physical' &&
       (d.subType === 'server' || d.subType === 'nas')
   );
-  const primaryServer = servers[0];
+
+  // Best docker host candidate
+  let defaultDockerHost: Device | undefined;
+  if (list.some((d) => d.deviceType === 'docker')) {
+    defaultDockerHost = resolveDockerHost(list);
+    if (defaultDockerHost && !servers.some((s) => s.id === defaultDockerHost?.id)) {
+      servers.push(defaultDockerHost);
+    }
+  }
 
   // 4. Identify Virtual Machines
   const vms = list.filter((d) => d.deviceType === 'vm');
@@ -600,6 +681,29 @@ function autoLayoutTopology(devList: Device[]): Device[] {
       !workstations.some((w) => w.id === d.id)
   );
 
+  // Clean up invalid host attachments (e.g. docker container attached to a switch or router)
+  dockers.forEach((ct) => {
+    if (ct.parentHostId) {
+      const parent = devMap.get(ct.parentHostId);
+      if (parent && (parent.subType === 'switch' || parent.subType === 'router')) {
+        ct.parentHostId = defaultDockerHost ? defaultDockerHost.id : undefined;
+      }
+    } else if (defaultDockerHost) {
+      ct.parentHostId = defaultDockerHost.id;
+    }
+  });
+
+  vms.forEach((vm) => {
+    if (vm.parentHostId) {
+      const parent = devMap.get(vm.parentHostId);
+      if (parent && (parent.subType === 'switch' || parent.subType === 'router')) {
+        vm.parentHostId = servers[0] ? servers[0].id : undefined;
+      }
+    } else if (servers[0]) {
+      vm.parentHostId = servers[0].id;
+    }
+  });
+
   // Auto-connect missing links so lines are guaranteed to be drawn
   switches.forEach((sw) => {
     if (!sw.connectedToSwitchId && rootNode && sw.id !== rootNode.id) {
@@ -625,47 +729,32 @@ function autoLayoutTopology(devList: Device[]): Device[] {
     }
   });
 
-  // Attach orphan VMs & Containers to primary hypervisor/docker host
-  vms.forEach((vm) => {
-    if (!vm.parentHostId && primaryServer) {
-      vm.parentHostId = primaryServer.id;
-    } else if (!vm.parentHostId && !vm.connectedToSwitchId && primarySwitch) {
-      vm.connectedToSwitchId = primarySwitch.id;
-    }
-  });
+  // Generous, airy layout parameters:
+  // Node card width is 256px -> colWidth 360px gives 104px horizontal breathing room
+  // Node card height is ~160px -> rowHeight 260px gives 100px vertical clearance for bezier lines and labels
+  const colWidth = 360;
+  const rowHeight = 260;
 
-  dockers.forEach((ct) => {
-    const dockerHost = servers.find((s) => s.name.toLowerCase().includes('docker')) || primaryServer;
-    if (!ct.parentHostId && dockerHost) {
-      ct.parentHostId = dockerHost.id;
-    } else if (!ct.parentHostId && !ct.connectedToSwitchId && primarySwitch) {
-      ct.connectedToSwitchId = primarySwitch.id;
-    }
-  });
-
-  // Layout parameters
-  const colWidth = 290;
-  const rowHeight = 180;
-
-  // Compute graph width and center
+  // Maximum items on any row to calculate canvas center
   const maxRowItems = Math.max(
     1,
     switches.length,
     servers.length,
-    Math.min(vms.length + dockers.length, 5),
-    Math.min(workstations.length, 5),
-    Math.min(iotAndOthers.length, 5)
+    Math.min(vms.length + dockers.length, 4),
+    Math.min(workstations.length, 4),
+    Math.min(iotAndOthers.length, 4)
   );
 
-  const graphCenterX = Math.max(500, (maxRowItems * colWidth) / 2 + 50);
+  const graphCenterX = Math.max(600, (maxRowItems * colWidth) / 2 + 100);
 
-  const layoutRow = (nodes: Device[], y: number, maxPerRow = 5) => {
+  // Helper to layout a list of nodes centered on rows
+  const layoutRow = (nodes: Device[], y: number, maxPerRow = 4) => {
     if (nodes.length === 0) return y;
     let currY = y;
     for (let i = 0; i < nodes.length; i += maxPerRow) {
       const chunk = nodes.slice(i, i + maxPerRow);
       const totalW = chunk.length * colWidth;
-      const startX = graphCenterX - totalW / 2 + (colWidth - 260) / 2;
+      const startX = graphCenterX - totalW / 2 + (colWidth - 256) / 2;
       chunk.forEach((node, idx) => {
         node.position = {
           x: Math.round(startX + idx * colWidth),
@@ -677,38 +766,83 @@ function autoLayoutTopology(devList: Device[]): Device[] {
     return currY;
   };
 
-  let currentY = 50;
+  let currentY = 60;
 
   // Tier 0: Root Gateway / Router
   if (rootNode) {
-    rootNode.position = { x: Math.round(graphCenterX - 130), y: currentY };
+    rootNode.position = { x: Math.round(graphCenterX - 128), y: currentY };
     currentY += rowHeight;
   }
 
-  // Tier 1: Switches & Access Points
+  // Tier 1: Network Switches & Wi-Fi Access Points
   if (switches.length > 0) {
     currentY = layoutRow(switches, currentY, 4);
   }
 
   // Tier 2: Physical Servers & Hypervisors & NAS
+  // Clustered Virtualization: Place child VMs / containers clustered beneath their specific parent host!
   if (servers.length > 0) {
-    currentY = layoutRow(servers, currentY, 4);
-  }
+    const serverSpacing = Math.max(colWidth, 380);
+    const totalServerWidth = servers.length * serverSpacing;
+    const startServerX = graphCenterX - totalServerWidth / 2 + (serverSpacing - 256) / 2;
 
-  // Tier 3: Virtual Machines & Containers
-  const virtualNodes = [...vms, ...dockers];
-  if (virtualNodes.length > 0) {
-    currentY = layoutRow(virtualNodes, currentY, 5);
+    const serverY = currentY;
+    servers.forEach((srv, sIdx) => {
+      const srvX = Math.round(startServerX + sIdx * serverSpacing);
+      srv.position = { x: srvX, y: serverY };
+    });
+
+    currentY += rowHeight;
+
+    // Place children for each server directly beneath it
+    let maxChildY = currentY;
+    servers.forEach((srv) => {
+      const children = [...vms, ...dockers].filter((c) => c.parentHostId === srv.id);
+      if (children.length > 0) {
+        const childColW = 310;
+        const maxChildPerRow = 2;
+        let cY = currentY;
+        for (let i = 0; i < children.length; i += maxChildPerRow) {
+          const chunk = children.slice(i, i + maxChildPerRow);
+          const totalW = chunk.length * childColW;
+          const startX = (srv.position?.x ?? 0) + 128 - totalW / 2 + (childColW - 256) / 2;
+          chunk.forEach((child, idx) => {
+            child.position = {
+              x: Math.round(startX + idx * childColW),
+              y: cY
+            };
+          });
+          cY += rowHeight - 20;
+        }
+        if (cY > maxChildY) maxChildY = cY;
+      }
+    });
+
+    // Place any orphan VMs / Docker containers
+    const orphanVirtuals = [...vms, ...dockers].filter(
+      (c) => !servers.some((s) => s.id === c.parentHostId)
+    );
+    if (orphanVirtuals.length > 0) {
+      maxChildY = layoutRow(orphanVirtuals, maxChildY, 4);
+    }
+
+    currentY = Math.max(currentY + rowHeight, maxChildY);
+  } else {
+    // If no physical servers exist, layout virtual nodes in their own tier
+    const virtualNodes = [...vms, ...dockers];
+    if (virtualNodes.length > 0) {
+      currentY = layoutRow(virtualNodes, currentY, 4);
+    }
   }
 
   // Tier 4: Workstations, PCs & Printers
   if (workstations.length > 0) {
-    currentY = layoutRow(workstations, currentY, 5);
+    currentY = layoutRow(workstations, currentY, 4);
   }
 
   // Tier 5: IoT & Others
   if (iotAndOthers.length > 0) {
-    currentY = layoutRow(iotAndOthers, currentY, 5);
+    currentY = layoutRow(iotAndOthers, currentY, 4);
   }
 
   return list;
@@ -1977,6 +2111,9 @@ app.post('/api/scan', async (req, res) => {
           const posX = 100 + (nextIndex % 7) * 170;
           const posY = 740 + Math.floor(nextIndex / 7) * 160;
 
+          const isDockerDevice = classification.deviceType === 'docker';
+          const dockerParent = isDockerDevice ? resolveDockerHost(devices) : undefined;
+
           const newDevice: Device = {
             id: `dev-${ip.replace(/\./g, '-')}-${Date.now().toString(36)}`,
             name: classification.name,
@@ -1986,11 +2123,12 @@ app.post('/api/scan', async (req, res) => {
             deviceType: classification.deviceType,
             subType: classification.subType,
             status: 'online',
-            connectedToSwitchId: mainSwitch ? mainSwitch.id : undefined,
+            parentHostId: isDockerDevice ? (dockerParent ? dockerParent.id : undefined) : undefined,
+            connectedToSwitchId: isDockerDevice ? undefined : (mainSwitch ? mainSwitch.id : undefined),
             vlan: 1,
             os: classification.os,
             openPorts: hostInfo.openPorts,
-            location: 'Découvert sur le réseau local',
+            location: isDockerDevice ? 'Conteneur sur hôte Docker' : 'Découvert sur le réseau local',
             tags: classification.tags,
             metadata: {
               'Méthode': 'Scan réseau automatique',
@@ -2019,7 +2157,7 @@ app.post('/api/scan', async (req, res) => {
       }
 
       // B) Process Local Docker containers if discovered via socket
-      const dockerHost = devices.find((d) => d.subType === 'server' && d.name.toLowerCase().includes('docker')) || mainSwitch;
+      const dockerHost = resolveDockerHost(devices);
       for (const ct of dockerContainers) {
         const ctId = ct.Id.substring(0, 12);
         const ctName = `Docker - ${(ct.Names[0] || ctId).replace(/^\//, '')}`;
@@ -2035,6 +2173,9 @@ app.post('/api/scan', async (req, res) => {
           existingCt.status = ct.State === 'running' ? 'online' : 'offline';
           existingCt.lastSeen = new Date().toISOString();
           existingCt.openPorts = openPorts;
+          if (!existingCt.parentHostId || existingCt.parentHostId === mainSwitch?.id) {
+            existingCt.parentHostId = dockerHost ? dockerHost.id : undefined;
+          }
           broadcastSse('device_updated', existingCt);
         } else {
           const posX = 120 + (devices.length % 7) * 170;
@@ -2054,7 +2195,7 @@ app.post('/api/scan', async (req, res) => {
             vlan: 1,
             os: ct.Image,
             openPorts,
-            location: 'Conteneur local hôte',
+            location: `Conteneur sur ${dockerHost.name}`,
             tags: ['Docker', 'Conteneur', 'Local'],
             metadata: {
               'Image': ct.Image,

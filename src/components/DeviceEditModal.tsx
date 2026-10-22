@@ -42,14 +42,17 @@ export const DeviceEditModal: React.FC<DeviceEditModalProps> = ({
   const [newMetaKey, setNewMetaKey] = useState('');
   const [newMetaVal, setNewMetaVal] = useState('');
 
-  // Physical host candidates (excluding itself)
+  // Physical host and hypervisor candidates (excluding itself and docker containers)
   const candidateHosts = allDevices.filter(
-    (d) => d.id !== device.id && d.deviceType === 'physical'
+    (d) =>
+      d.id !== device.id &&
+      (d.deviceType === 'physical' || d.subType === 'server' || d.subType === 'nas' || d.subType === 'vm') &&
+      d.deviceType !== 'docker'
   );
 
   // Switch or router candidates
   const candidateSwitches = allDevices.filter(
-    (d) => d.id !== device.id && (d.subType === 'switch' || d.subType === 'router')
+    (d) => d.id !== device.id && (d.subType === 'switch' || d.subType === 'router' || d.subType === 'access_point')
   );
 
   const handleAddTag = () => {
@@ -241,19 +244,31 @@ export const DeviceEditModal: React.FC<DeviceEditModalProps> = ({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-slate-400 font-medium mb-1">Hôte d'exécution physique</label>
+                <label className="block text-slate-400 font-medium mb-1">
+                  Hôte d'exécution (Serveur physique / Hyperviseur)
+                </label>
                 <select
                   value={parentHostId}
-                  onChange={(e) => setParentHostId(e.target.value)}
+                  onChange={(e) => {
+                    setParentHostId(e.target.value);
+                    if (e.target.value) {
+                      setConnectedToSwitchId(''); // Detach switch if attached to host
+                    }
+                  }}
                   className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-200 focus:outline-hidden focus:border-cyan-500"
                 >
                   <option value="">(Aucun hôte - Périphérique autonome)</option>
                   {candidateHosts.map((h) => (
                     <option key={h.id} value={h.id}>
-                      {h.name} ({h.ip})
+                      {h.name} ({h.ip}) — [{h.deviceType.toUpperCase()} - {h.subType.toUpperCase()}]
                     </option>
                   ))}
                 </select>
+                {deviceType === 'docker' && !parentHostId && (
+                  <span className="text-[10px] text-amber-400 mt-1 block">
+                    Conseil : Rattachez ce conteneur Docker à son serveur hôte pour regrouper visuellement les conteneurs.
+                  </span>
+                )}
               </div>
 
               <div>
