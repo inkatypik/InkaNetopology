@@ -1,7 +1,7 @@
 import React from 'react';
 import type { Device } from '../types/network';
 import { getDeviceDefaultIcon, getDeviceTypeColor } from '../utils/hardwareIcons';
-import { Activity, Edit3, Link2, MoreHorizontal, Radio } from 'lucide-react';
+import { Activity, Edit3, Link2, ChevronDown, ChevronRight, Layers } from 'lucide-react';
 
 interface DeviceNodeProps {
   device: Device;
@@ -10,7 +10,11 @@ interface DeviceNodeProps {
   onSelect: (device: Device) => void;
   onEdit: (device: Device) => void;
   onPing: (device: Device) => void;
+  onQuickLink?: (device: Device) => void;
   isDragging?: boolean;
+  childCount?: number;
+  isCollapsed?: boolean;
+  onToggleCollapse?: (hostId: string) => void;
 }
 
 export const DeviceNode: React.FC<DeviceNodeProps> = ({
@@ -20,10 +24,15 @@ export const DeviceNode: React.FC<DeviceNodeProps> = ({
   onSelect,
   onEdit,
   onPing,
-  isDragging
+  onQuickLink,
+  isDragging,
+  childCount = 0,
+  isCollapsed = false,
+  onToggleCollapse
 }) => {
   const typeStyle = getDeviceTypeColor(device.deviceType);
   const isOnline = device.status === 'online';
+  const hasChildren = childCount > 0;
 
   return (
     <div
@@ -35,74 +44,119 @@ export const DeviceNode: React.FC<DeviceNodeProps> = ({
         typeStyle.bg
       } ${
         isSelected
-          ? 'ring-2 ring-cyan-400 border-cyan-400 scale-[1.02] z-30'
+          ? 'ring-2 ring-cyan-400 border-cyan-400 scale-[1.02] z-30 shadow-cyan-900/30'
           : `${typeStyle.border} hover:shadow-cyan-950/20 z-10`
-      } ${isDragging ? 'opacity-85 shadow-2xl' : ''}`}
+      } ${isDragging ? 'opacity-85 shadow-2xl scale-[1.03]' : ''}`}
     >
       {/* Upper header: Icon / Custom Image + Status + Device Type */}
       <div className="flex items-start justify-between gap-2 mb-2">
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 min-w-0">
           {device.customImage ? (
             <img
               src={device.customImage}
               alt={device.name}
               referrerPolicy="no-referrer"
-              className="w-9 h-9 rounded-lg object-cover border border-slate-700 bg-slate-800"
+              className="w-9 h-9 rounded-lg object-cover border border-slate-700 bg-slate-800 shrink-0"
               onError={(e) => {
-                // fallback if image fails
                 (e.target as HTMLElement).style.display = 'none';
               }}
             />
           ) : (
-            <div className="w-9 h-9 rounded-lg bg-slate-800/80 border border-slate-700/60 flex items-center justify-center">
+            <div className="w-9 h-9 rounded-lg bg-slate-800/80 border border-slate-700/60 flex items-center justify-center shrink-0">
               {getDeviceDefaultIcon(device.subType, device.deviceType)}
             </div>
           )}
 
-          <div>
-            <h4 className="text-xs font-semibold text-slate-100 truncate max-w-[130px]" title={device.name}>
-              {device.name}
-            </h4>
-            <div className="flex items-center gap-1.5 text-[11px] font-mono tabular-nums text-slate-400">
+          <div className="min-w-0 flex-1">
+            {/* Equipment Name is directly clickable to open edit modal */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit(device);
+              }}
+              title={`Cliquer pour éditer la fiche de "${device.name}"`}
+              className="text-left group/title flex items-center gap-1.5 cursor-pointer max-w-full hover:opacity-100"
+            >
+              <h4 className="text-xs font-semibold text-slate-100 group-hover/title:text-cyan-300 group-hover/title:underline truncate max-w-[130px] transition-colors">
+                {device.name}
+              </h4>
+              <Edit3 className="w-3 h-3 text-slate-400 opacity-60 group-hover/title:opacity-100 group-hover/title:text-cyan-400 shrink-0 transition-opacity" />
+            </button>
+
+            <div className="flex items-center gap-1.5 text-[11px] font-mono tabular-nums text-slate-400 mt-0.5">
               <span>{device.ip}</span>
               <span className="text-slate-600">·</span>
-              <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-rose-500'}`} />
+              <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400 shadow-xs shadow-emerald-400/50' : 'bg-rose-500'}`} />
             </div>
           </div>
         </div>
 
         {/* Quick action buttons */}
-        <div className="flex items-center gap-1 opacity-70 hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-1 opacity-75 hover:opacity-100 transition-opacity shrink-0">
           <button
             onClick={(e) => {
               e.stopPropagation();
               onPing(device);
             }}
             title="Tester la connectivité (Ping / Diagnostic)"
-            className="p-1 rounded-md text-slate-400 hover:text-cyan-300 hover:bg-slate-800"
+            className="p-1 rounded-md text-slate-400 hover:text-cyan-300 hover:bg-slate-800 cursor-pointer transition-colors"
           >
             <Activity className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={(e) => {
               e.stopPropagation();
+              if (onQuickLink) {
+                onQuickLink(device);
+              } else {
+                onEdit(device);
+              }
+            }}
+            title="Modifier l'organisation et les liaisons (Hôte, Switch, Interface)"
+            className="p-1 rounded-md text-slate-400 hover:text-cyan-300 hover:bg-slate-800 cursor-pointer transition-colors"
+          >
+            <Link2 className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
               onEdit(device);
             }}
-            title="Éditer l'équipement et ses relations"
-            className="p-1 rounded-md text-slate-400 hover:text-cyan-300 hover:bg-slate-800"
+            title="Éditer la fiche complète de l'équipement"
+            className="p-1 rounded-md text-slate-400 hover:text-cyan-300 hover:bg-slate-800 cursor-pointer transition-colors"
           >
             <Edit3 className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
 
-      {/* Virtualization or Network Parent Attachment Info */}
+      {/* Virtualization or Network Parent Attachment Info (Clickable for fast link edit) */}
       {parentDevice && (
-        <div className="mb-2 px-2 py-1 bg-slate-950/70 border border-slate-800 rounded-md flex items-center gap-1.5 text-[10px] text-slate-300">
-          <Link2 className="w-3 h-3 text-cyan-400 shrink-0" />
-          <span className="text-slate-400">Hôte:</span>
-          <span className="font-medium text-slate-200 truncate">{parentDevice.name}</span>
-        </div>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onQuickLink) {
+              onQuickLink(device);
+            } else {
+              onEdit(device);
+            }
+          }}
+          title="Cliquer pour modifier le rattachement d'hôte"
+          className="w-full mb-2 px-2 py-1 bg-slate-950/70 hover:bg-slate-900 border border-slate-800 hover:border-cyan-800/80 rounded-md flex items-center justify-between text-[10px] text-slate-300 transition-colors cursor-pointer group/link"
+        >
+          <div className="flex items-center gap-1.5 min-w-0">
+            <Link2 className="w-3 h-3 text-cyan-400 shrink-0" />
+            <span className="text-slate-400">Hôte:</span>
+            <span className="font-medium text-slate-200 group-hover/link:text-cyan-300 truncate">
+              {parentDevice.name}
+            </span>
+          </div>
+          <span className="text-[9px] text-cyan-400 font-mono opacity-0 group-hover/link:opacity-100 transition-opacity">
+            Modifier
+          </span>
+        </button>
       )}
 
       {/* Hardware / Vendor & Interface Details */}
@@ -115,9 +169,21 @@ export const DeviceNode: React.FC<DeviceNodeProps> = ({
         {device.portOrInterface && (
           <div className="flex items-center justify-between">
             <span className="text-slate-500">Liaison:</span>
-            <span className="text-slate-300 font-mono text-[10px] truncate max-w-[120px]">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onQuickLink) {
+                  onQuickLink(device);
+                } else {
+                  onEdit(device);
+                }
+              }}
+              title="Cliquer pour modifier la liaison"
+              className="text-slate-300 hover:text-cyan-300 font-mono text-[10px] truncate max-w-[120px] hover:underline cursor-pointer"
+            >
               {device.portOrInterface}
-            </span>
+            </button>
           </div>
         )}
 
@@ -148,6 +214,37 @@ export const DeviceNode: React.FC<DeviceNodeProps> = ({
             </span>
           )}
         </div>
+      )}
+
+      {/* Expand / Collapse Control Pill for Host Nodes with Children */}
+      {hasChildren && onToggleCollapse && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleCollapse(device.id);
+          }}
+          title={isCollapsed ? `Déplier les ${childCount} conteneurs/VMs masqués` : `Replier les ${childCount} conteneurs/VMs`}
+          className={`w-full mt-2.5 px-2.5 py-1.5 rounded-lg text-[10px] font-medium flex items-center justify-between transition-all cursor-pointer border shadow-xs ${
+            isCollapsed
+              ? 'bg-amber-950/40 border-amber-600/50 text-amber-200 hover:bg-amber-900/60'
+              : 'bg-cyan-950/40 border-cyan-600/50 text-cyan-200 hover:bg-cyan-900/60'
+          }`}
+        >
+          <div className="flex items-center gap-1.5">
+            {isCollapsed ? (
+              <ChevronRight className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+            )}
+            <span className="font-semibold">
+              {isCollapsed ? `${childCount} machines masquées` : `${childCount} machines rattachées`}
+            </span>
+          </div>
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-900/80 border border-slate-700/60 font-mono">
+            {isCollapsed ? 'Déplier ▾' : 'Replier ▴'}
+          </span>
+        </button>
       )}
     </div>
   );

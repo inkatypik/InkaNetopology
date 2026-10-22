@@ -526,6 +526,7 @@ export default function App() {
             onSelectDevice={setSelectedDevice}
             onEditDevice={(dev) => setEditingDevice(dev)}
             onPingDevice={handlePingDevice}
+            onSaveDevice={handleSaveDevice}
             onUpdateDevicePosition={handleUpdatePosition}
             onAutoLayout={handleAutoLayout}
             onTriggerScan={handleTriggerScan}

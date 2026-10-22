@@ -1,19 +1,22 @@
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import type { Device } from '../types/network';
 import { DeviceNode } from './DeviceNode';
+import { QuickLinkModal } from './QuickLinkModal';
 import {
   ZoomIn,
   ZoomOut,
-  Maximize2,
   LayoutGrid,
-  Focus,
   AlertCircle,
   Radar,
   Plus,
   RotateCcw,
   Layers,
   Box,
-  Server
+  Server,
+  Link2,
+  Cpu,
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
 
 interface TopologyCanvasProps {
@@ -22,6 +25,7 @@ interface TopologyCanvasProps {
   onSelectDevice: (device: Device | null) => void;
   onEditDevice: (device: Device) => void;
   onPingDevice: (device: Device) => void;
+  onSaveDevice?: (device: Device) => void;
   onUpdateDevicePosition: (id: string, pos: { x: number; y: number }) => void;
   onAutoLayout?: () => void;
   onTriggerScan?: () => void;
@@ -36,6 +40,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   onSelectDevice,
   onEditDevice,
   onPingDevice,
+  onSaveDevice,
   onUpdateDevicePosition,
   onAutoLayout,
   onTriggerScan,
@@ -53,50 +58,24 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
 
-  // Auto-fit view to center all devices on canvas
-  const fitToView = useCallback(() => {
-    if (!containerRef.current || devices.length === 0) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return;
+  // Quick link modal state to edit organization and links directly on topology canvas
+  const [linkingDevice, setLinkingDevice] = useState<Device | null>(null);
 
-    let minX = Infinity;
-    let maxX = -Infinity;
-    let minY = Infinity;
-    let maxY = -Infinity;
+  // Collapsed host IDs (host groups folded/unfolded)
+  const [collapsedHostIds, setCollapsedHostIds] = useState<Set<string>>(new Set());
 
-    devices.forEach((d) => {
-      const x = d.position?.x ?? 100;
-      const y = d.position?.y ?? 100;
-      if (x < minX) minX = x;
-      if (x + 280 > maxX) maxX = x + 280;
-      if (y < minY) minY = y;
-      if (y + 200 > maxY) maxY = y + 200;
+  // Toggle single host group collapse
+  const toggleCollapseHost = (hostId: string) => {
+    setCollapsedHostIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(hostId)) {
+        next.delete(hostId);
+      } else {
+        next.add(hostId);
+      }
+      return next;
     });
-
-    if (minX === Infinity || maxX === -Infinity) return;
-
-    const graphW = Math.max(maxX - minX, 350);
-    const graphH = Math.max(maxY - minY, 250);
-    const padding = 80;
-
-    const scaleX = (rect.width - padding * 2) / graphW;
-    const scaleY = (rect.height - padding * 2) / graphH;
-    const newScale = Math.min(Math.max(Math.min(scaleX, scaleY), 0.25), 1.1);
-
-    const newOffsetX = (rect.width - graphW * newScale) / 2 - minX * newScale;
-    const newOffsetY = (rect.height - graphH * newScale) / 2 - minY * newScale;
-
-    setScale(+newScale.toFixed(2));
-    setOffset({ x: Math.round(newOffsetX), y: Math.round(newOffsetY) });
-  }, [devices]);
-
-  // Run fitToView on initial mount and when devices count changes
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      fitToView();
-    }, 150);
-    return () => clearTimeout(timer);
-  }, [devices.length, fitToView]);
+  };
 
   // NATIVE MOUSE WHEEL ZOOM WITH MOUSE-CENTERED TRANSFORM (PASSIVE: FALSE TO PREVENT PAGE SCROLL)
   useEffect(() => {
@@ -215,6 +194,35 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
     return map;
   }, [devices]);
 
+  // Compute children counts per host
+  const childrenCountMap = useMemo(() => {
+    const map = new Map<string, number>();
+    devices.forEach((d) => {
+      if (d.parentHostId) {
+        map.set(d.parentHostId, (map.get(d.parentHostId) || 0) + 1);
+      }
+    });
+    return map;
+  }, [devices]);
+
+  // Hosts that actually have children attached
+  const hostIdsWithChildren = useMemo(() => {
+    return Array.from(childrenCountMap.keys()).filter((id) => (childrenCountMap.get(id) || 0) > 0);
+  }, [childrenCountMap]);
+
+  // Filter visible devices based on collapsed host groups
+  const visibleDevices = useMemo(() => {
+    return devices.filter((d) => {
+      // Hide children if parent host is collapsed
+      if (d.parentHostId && collapsedHostIds.has(d.parentHostId)) {
+        return false;
+      }
+      return true;
+    });
+  }, [devices, collapsedHostIds]);
+
+  const visibleDeviceIds = useMemo(() => new Set(visibleDevices.map((d) => d.id)), [visibleDevices]);
+
   // Determine root switch or router for fallback automatic link drawing
   const rootSwitchOrRouter = useMemo(() => {
     return (
@@ -225,47 +233,57 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
     );
   }, [devices]);
 
-  // Links computation
+  // Links computation (only among visible nodes)
   const { physicalLinks, virtualLinks } = useMemo(() => {
     const phys: Array<{ from: Device; to: Device; label?: string; isAuto?: boolean }> = [];
     const virt: Array<{ host: Device; guest: Device; isDocker: boolean }> = [];
 
     devices.forEach((dev) => {
+      // If dev is hidden because its parent is collapsed, skip link rendering
+      if (!visibleDeviceIds.has(dev.id)) return;
+
       // 1. Virtualization link (VM or Docker container to host)
       if (dev.parentHostId && deviceMap.has(dev.parentHostId)) {
         const host = deviceMap.get(dev.parentHostId)!;
-        virt.push({
-          host,
-          guest: dev,
-          isDocker: dev.deviceType === 'docker'
-        });
+        // Only draw if host is also visible and host is not collapsed
+        if (visibleDeviceIds.has(host.id) && !collapsedHostIds.has(host.id)) {
+          virt.push({
+            host,
+            guest: dev,
+            isDocker: dev.deviceType === 'docker'
+          });
+        }
         return;
       }
 
       // 2. Explicit network switch link
       if (dev.connectedToSwitchId && deviceMap.has(dev.connectedToSwitchId)) {
         const sw = deviceMap.get(dev.connectedToSwitchId)!;
-        phys.push({
-          from: sw,
-          to: dev,
-          label: dev.portOrInterface
-        });
+        if (visibleDeviceIds.has(sw.id)) {
+          phys.push({
+            from: sw,
+            to: dev,
+            label: dev.portOrInterface
+          });
+        }
         return;
       }
 
       // 3. Fallback link to core router / switch (exclude hosts and virtuals with parent)
       if (rootSwitchOrRouter && dev.id !== rootSwitchOrRouter.id) {
-        phys.push({
-          from: rootSwitchOrRouter,
-          to: dev,
-          label: dev.portOrInterface || (dev.deviceType === 'iot' ? 'Wi-Fi / LAN' : 'LAN'),
-          isAuto: true
-        });
+        if (visibleDeviceIds.has(rootSwitchOrRouter.id)) {
+          phys.push({
+            from: rootSwitchOrRouter,
+            to: dev,
+            label: dev.portOrInterface || (dev.deviceType === 'iot' ? 'Wi-Fi / LAN' : 'LAN'),
+            isAuto: true
+          });
+        }
       }
     });
 
     return { physicalLinks: phys, virtualLinks: virt };
-  }, [devices, deviceMap, rootSwitchOrRouter]);
+  }, [devices, deviceMap, visibleDeviceIds, collapsedHostIds, rootSwitchOrRouter]);
 
   // CLUSTER BOUNDING BOXES FOR VISUAL CLARITY
   // Compute enclosing hulls for hosts that contain child VMs or Docker containers
@@ -277,6 +295,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
       hostName: string;
       isDocker: boolean;
       childCount: number;
+      isCollapsed: boolean;
       x: number;
       y: number;
       width: number;
@@ -297,7 +316,10 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
       const host = deviceMap.get(hostId);
       if (!host || children.length === 0) return;
 
-      const allNodes = [host, ...children];
+      const isCollapsed = collapsedHostIds.has(hostId);
+      // If collapsed, enclosing boundary only frames the host
+      const allNodes = isCollapsed ? [host] : [host, ...children];
+
       let minX = Infinity;
       let maxX = -Infinity;
       let minY = Infinity;
@@ -321,15 +343,30 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
         hostName: host.name,
         isDocker,
         childCount: children.length,
+        isCollapsed,
         x: Math.round(minX - padX),
-        y: Math.round(minY - padY - 26),
+        y: Math.round(minY - padY - 32),
         width: Math.round(maxX - minX + padX * 2),
-        height: Math.round(maxY - minY + padY * 2 + 26)
+        height: Math.round(maxY - minY + padY * 2 + 32)
       });
     });
 
     return clusters;
-  }, [devices, deviceMap, groupByHost]);
+  }, [devices, deviceMap, groupByHost, collapsedHostIds]);
+
+  // Check if all host groups are collapsed
+  const allCollapsed = useMemo(() => {
+    if (hostIdsWithChildren.length === 0) return false;
+    return hostIdsWithChildren.every((id) => collapsedHostIds.has(id));
+  }, [hostIdsWithChildren, collapsedHostIds]);
+
+  const toggleAllCollapse = () => {
+    if (allCollapsed) {
+      setCollapsedHostIds(new Set());
+    } else {
+      setCollapsedHostIds(new Set(hostIdsWithChildren));
+    }
+  };
 
   return (
     <div
@@ -359,12 +396,33 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
 
       {/* Floating Canvas Action Toolbar (Top-Right) */}
       <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+        {/* Direct Link Editor for selected device */}
+        {selectedDevice && (
+          <button
+            onClick={() => setLinkingDevice(selectedDevice)}
+            title={`Modifier l'organisation et les liaisons de "${selectedDevice.name}"`}
+            className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold bg-indigo-600/90 hover:bg-indigo-500 text-white rounded-lg shadow-xl backdrop-blur-md transition-all active:scale-95 border border-indigo-400/50 cursor-pointer animate-in fade-in"
+          >
+            <Link2 className="w-3.5 h-3.5 text-indigo-200" />
+            <span className="truncate max-w-[150px]">Liaisons : {selectedDevice.name}</span>
+          </button>
+        )}
+
+        {/* Global Expand / Collapse All Groups */}
+        {hostIdsWithChildren.length > 0 && (
+          <button
+            onClick={toggleAllCollapse}
+            title={allCollapsed ? 'Déplier tous les groupes hôtes/machines' : 'Replier tous les groupes hôtes/machines'}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-700/80 rounded-lg shadow-xl backdrop-blur-md transition-all active:scale-95 cursor-pointer"
+          >
+            <Layers className="w-3.5 h-3.5 text-cyan-400" />
+            <span>{allCollapsed ? 'Tout déplier' : 'Tout replier'}</span>
+          </button>
+        )}
+
         {onAutoLayout && (
           <button
-            onClick={() => {
-              onAutoLayout();
-              setTimeout(fitToView, 220);
-            }}
+            onClick={onAutoLayout}
             title="Réorganiser automatiquement le schéma en vue aérée et hiérarchique"
             className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold bg-cyan-600/95 hover:bg-cyan-500 text-white rounded-lg shadow-xl backdrop-blur-md transition-all active:scale-95 border border-cyan-400/50 cursor-pointer"
           >
@@ -372,18 +430,9 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
             <span>Réorganiser le schéma</span>
           </button>
         )}
-
-        <button
-          onClick={fitToView}
-          title="Centrer et ajuster la vue sur l'ensemble des équipements"
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-700/80 rounded-lg shadow-xl backdrop-blur-md transition-all active:scale-95 cursor-pointer"
-        >
-          <Focus className="w-3.5 h-3.5 text-cyan-400" />
-          <span>Centrer la vue</span>
-        </button>
       </div>
 
-      {/* Zoom / Pan Controls Overlay with Wheel Tip (Bottom-Right) */}
+      {/* Zoom Controls Overlay (Bottom-Right) - "Centrer la vue" is completely removed */}
       <div className="absolute bottom-5 right-5 z-20 flex flex-col items-end gap-2">
         <div className="flex items-center gap-1 p-1 bg-slate-900/95 border border-slate-800 rounded-xl shadow-2xl backdrop-blur-md">
           <button
@@ -404,17 +453,9 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
           <button
             onClick={() => handleSetScalePreset(1.0)}
             title="Échelle réelle 100%"
-            className="px-2 py-1 text-[11px] font-mono tabular-nums text-slate-300 hover:text-white hover:bg-slate-800 rounded-md transition-colors"
+            className="px-2 py-1 text-[11px] font-mono tabular-nums text-slate-300 hover:text-white hover:bg-slate-800 rounded-md transition-colors cursor-pointer"
           >
             100%
-          </button>
-
-          <button
-            onClick={fitToView}
-            title="Ajuster la vue pour voir tous les équipements"
-            className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-          >
-            <Maximize2 className="w-4 h-4 text-cyan-400" />
           </button>
 
           <div className="px-2.5 py-0.5 text-[11px] font-mono tabular-nums text-cyan-400 font-semibold border-l border-slate-800">
@@ -424,7 +465,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
 
         {/* Mouse wheel helper badge */}
         <div className="px-2 py-0.5 rounded-md bg-slate-900/80 border border-slate-800/80 text-[10px] text-slate-400 font-mono pointer-events-none backdrop-blur-xs">
-          Molette : Zoom · Clic & Glisser : Déplacement
+          Molette : Zoom · Glisser : Déplacement · Clic Nom : Éditer
         </div>
       </div>
 
@@ -485,12 +526,20 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
           {/* 1. VISUAL HOST CLUSTER ENCLOSING BOUNDARIES (DOCKER & VM GROUPS) */}
           {hostClusters.map((cluster) => {
             const isDocker = cluster.isDocker;
-            const strokeColor = isDocker ? 'rgba(34, 211, 238, 0.4)' : 'rgba(129, 140, 248, 0.4)';
-            const fillColor = isDocker ? 'rgba(8, 47, 73, 0.22)' : 'rgba(49, 46, 129, 0.22)';
-            const textColor = isDocker ? '#38bdf8' : '#a5b4fc';
+            const isCollapsed = cluster.isCollapsed;
+            const strokeColor = isCollapsed
+              ? 'rgba(245, 158, 11, 0.45)'
+              : isDocker
+              ? 'rgba(34, 211, 238, 0.4)'
+              : 'rgba(129, 140, 248, 0.4)';
+            const fillColor = isCollapsed
+              ? 'rgba(69, 26, 3, 0.15)'
+              : isDocker
+              ? 'rgba(8, 47, 73, 0.22)'
+              : 'rgba(49, 46, 129, 0.22)';
 
             return (
-              <g key={`cluster-${cluster.hostId}`} className="animate-in fade-in duration-300">
+              <g key={`cluster-${cluster.hostId}`} className="transition-all duration-300">
                 {/* Rounded enclosure rect */}
                 <rect
                   x={cluster.x}
@@ -502,32 +551,8 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
                   fill={fillColor}
                   stroke={strokeColor}
                   strokeWidth="1.5"
-                  strokeDasharray="6 4"
+                  strokeDasharray={isCollapsed ? '4 4' : '6 4'}
                 />
-
-                {/* Cluster Header Badge */}
-                <g transform={`translate(${cluster.x + 14}, ${cluster.y + 18})`}>
-                  <rect
-                    x="0"
-                    y="-12"
-                    width={Math.min(cluster.width - 28, 280)}
-                    height="20"
-                    rx="6"
-                    fill={isDocker ? 'rgba(12, 74, 110, 0.9)' : 'rgba(30, 27, 75, 0.9)'}
-                    stroke={strokeColor}
-                    strokeWidth="1"
-                  />
-                  <text
-                    x="10"
-                    y="2"
-                    fill={textColor}
-                    fontSize="11"
-                    fontWeight="600"
-                    fontFamily="Inter, system-ui, sans-serif"
-                  >
-                    {isDocker ? '⚡ Cluster Docker' : '🖥️ Hyperviseur'} · {cluster.childCount} {isDocker ? 'conteneurs' : 'VMs'}
-                  </text>
-                </g>
               </g>
             );
           })}
@@ -616,12 +641,88 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
           })}
         </svg>
 
-        {/* Device Nodes Layer */}
-        {devices.map((device) => {
+        {/* Interactive Cluster Headers (Expand / Collapse groups) */}
+        {hostClusters.map((cluster) => {
+          const isDocker = cluster.isDocker;
+          const isCollapsed = cluster.isCollapsed;
+
+          return (
+            <div
+              key={`cluster-hdr-${cluster.hostId}`}
+              style={{
+                position: 'absolute',
+                left: `${cluster.x + 14}px`,
+                top: `${cluster.y + 8}px`,
+                zIndex: 15
+              }}
+              className="pointer-events-auto flex items-center gap-2"
+            >
+              <div
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border shadow-lg backdrop-blur-md text-xs font-semibold ${
+                  isCollapsed
+                    ? 'bg-amber-950/90 border-amber-500/50 text-amber-200'
+                    : isDocker
+                    ? 'bg-sky-950/90 border-cyan-500/50 text-cyan-200'
+                    : 'bg-indigo-950/90 border-indigo-500/50 text-indigo-200'
+                }`}
+              >
+                <span className="flex items-center gap-1.5">
+                  {isDocker ? (
+                    <Cpu className="w-3.5 h-3.5 text-cyan-400" />
+                  ) : (
+                    <Server className="w-3.5 h-3.5 text-indigo-400" />
+                  )}
+                  <span>{cluster.hostName}</span>
+                  <span className="text-slate-400 font-normal">·</span>
+                  <span className="font-mono text-[11px] text-slate-300">
+                    {cluster.childCount} {isDocker ? 'conteneurs' : 'VMs'}
+                  </span>
+                </span>
+
+                {/* Direct Fold / Unfold Button */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleCollapseHost(cluster.hostId);
+                  }}
+                  title={
+                    isCollapsed
+                      ? `Déplier les ${cluster.childCount} machines masquées`
+                      : 'Replier ce groupe pour aérer la vue'
+                  }
+                  className={`ml-1 flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono transition-all cursor-pointer border ${
+                    isCollapsed
+                      ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/40'
+                      : 'bg-slate-800/80 hover:bg-slate-700 text-slate-200 border-slate-700'
+                  }`}
+                >
+                  {isCollapsed ? (
+                    <>
+                      <ChevronRight className="w-3 h-3 text-amber-400" />
+                      <span>Déplier ({cluster.childCount})</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="w-3 h-3 text-cyan-400" />
+                      <span>Replier</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Visible Device Nodes Layer */}
+        {visibleDevices.map((device) => {
           const pos = device.position || { x: 100, y: 100 };
           const parentDevice = device.parentHostId
             ? deviceMap.get(device.parentHostId)
             : undefined;
+
+          const childCount = childrenCountMap.get(device.id) || 0;
+          const isCollapsed = collapsedHostIds.has(device.id);
 
           return (
             <div
@@ -640,12 +741,31 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
                 onSelect={onSelectDevice}
                 onEdit={onEditDevice}
                 onPing={onPingDevice}
+                onQuickLink={(dev) => setLinkingDevice(dev)}
                 isDragging={draggedNodeId === device.id}
+                childCount={childCount}
+                isCollapsed={isCollapsed}
+                onToggleCollapse={toggleCollapseHost}
               />
             </div>
           );
         })}
       </div>
+
+      {/* Direct On-Canvas Quick Link & Organization Editor Modal */}
+      <QuickLinkModal
+        device={linkingDevice}
+        allDevices={devices}
+        isOpen={Boolean(linkingDevice)}
+        onClose={() => setLinkingDevice(null)}
+        onSave={(updated) => {
+          if (onSaveDevice) {
+            onSaveDevice(updated);
+          } else {
+            onEditDevice(updated);
+          }
+        }}
+      />
 
       {/* Empty State Overlay when inventory is completely cleared (0 devices) */}
       {devices.length === 0 && (
