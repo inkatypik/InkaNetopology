@@ -10,7 +10,7 @@ import dns from 'dns';
 import { execFile, exec } from 'child_process';
 import { promisify } from 'util';
 import { fileURLToPath } from 'url';
-import type { Device, DeviceType, DeviceSubType, NetworkLog, ScanStatus } from './src/types/network.js';
+import type { Device, DeviceType, DeviceSubType, NetworkLog, ScanStatus, GeographicZone, ZoneType } from './src/types/network.js';
 
 const execPromise = promisify(exec);
 const execFilePromise = promisify(execFile);
@@ -27,6 +27,55 @@ app.use(express.json());
 // ---------------- PERSISTENCE ----------------
 const DATA_DIR = path.resolve(__dirname, 'data');
 const DEVICES_FILE = path.join(DATA_DIR, 'devices.json');
+const ZONES_FILE = path.join(DATA_DIR, 'zones.json');
+
+// Default Geographic Zones (Pièces, Baies, Sous-Répartiteurs, Sites)
+const defaultZones: GeographicZone[] = [
+  {
+    id: 'zone-baie-01',
+    name: 'Baie Rack 42U - Salle Serveurs',
+    type: 'baie',
+    description: 'Armoire principale réseau & serveurs hyperviseurs',
+    color: '#0ea5e9' // sky
+  },
+  {
+    id: 'zone-sr-01',
+    name: 'Sous-Répartiteur Étage 1',
+    type: 'sous_repartiteur',
+    description: 'Baie murale distribution secondaire & switchs d\'accès',
+    color: '#10b981' // emerald
+  },
+  {
+    id: 'zone-datacenter',
+    name: 'Salle Informatique / Datacenter',
+    type: 'piece',
+    description: 'Local technique sécurisé et climatisé',
+    color: '#6366f1' // indigo
+  },
+  {
+    id: 'zone-bureau',
+    name: 'Bureau Ingénierie & CAO',
+    type: 'piece',
+    description: 'Postes de travail haute performance & développement',
+    color: '#f59e0b' // amber
+  },
+  {
+    id: 'zone-salon',
+    name: 'Salon / Espace Domotique',
+    type: 'piece',
+    description: 'Hubs domotiques, passerelles Zigbee et éclairage connecté',
+    color: '#ec4899' // pink
+  },
+  {
+    id: 'zone-site-hq',
+    name: 'Site Siège Central',
+    type: 'site',
+    description: 'Site principal de l\'infrastructure',
+    color: '#8b5cf6' // purple
+  }
+];
+
+let zones: GeographicZone[] = [];
 
 // Default initial baseline topology
 const defaultDevices: Device[] = [
@@ -531,35 +580,84 @@ const defaultDevices: Device[] = [
 
 let devices: Device[] = [];
 
-// Helper: find or resolve the best candidate Docker host among physical servers/hosts
-function resolveDockerHost(devList: Device[]): Device {
-  // 1. Look for host with docker/portainer open ports (2375, 2376, 9000, 9443)
+// Helper: accurately resolve the exact host machine for any container or guest
+function findBestHostForContainer(
+  container: Partial<Device>,
+  devList: Device[]
+): Device | undefined {
+  // 1. If container already has a valid host assigned, preserve it!
+  if (container.parentHostId) {
+    const existingParent = devList.find((d) => d.id === container.parentHostId);
+    if (
+      existingParent &&
+      existingParent.subType !== 'switch' &&
+      existingParent.subType !== 'router' &&
+      existingParent.id !== container.id
+    ) {
+      return existingParent;
+    }
+  }
+
+  // 2. Exact IP match with a physical server / host machine (Docker bridge/host port forwarding)
+  if (container.ip) {
+    const hostWithSameIp = devList.find(
+      (d) =>
+        d.id !== container.id &&
+        d.ip === container.ip &&
+        d.deviceType === 'physical' &&
+        d.subType !== 'switch' &&
+        d.subType !== 'router' &&
+        d.subType !== 'access_point'
+    );
+    if (hostWithSameIp) return hostWithSameIp;
+  }
+
+  // 3. Name or location reference match (e.g. location "Conteneur sur HP ProDesk" -> matches server "HP ProDesk")
+  const locOrName = `${container.location || ''} ${container.name || ''}`.toLowerCase();
+  const hostByRef = devList.find(
+    (d) =>
+      d.id !== container.id &&
+      (d.deviceType === 'physical' || d.subType === 'server') &&
+      d.subType !== 'switch' &&
+      d.subType !== 'router' &&
+      (locOrName.includes(d.name.toLowerCase()) ||
+        (d.metadata && Object.values(d.metadata).some((v) => typeof v === 'string' && locOrName.includes(v.toLowerCase()))))
+  );
+  if (hostByRef) return hostByRef;
+
+  // 4. Server explicitly tagged with 'docker' or named 'docker'
+  const byDockerTag = devList.find(
+    (d) =>
+      d.id !== container.id &&
+      d.deviceType === 'physical' &&
+      (d.name.toLowerCase().includes('docker') ||
+        d.tags?.some((t) => t.toLowerCase().includes('docker')))
+  );
+  if (byDockerTag) return byDockerTag;
+
+  // 5. Host with docker/portainer open ports (2375, 2376, 9000, 9443)
   const byPort = devList.find(
     (d) =>
+      d.id !== container.id &&
       d.deviceType === 'physical' &&
       d.openPorts &&
       d.openPorts.some((p) => [2375, 2376, 9000, 9443].includes(p))
   );
   if (byPort) return byPort;
 
-  // 2. Server or host with 'docker' in name or tags
-  const byName = devList.find(
-    (d) =>
-      d.deviceType === 'physical' &&
-      (d.name.toLowerCase().includes('docker') ||
-        d.tags?.some((t) => t.toLowerCase().includes('docker')))
-  );
-  if (byName) return byName;
-
-  // 3. Any physical server or NAS
+  // 6. Any dedicated physical server or NAS
   const byServer = devList.find(
-    (d) => d.deviceType === 'physical' && (d.subType === 'server' || d.subType === 'nas')
+    (d) =>
+      d.id !== container.id &&
+      d.deviceType === 'physical' &&
+      (d.subType === 'server' || d.subType === 'nas')
   );
   if (byServer) return byServer;
 
-  // 4. Any physical host (excluding switches and routers)
+  // 7. General physical host fallback
   const byPhysical = devList.find(
     (d) =>
+      d.id !== container.id &&
       d.deviceType === 'physical' &&
       d.subType !== 'switch' &&
       d.subType !== 'router' &&
@@ -567,7 +665,7 @@ function resolveDockerHost(devList: Device[]): Device {
   );
   if (byPhysical) return byPhysical;
 
-  // 5. If no physical server exists in inventory (e.g. fresh scan from empty),
+  // 8. If no physical server exists in inventory (e.g. fresh scan from empty),
   // represent the local host machine running Docker Engine
   const netInfo = getNetworkInterfaces();
   const primaryIf = netInfo.interfaces[0];
@@ -595,14 +693,23 @@ function resolveDockerHost(devList: Device[]): Device {
     },
     lastSeen: new Date().toISOString(),
     latencyMs: 0.1,
-    position: { x: 400, y: 320 }
+    position: { x: 1350, y: 700 }
   };
   devList.unshift(newHost);
   broadcastSse('device_added', newHost);
   return newHost;
 }
 
-// Intelligent tiered auto-layout algorithm for network topology
+// Backward-compatible alias for existing calls
+function resolveDockerHost(devList: Device[], container?: Partial<Device>): Device {
+  const host = findBestHostForContainer(container || {}, devList);
+  if (host) return host;
+  return devList[0];
+}
+
+// TOPOLOGIE EN ÉTOILE (Star Topology Layout):
+// The network core ("cœur de réseau" / router / gateway) sits directly at the CENTER of the star.
+// Radial branches radiate outwards in concentric rings and sectors:
 function autoLayoutTopology(devList: Device[]): Device[] {
   if (!devList || devList.length === 0) return [];
 
@@ -610,21 +717,22 @@ function autoLayoutTopology(devList: Device[]): Device[] {
   const devMap = new Map<string, Device>();
   list.forEach((d) => devMap.set(d.id, d));
 
-  // 1. Identify Root Gateway / Router
-  let rootNode = list.find(
+  // 1. Identify Root Cœur de Réseau (Gateway / Core Router)
+  let coreNode = list.find(
     (d) =>
       d.subType === 'router' ||
       d.ip.endsWith('.1') ||
       d.ip.endsWith('.254') ||
       d.name.toLowerCase().includes('passerelle') ||
-      d.name.toLowerCase().includes('router') ||
+      d.name.toLowerCase().includes('cœur') ||
+      d.name.toLowerCase().includes('coeur') ||
       d.name.toLowerCase().includes('gateway') ||
       d.name.toLowerCase().includes('box') ||
       d.name.toLowerCase().includes('udm')
   );
 
-  if (!rootNode) {
-    rootNode =
+  if (!coreNode) {
+    coreNode =
       list.find((d) => d.subType === 'switch') ||
       list.find((d) => d.deviceType === 'physical') ||
       list[0];
@@ -632,82 +740,47 @@ function autoLayoutTopology(devList: Device[]): Device[] {
 
   // 2. Identify Switches & Access points
   const switches = list.filter(
-    (d) => d.id !== rootNode?.id && (d.subType === 'switch' || d.subType === 'access_point')
+    (d) => d.id !== coreNode?.id && (d.subType === 'switch' || d.subType === 'access_point')
   );
-  const primarySwitch = switches[0] || rootNode;
+  const primarySwitch = switches[0] || coreNode;
 
   // 3. Identify Physical Servers, Hypervisors, NAS
   const servers = list.filter(
     (d) =>
-      d.id !== rootNode?.id &&
+      d.id !== coreNode?.id &&
       !switches.some((s) => s.id === d.id) &&
       d.deviceType === 'physical' &&
       (d.subType === 'server' || d.subType === 'nas')
   );
 
-  // Best docker host candidate
-  let defaultDockerHost: Device | undefined;
-  if (list.some((d) => d.deviceType === 'docker')) {
-    defaultDockerHost = resolveDockerHost(list);
-    if (defaultDockerHost && !servers.some((s) => s.id === defaultDockerHost?.id)) {
-      servers.push(defaultDockerHost);
-    }
-  }
-
-  // 4. Identify Virtual Machines
+  // 4. Identify Virtual Machines & Docker Containers
   const vms = list.filter((d) => d.deviceType === 'vm');
-
-  // 5. Identify Docker Containers
   const dockers = list.filter((d) => d.deviceType === 'docker');
 
-  // 6. Identify Client Workstations & PCs
-  const workstations = list.filter(
-    (d) =>
-      d.id !== rootNode?.id &&
-      !switches.some((s) => s.id === d.id) &&
-      !servers.some((s) => s.id === d.id) &&
-      d.deviceType === 'physical' &&
-      (d.subType === 'workstation' || d.subType === 'printer')
-  );
-
-  // 7. Identify IoT Devices & Others
-  const iotAndOthers = list.filter(
-    (d) =>
-      d.id !== rootNode?.id &&
-      !switches.some((s) => s.id === d.id) &&
-      !servers.some((s) => s.id === d.id) &&
-      !vms.some((v) => v.id === d.id) &&
-      !dockers.some((c) => c.id === d.id) &&
-      !workstations.some((w) => w.id === d.id)
-  );
-
-  // Clean up invalid host attachments (e.g. docker container attached to a switch or router)
+  // Accurately assign parent hosts for containers and VMs if missing or invalid
   dockers.forEach((ct) => {
-    if (ct.parentHostId) {
-      const parent = devMap.get(ct.parentHostId);
-      if (parent && (parent.subType === 'switch' || parent.subType === 'router')) {
-        ct.parentHostId = defaultDockerHost ? defaultDockerHost.id : undefined;
+    const bestHost = findBestHostForContainer(ct, list);
+    if (!ct.parentHostId || !devMap.has(ct.parentHostId)) {
+      if (bestHost) ct.parentHostId = bestHost.id;
+    } else {
+      const currentParent = devMap.get(ct.parentHostId);
+      if (currentParent && (currentParent.subType === 'switch' || currentParent.subType === 'router')) {
+        if (bestHost) ct.parentHostId = bestHost.id;
       }
-    } else if (defaultDockerHost) {
-      ct.parentHostId = defaultDockerHost.id;
     }
   });
 
   vms.forEach((vm) => {
-    if (vm.parentHostId) {
-      const parent = devMap.get(vm.parentHostId);
-      if (parent && (parent.subType === 'switch' || parent.subType === 'router')) {
-        vm.parentHostId = servers[0] ? servers[0].id : undefined;
-      }
-    } else if (servers[0]) {
-      vm.parentHostId = servers[0].id;
+    if (!vm.parentHostId || !devMap.has(vm.parentHostId)) {
+      const pve = servers.find((s) => s.name.toLowerCase().includes('proxmox') || s.tags?.includes('Hyperviseur')) || servers[0];
+      if (pve) vm.parentHostId = pve.id;
     }
   });
 
-  // Auto-connect missing links so lines are guaranteed to be drawn
+  // Ensure switch connections exist
   switches.forEach((sw) => {
-    if (!sw.connectedToSwitchId && rootNode && sw.id !== rootNode.id) {
-      sw.connectedToSwitchId = rootNode.id;
+    if (!sw.connectedToSwitchId && coreNode && sw.id !== coreNode.id) {
+      sw.connectedToSwitchId = coreNode.id;
     }
   });
 
@@ -716,6 +789,26 @@ function autoLayoutTopology(devList: Device[]): Device[] {
       srv.connectedToSwitchId = primarySwitch.id;
     }
   });
+
+  // 5. Workstations, IoT, Printers
+  const workstations = list.filter(
+    (d) =>
+      d.id !== coreNode?.id &&
+      !switches.some((s) => s.id === d.id) &&
+      !servers.some((s) => s.id === d.id) &&
+      d.deviceType === 'physical' &&
+      (d.subType === 'workstation' || d.subType === 'printer')
+  );
+
+  const iotAndOthers = list.filter(
+    (d) =>
+      d.id !== coreNode?.id &&
+      !switches.some((s) => s.id === d.id) &&
+      !servers.some((s) => s.id === d.id) &&
+      !vms.some((v) => v.id === d.id) &&
+      !dockers.some((c) => c.id === d.id) &&
+      !workstations.some((w) => w.id === d.id)
+  );
 
   workstations.forEach((ws) => {
     if (!ws.connectedToSwitchId && primarySwitch && ws.id !== primarySwitch.id) {
@@ -729,121 +822,124 @@ function autoLayoutTopology(devList: Device[]): Device[] {
     }
   });
 
-  // Generous, airy layout parameters:
-  // Node card width is 256px -> colWidth 360px gives 104px horizontal breathing room
-  // Node card height is ~160px -> rowHeight 260px gives 100px vertical clearance for bezier lines and labels
-  const colWidth = 360;
-  const rowHeight = 260;
+  // ---------------- STAR GEOMETRY ----------------
+  const centerX = 1350;
+  const centerY = 1200;
+  const halfNodeW = 128;
+  const halfNodeH = 85;
 
-  // Maximum items on any row to calculate canvas center
-  const maxRowItems = Math.max(
-    1,
-    switches.length,
-    servers.length,
-    Math.min(vms.length + dockers.length, 4),
-    Math.min(workstations.length, 4),
-    Math.min(iotAndOthers.length, 4)
+  const R_RING1 = 440;
+  const R_RING2 = 850;
+  const R_RING3 = 1240;
+
+  // 1. PLACE CORE AT THE EXACT CENTER
+  if (coreNode) {
+    coreNode.position = {
+      x: Math.round(centerX - halfNodeW),
+      y: Math.round(centerY - halfNodeH)
+    };
+  }
+
+  // 2. BUILD MAIN STAR RAYS (Branches)
+  interface StarBranch {
+    head: Device;
+    children: Device[];
+  }
+
+  const starBranches: StarBranch[] = [];
+
+  // Branch A: Primary Switches
+  switches.forEach((sw) => {
+    const attachedEndpoints = [...workstations, ...iotAndOthers].filter(
+      (e) => e.connectedToSwitchId === sw.id
+    );
+    starBranches.push({
+      head: sw,
+      children: attachedEndpoints
+    });
+  });
+
+  // Branch B: Physical Servers with child VMs / Containers
+  servers.forEach((srv) => {
+    const srvChildren = [...vms, ...dockers].filter((c) => c.parentHostId === srv.id);
+    starBranches.push({
+      head: srv,
+      children: srvChildren
+    });
+  });
+
+  // Branch C: Direct core endpoints
+  const directCoreEndpoints = [...workstations, ...iotAndOthers].filter(
+    (e) => !starBranches.some((b) => b.children.some((c) => c.id === e.id))
   );
 
-  const graphCenterX = Math.max(600, (maxRowItems * colWidth) / 2 + 100);
-
-  // Helper to layout a list of nodes centered on rows
-  const layoutRow = (nodes: Device[], y: number, maxPerRow = 4) => {
-    if (nodes.length === 0) return y;
-    let currY = y;
-    for (let i = 0; i < nodes.length; i += maxPerRow) {
-      const chunk = nodes.slice(i, i + maxPerRow);
-      const totalW = chunk.length * colWidth;
-      const startX = graphCenterX - totalW / 2 + (colWidth - 256) / 2;
-      chunk.forEach((node, idx) => {
-        node.position = {
-          x: Math.round(startX + idx * colWidth),
-          y: currY
-        };
+  if (directCoreEndpoints.length > 0) {
+    const chunkSize = Math.ceil(directCoreEndpoints.length / 2);
+    for (let i = 0; i < directCoreEndpoints.length; i += chunkSize) {
+      const slice = directCoreEndpoints.slice(i, i + chunkSize);
+      const head = slice[0];
+      starBranches.push({
+        head,
+        children: slice.slice(1)
       });
-      currY += rowHeight;
     }
-    return currY;
-  };
-
-  let currentY = 60;
-
-  // Tier 0: Root Gateway / Router
-  if (rootNode) {
-    rootNode.position = { x: Math.round(graphCenterX - 128), y: currentY };
-    currentY += rowHeight;
   }
 
-  // Tier 1: Network Switches & Wi-Fi Access Points
-  if (switches.length > 0) {
-    currentY = layoutRow(switches, currentY, 4);
-  }
+  const placedIds = new Set<string>();
+  if (coreNode) placedIds.add(coreNode.id);
+  starBranches.forEach((b) => {
+    placedIds.add(b.head.id);
+    b.children.forEach((c) => placedIds.add(c.id));
+  });
 
-  // Tier 2: Physical Servers & Hypervisors & NAS
-  // Clustered Virtualization: Place child VMs / containers clustered beneath their specific parent host!
-  if (servers.length > 0) {
-    const serverSpacing = Math.max(colWidth, 380);
-    const totalServerWidth = servers.length * serverSpacing;
-    const startServerX = graphCenterX - totalServerWidth / 2 + (serverSpacing - 256) / 2;
-
-    const serverY = currentY;
-    servers.forEach((srv, sIdx) => {
-      const srvX = Math.round(startServerX + sIdx * serverSpacing);
-      srv.position = { x: srvX, y: serverY };
+  const unassigned = list.filter((d) => !placedIds.has(d.id));
+  if (unassigned.length > 0) {
+    unassigned.forEach((u) => {
+      starBranches.push({
+        head: u,
+        children: []
+      });
     });
+  }
 
-    currentY += rowHeight;
+  // 3. RADIAL DISTRIBUTION
+  const branchCount = Math.max(1, starBranches.length);
+  const angleStep = (2 * Math.PI) / branchCount;
 
-    // Place children for each server directly beneath it
-    let maxChildY = currentY;
-    servers.forEach((srv) => {
-      const children = [...vms, ...dockers].filter((c) => c.parentHostId === srv.id);
-      if (children.length > 0) {
-        const childColW = 310;
-        const maxChildPerRow = 2;
-        let cY = currentY;
-        for (let i = 0; i < children.length; i += maxChildPerRow) {
-          const chunk = children.slice(i, i + maxChildPerRow);
-          const totalW = chunk.length * childColW;
-          const startX = (srv.position?.x ?? 0) + 128 - totalW / 2 + (childColW - 256) / 2;
-          chunk.forEach((child, idx) => {
-            child.position = {
-              x: Math.round(startX + idx * childColW),
-              y: cY
-            };
-          });
-          cY += rowHeight - 20;
-        }
-        if (cY > maxChildY) maxChildY = cY;
+  starBranches.forEach((branch, bIdx) => {
+    const baseAngle = -Math.PI / 2 + bIdx * angleStep;
+
+    const headX = centerX + R_RING1 * Math.cos(baseAngle) - halfNodeW;
+    const headY = centerY + R_RING1 * Math.sin(baseAngle) - halfNodeH;
+    branch.head.position = {
+      x: Math.round(headX),
+      y: Math.round(headY)
+    };
+
+    const childCount = branch.children.length;
+    if (childCount === 0) return;
+
+    const maxSpan = Math.min(angleStep * 0.85, 0.35 * childCount);
+    const halfSpan = maxSpan / 2;
+
+    branch.children.forEach((child, cIdx) => {
+      let childAngle = baseAngle;
+      if (childCount > 1) {
+        childAngle = baseAngle - halfSpan + (cIdx / (childCount - 1)) * maxSpan;
       }
+
+      const useRing3 = cIdx >= 4;
+      const radius = useRing3 ? R_RING3 : R_RING2;
+
+      const cX = centerX + radius * Math.cos(childAngle) - halfNodeW;
+      const cY = centerY + radius * Math.sin(childAngle) - halfNodeH;
+
+      child.position = {
+        x: Math.round(cX),
+        y: Math.round(cY)
+      };
     });
-
-    // Place any orphan VMs / Docker containers
-    const orphanVirtuals = [...vms, ...dockers].filter(
-      (c) => !servers.some((s) => s.id === c.parentHostId)
-    );
-    if (orphanVirtuals.length > 0) {
-      maxChildY = layoutRow(orphanVirtuals, maxChildY, 4);
-    }
-
-    currentY = Math.max(currentY + rowHeight, maxChildY);
-  } else {
-    // If no physical servers exist, layout virtual nodes in their own tier
-    const virtualNodes = [...vms, ...dockers];
-    if (virtualNodes.length > 0) {
-      currentY = layoutRow(virtualNodes, currentY, 4);
-    }
-  }
-
-  // Tier 4: Workstations, PCs & Printers
-  if (workstations.length > 0) {
-    currentY = layoutRow(workstations, currentY, 4);
-  }
-
-  // Tier 5: IoT & Others
-  if (iotAndOthers.length > 0) {
-    currentY = layoutRow(iotAndOthers, currentY, 4);
-  }
+  });
 
   return list;
 }
@@ -859,6 +955,36 @@ function saveDevicesToFile() {
   }
 }
 
+function saveZonesToFile() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(ZONES_FILE, JSON.stringify(zones, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Erreur sauvegarde zones.json:', err);
+  }
+}
+
+function loadZonesFromFile() {
+  try {
+    if (fs.existsSync(ZONES_FILE)) {
+      const content = fs.readFileSync(ZONES_FILE, 'utf-8');
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        zones = parsed;
+        console.log(`[InkaNetopology] ${zones.length} zones géographiques chargées depuis ${ZONES_FILE}`);
+        return;
+      }
+    }
+  } catch (err) {
+    console.error('Erreur lecture zones.json:', err);
+  }
+  // Fallback to default initial zones
+  zones = [...defaultZones];
+  saveZonesToFile();
+}
+
 function loadDevicesFromFile() {
   try {
     if (fs.existsSync(DEVICES_FILE)) {
@@ -866,6 +992,32 @@ function loadDevicesFromFile() {
       const parsed = JSON.parse(content);
       if (Array.isArray(parsed)) {
         devices = parsed;
+
+        // Ensure devices have zoneId if missing
+        let hasZoneUpdates = false;
+        devices.forEach((d) => {
+          if (!d.zoneId) {
+            hasZoneUpdates = true;
+            if (d.subType === 'router' || d.subType === 'switch' || d.id === 'dev-host-proxmox' || d.id === 'dev-host-docker' || d.id === 'dev-nas-synology' || d.id === 'dev-iot-plug01') {
+              d.zoneId = 'zone-baie-01';
+            } else if (d.subType === 'camera') {
+              d.zoneId = 'zone-sr-01';
+            } else if (d.subType === 'workstation' || d.subType === 'printer') {
+              d.zoneId = 'zone-bureau';
+            } else if (d.tags?.includes('Domotique') || d.name.toLowerCase().includes('hue') || d.name.toLowerCase().includes('mosquitto')) {
+              d.zoneId = 'zone-salon';
+            } else if (d.deviceType === 'vm' || d.deviceType === 'docker') {
+              d.zoneId = 'zone-datacenter';
+            } else {
+              d.zoneId = 'zone-site-hq';
+            }
+          }
+        });
+
+        if (hasZoneUpdates) {
+          saveDevicesToFile();
+        }
+
         console.log(`[InkaNetopology] ${devices.length} équipements chargés depuis ${DEVICES_FILE}`);
         return;
       }
@@ -878,7 +1030,8 @@ function loadDevicesFromFile() {
   saveDevicesToFile();
 }
 
-// Initial load
+// Initial load for zones and devices
+loadZonesFromFile();
 loadDevicesFromFile();
 
 // Global scan cancellation flag
@@ -1618,6 +1771,104 @@ app.get('/api/interfaces', (req, res) => {
   });
 });
 
+// ---------------- GEOGRAPHIC ZONES API ROUTES ----------------
+// Get all zones
+app.get('/api/zones', (req, res) => {
+  res.json(zones);
+});
+
+// Create a new zone
+app.post('/api/zones', (req, res) => {
+  const { name, type, description, color } = req.body;
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'Le nom de la zone est requis.' });
+  }
+
+  const newZone: GeographicZone = {
+    id: req.body.id || `zone-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    name: name.trim(),
+    type: type || 'piece',
+    description: description || '',
+    color: color || '#0ea5e9'
+  };
+
+  zones.push(newZone);
+  saveZonesToFile();
+
+  addLog({
+    level: 'INFO',
+    category: 'SYSTEM',
+    message: `Nouvelle zone géographique créée: "${newZone.name}" (${newZone.type})`
+  });
+
+  broadcastSse('zone_added', newZone);
+  res.status(201).json(newZone);
+});
+
+// Update / Rename a zone
+app.put('/api/zones/:id', (req, res) => {
+  const { id } = req.params;
+  const index = zones.findIndex((z) => z.id === id);
+  if (index === -1) {
+    return res.status(404).json({ error: 'Zone géographique non trouvée.' });
+  }
+
+  const prev = zones[index];
+  const updated: GeographicZone = {
+    ...prev,
+    ...req.body,
+    id // keep id
+  };
+
+  zones[index] = updated;
+  saveZonesToFile();
+
+  addLog({
+    level: 'INFO',
+    category: 'SYSTEM',
+    message: `Zone géographique mise à jour: "${updated.name}" (${updated.type})`
+  });
+
+  broadcastSse('zone_updated', updated);
+  res.json(updated);
+});
+
+// Delete a zone
+app.delete('/api/zones/:id', (req, res) => {
+  const { id } = req.params;
+  const index = zones.findIndex((z) => z.id === id);
+  if (index === -1) {
+    return res.status(404).json({ error: 'Zone géographique non trouvée.' });
+  }
+
+  const removed = zones[index];
+  zones = zones.filter((z) => z.id !== id);
+  saveZonesToFile();
+
+  // Clear zoneId from assigned devices
+  let deviceUpdated = false;
+  devices.forEach((d) => {
+    if (d.zoneId === id) {
+      delete d.zoneId;
+      deviceUpdated = true;
+    }
+  });
+
+  if (deviceUpdated) {
+    saveDevicesToFile();
+    broadcastSse('topology_updated', devices);
+  }
+
+  addLog({
+    level: 'WARN',
+    category: 'SYSTEM',
+    message: `Zone géographique supprimée: "${removed.name}"`
+  });
+
+  broadcastSse('zone_deleted', { id });
+  res.json({ success: true, id });
+});
+
 // Get all devices
 app.get('/api/devices', (req, res) => {
   res.json(devices);
@@ -2074,9 +2325,12 @@ app.post('/api/scan', async (req, res) => {
         const mac = hostInfo.mac || '02:00:00:' + ip.split('.').map((p) => (+p).toString(16).padStart(2, '0')).slice(1).join(':');
         const vendor = lookupVendor(mac);
 
-        // Check if device already exists in inventory by IP or MAC
+        // Check if device already exists in inventory by MAC or physical host IP
         const existingIndex = devices.findIndex(
-          (d) => d.ip === ip || (d.mac && d.mac !== '00:00:00:00:00:00' && d.mac.toLowerCase() === mac.toLowerCase())
+          (d) =>
+            (d.mac && d.mac !== '00:00:00:00:00:00' && d.mac.toLowerCase() === mac.toLowerCase()) ||
+            (d.ip === ip && d.deviceType === 'physical') ||
+            (d.ip === ip && !devices.some((other) => other.ip === ip && other.deviceType === 'physical'))
         );
 
         if (existingIndex !== -1) {
@@ -2112,7 +2366,26 @@ app.post('/api/scan', async (req, res) => {
           const posY = 740 + Math.floor(nextIndex / 7) * 160;
 
           const isDockerDevice = classification.deviceType === 'docker';
-          const dockerParent = isDockerDevice ? resolveDockerHost(devices) : undefined;
+          const isVmDevice = classification.deviceType === 'vm';
+          
+          // Smart container-to-host association: accurately bind to the real host server
+          const containerParent = isDockerDevice
+            ? findBestHostForContainer({ ip, mac, name: classification.name }, devices)
+            : undefined;
+
+          // Default zone assignment based on device type
+          let defaultZoneId = 'zone-site-hq';
+          if (classification.subType === 'router' || classification.subType === 'switch' || classification.subType === 'server' || classification.subType === 'nas') {
+            defaultZoneId = 'zone-baie-01';
+          } else if (classification.subType === 'camera') {
+            defaultZoneId = 'zone-sr-01';
+          } else if (classification.subType === 'workstation' || classification.subType === 'printer') {
+            defaultZoneId = 'zone-bureau';
+          } else if (classification.deviceType === 'iot') {
+            defaultZoneId = 'zone-salon';
+          } else if (isDockerDevice || isVmDevice) {
+            defaultZoneId = containerParent?.zoneId || 'zone-datacenter';
+          }
 
           const newDevice: Device = {
             id: `dev-${ip.replace(/\./g, '-')}-${Date.now().toString(36)}`,
@@ -2123,12 +2396,15 @@ app.post('/api/scan', async (req, res) => {
             deviceType: classification.deviceType,
             subType: classification.subType,
             status: 'online',
-            parentHostId: isDockerDevice ? (dockerParent ? dockerParent.id : undefined) : undefined,
+            zoneId: defaultZoneId,
+            parentHostId: isDockerDevice ? (containerParent ? containerParent.id : undefined) : undefined,
             connectedToSwitchId: isDockerDevice ? undefined : (mainSwitch ? mainSwitch.id : undefined),
             vlan: 1,
             os: classification.os,
             openPorts: hostInfo.openPorts,
-            location: isDockerDevice ? 'Conteneur sur hôte Docker' : 'Découvert sur le réseau local',
+            location: isDockerDevice
+              ? `Conteneur sur ${containerParent ? containerParent.name : 'hôte Docker'}`
+              : 'Découvert sur le réseau local',
             tags: classification.tags,
             metadata: {
               'Méthode': 'Scan réseau automatique',
@@ -2149,7 +2425,7 @@ app.post('/api/scan', async (req, res) => {
             category: newDevice.deviceType === 'docker' ? 'DOCKER' : newDevice.deviceType === 'vm' ? 'VM' : newDevice.deviceType === 'iot' ? 'IOT' : 'ARP',
             ip: newDevice.ip,
             deviceId: newDevice.id,
-            message: `Nouvel équipement découvert et ajouté à l'inventaire: ${newDevice.name} (${newDevice.ip} - ${newDevice.mac})`
+            message: `Nouvel équipement découvert: ${newDevice.name} (${newDevice.ip} - ${newDevice.mac})${containerParent ? ` [Rattaché à ${containerParent.name}]` : ''}`
           });
 
           broadcastSse('device_added', newDevice);
@@ -2157,7 +2433,15 @@ app.post('/api/scan', async (req, res) => {
       }
 
       // B) Process Local Docker containers if discovered via socket
-      const dockerHost = resolveDockerHost(devices);
+      // Associate with local machine host or server dedicated to Docker
+      const dockerHost = findBestHostForContainer(
+        {
+          name: 'Docker Engine Daemon',
+          location: 'Serveur Dédié Docker'
+        },
+        devices
+      );
+
       for (const ct of dockerContainers) {
         const ctId = ct.Id.substring(0, 12);
         const ctName = `Docker - ${(ct.Names[0] || ctId).replace(/^\//, '')}`;
@@ -2184,18 +2468,19 @@ app.post('/api/scan', async (req, res) => {
           const newContainer: Device = {
             id: `docker-${ctId}`,
             name: ctName,
-            ip: ct.NetworkSettings?.Networks?.bridge?.IPAddress || '127.0.0.1',
+            ip: ct.NetworkSettings?.Networks?.bridge?.IPAddress || (dockerHost ? dockerHost.ip : '127.0.0.1'),
             mac: '02:42:ac:11:' + ctId.slice(0, 4).match(/../g)?.join(':') || '02:42:ac:11:00:99',
             vendor: 'Docker Inc.',
             deviceType: 'docker',
             subType: 'container',
             status: ct.State === 'running' ? 'online' : 'offline',
+            zoneId: dockerHost?.zoneId || 'zone-datacenter',
             parentHostId: dockerHost ? dockerHost.id : undefined,
             portOrInterface: `Docker Engine (${ct.Image})`,
             vlan: 1,
             os: ct.Image,
             openPorts,
-            location: `Conteneur sur ${dockerHost.name}`,
+            location: `Conteneur sur ${dockerHost ? dockerHost.name : 'hôte Docker'}`,
             tags: ['Docker', 'Conteneur', 'Local'],
             metadata: {
               'Image': ct.Image,
@@ -2215,7 +2500,7 @@ app.post('/api/scan', async (req, res) => {
             level: 'DISCOVERY',
             category: 'DOCKER',
             deviceId: newContainer.id,
-            message: `Nouveau conteneur Docker détecté et ajouté à l'inventaire: ${newContainer.name} (${ct.Image})`
+            message: `Nouveau conteneur Docker détecté: ${newContainer.name} rattaché à l'hôte ${dockerHost ? dockerHost.name : 'hôte par défaut'}`
           });
 
           broadcastSse('device_added', newContainer);

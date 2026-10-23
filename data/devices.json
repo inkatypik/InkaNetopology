@@ -33,9 +33,10 @@
     "lastSeen": "2026-10-22T08:42:37.530Z",
     "latencyMs": 0.8,
     "position": {
-      "x": 645,
-      "y": 50
-    }
+      "x": 1222,
+      "y": 1115
+    },
+    "zoneId": "zone-baie-01"
   },
   {
     "id": "dev-switch-01",
@@ -70,9 +71,10 @@
     "lastSeen": "2026-10-22T08:42:37.530Z",
     "latencyMs": 1.1,
     "position": {
-      "x": 645,
-      "y": 230
-    }
+      "x": 1222,
+      "y": 675
+    },
+    "zoneId": "zone-baie-01"
   },
   {
     "id": "dev-host-proxmox",
@@ -108,9 +110,10 @@
     "lastSeen": "2026-10-22T08:42:37.530Z",
     "latencyMs": 0.9,
     "position": {
-      "x": 355,
-      "y": 410
-    }
+      "x": 1662,
+      "y": 1115
+    },
+    "zoneId": "zone-baie-01"
   },
   {
     "id": "dev-host-docker",
@@ -145,9 +148,10 @@
     "lastSeen": "2026-10-22T08:42:37.530Z",
     "latencyMs": 1.2,
     "position": {
-      "x": 645,
-      "y": 410
-    }
+      "x": 1222,
+      "y": 1555
+    },
+    "zoneId": "zone-baie-01"
   },
   {
     "id": "dev-nas-01",
@@ -185,9 +189,10 @@
     "lastSeen": "2026-10-22T08:42:37.530Z",
     "latencyMs": 1,
     "position": {
-      "x": 935,
-      "y": 410
-    }
+      "x": 782,
+      "y": 1115
+    },
+    "zoneId": "zone-site-hq"
   },
   {
     "id": "dev-vm-101",
@@ -223,9 +228,10 @@
     "lastSeen": "2026-10-22T08:42:37.530Z",
     "latencyMs": 0.4,
     "position": {
-      "x": 65,
-      "y": 590
-    }
+      "x": 1958,
+      "y": 689
+    },
+    "zoneId": "zone-datacenter"
   },
   {
     "id": "dev-vm-102",
@@ -260,9 +266,10 @@
     "lastSeen": "2026-10-22T08:42:37.530Z",
     "latencyMs": 0.5,
     "position": {
-      "x": 355,
-      "y": 590
-    }
+      "x": 2072,
+      "y": 1115
+    },
+    "zoneId": "zone-salon"
   },
   {
     "id": "dev-vm-103",
@@ -299,9 +306,10 @@
     "lastSeen": "2026-10-22T08:42:37.530Z",
     "latencyMs": 0.6,
     "position": {
-      "x": 645,
-      "y": 590
-    }
+      "x": 1958,
+      "y": 1541
+    },
+    "zoneId": "zone-datacenter"
   },
   {
     "id": "dev-ct-nginx",
@@ -336,9 +344,10 @@
     "lastSeen": "2026-10-22T08:42:37.530Z",
     "latencyMs": 0.2,
     "position": {
-      "x": 935,
-      "y": 590
-    }
+      "x": 1748,
+      "y": 1783
+    },
+    "zoneId": "zone-datacenter"
   },
   {
     "id": "dev-ct-portainer",
@@ -371,9 +380,10 @@
     "lastSeen": "2026-10-22T08:42:37.530Z",
     "latencyMs": 0.2,
     "position": {
-      "x": 1225,
-      "y": 590
-    }
+      "x": 1410,
+      "y": 1944
+    },
+    "zoneId": "zone-datacenter"
   },
   {
     "id": "dev-ct-mqtt",
@@ -406,9 +416,10 @@
     "lastSeen": "2026-10-22T08:42:37.530Z",
     "latencyMs": 0.2,
     "position": {
-      "x": 500,
-      "y": 770
-    }
+      "x": 1034,
+      "y": 1944
+    },
+    "zoneId": "zone-salon"
   },
   {
     "id": "dev-ct-postgres",
@@ -440,9 +451,10 @@
     "lastSeen": "2026-10-22T08:42:37.530Z",
     "latencyMs": 0.3,
     "position": {
-      "x": 790,
-      "y": 770
-    }
+      "x": 696,
+      "y": 1783
+    },
+    "zoneId": "zone-datacenter"
   },
   {
     "id": "dev-iot-cam01",
@@ -478,9 +490,10 @@
     "lastSeen": "2026-10-22T08:42:37.530Z",
     "latencyMs": 2.4,
     "position": {
-      "x": 65,
-      "y": 1130
-    }
+      "x": 856,
+      "y": 348
+    },
+    "zoneId": "zone-sr-01"
   },
   {
     "id": "dev-iot-cam02",
@@ -516,9 +529,10 @@
     "lastSeen": "2026-10-22T08:42:37.530Z",
     "latencyMs": 2.1,
     "position": {
-      "x": 355,
-      "y": 1130
-    }
+      "x": 1034,
+      "y": 286
+    },
+    "zoneId": "zone-sr-01"
   },
   {
     "id": "dev-iot-pir01",
@@ -553,9 +567,10 @@
     "lastSeen": "2026-10-22T08:42:37.530Z",
     "latencyMs": 4.8,
     "position": {
-      "x": 645,
-      "y": 1130
-    }
+      "x": 1222,
+      "y": 265
+    },
+    "zoneId": "zone-salon"
   },
   {
     "id": "dev-iot-temp01",
@@ -590,9 +605,10 @@
     "lastSeen": "2026-10-22T08:42:37.530Z",
     "latencyMs": 3.2,
     "position": {
-      "x": 935,
-      "y": 1130
-    }
+      "x": 1496,
+      "y": -94
+    },
+    "zoneId": "zone-site-hq"
   },
   {
     "id": "dev-iot-plug01",
@@ -627,9 +643,10 @@
     "lastSeen": "2026-10-22T08:42:37.530Z",
     "latencyMs": 3.6,
     "position": {
-      "x": 1225,
-      "y": 1130
-    }
+      "x": 1756,
+      "y": -4
+    },
+    "zoneId": "zone-baie-01"
   },
   {
     "id": "dev-iot-hue",
@@ -663,9 +680,10 @@
     "lastSeen": "2026-10-22T08:42:37.530Z",
     "latencyMs": 1.8,
     "position": {
-      "x": 645,
-      "y": 1310
-    }
+      "x": 1990,
+      "y": 141
+    },
+    "zoneId": "zone-salon"
   },
   {
     "id": "dev-pc-xps",
@@ -699,8 +717,9 @@
     "lastSeen": "2026-10-22T08:42:37.530Z",
     "latencyMs": 1.1,
     "position": {
-      "x": 645,
-      "y": 950
-    }
+      "x": 696,
+      "y": 447
+    },
+    "zoneId": "zone-bureau"
   }
 ]

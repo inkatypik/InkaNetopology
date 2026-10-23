@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
-import type { Device } from '../types/network';
+import type { Device, GeographicZone } from '../types/network';
 import { DeviceNode } from './DeviceNode';
 import { QuickLinkModal } from './QuickLinkModal';
 import {
@@ -7,7 +7,6 @@ import {
   ZoomOut,
   LayoutGrid,
   AlertCircle,
-  Radar,
   Plus,
   RotateCcw,
   Layers,
@@ -16,11 +15,19 @@ import {
   Link2,
   Cpu,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  MapPin,
+  Home,
+  Building2,
+  Check,
+  Edit2,
+  Star,
+  Compass
 } from 'lucide-react';
 
 interface TopologyCanvasProps {
   devices: Device[];
+  zones?: GeographicZone[];
   selectedDevice: Device | null;
   onSelectDevice: (device: Device | null) => void;
   onEditDevice: (device: Device) => void;
@@ -31,11 +38,15 @@ interface TopologyCanvasProps {
   onTriggerScan?: () => void;
   onResetTopology?: () => void;
   onOpenAddModal?: () => void;
+  onSaveZone?: (zone: GeographicZone) => void;
+  onDeleteZone?: (zoneId: string) => void;
+  onOpenZoneManager?: () => void;
   groupByHost: boolean;
 }
 
 export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   devices,
+  zones = [],
   selectedDevice,
   onSelectDevice,
   onEditDevice,
@@ -46,11 +57,14 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   onTriggerScan,
   onResetTopology,
   onOpenAddModal,
+  onSaveZone,
+  onDeleteZone,
+  onOpenZoneManager,
   groupByHost
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(0.85);
-  const [offset, setOffset] = useState({ x: 80, y: 40 });
+  const [scale, setScale] = useState(0.72);
+  const [offset, setOffset] = useState({ x: -280, y: -220 });
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
 
@@ -63,6 +77,13 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
 
   // Collapsed host IDs (host groups folded/unfolded)
   const [collapsedHostIds, setCollapsedHostIds] = useState<Set<string>>(new Set());
+
+  // Show / Hide geographic zone enclosures
+  const [showZoneEnclosures, setShowZoneEnclosures] = useState(true);
+
+  // Inline zone renaming state
+  const [renamingZoneId, setRenamingZoneId] = useState<string | null>(null);
+  const [renamingZoneName, setRenamingZoneName] = useState<string>('');
 
   // Toggle single host group collapse
   const toggleCollapseHost = (hostId: string) => {
@@ -88,11 +109,10 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
 
-      // Smooth zoom factor based on wheel delta
       const zoomFactor = e.deltaY < 0 ? 1.12 : 0.89;
 
       setScale((prevScale) => {
-        const nextScale = Math.min(Math.max(prevScale * zoomFactor, 0.2), 2.5);
+        const nextScale = Math.min(Math.max(prevScale * zoomFactor, 0.18), 2.5);
         setOffset((prevOffset) => {
           const nextOffsetX = mouseX - (mouseX - prevOffset.x) * (nextScale / prevScale);
           const nextOffsetY = mouseY - (mouseY - prevOffset.y) * (nextScale / prevScale);
@@ -116,7 +136,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
     const centerY = rect.height / 2;
 
     setScale((prevScale) => {
-      const nextScale = Math.min(Math.max(prevScale + delta, 0.2), 2.5);
+      const nextScale = Math.min(Math.max(prevScale + delta, 0.18), 2.5);
       setOffset((prevOffset) => {
         const nextOffsetX = centerX - (centerX - prevOffset.x) * (nextScale / prevScale);
         const nextOffsetY = centerY - (centerY - prevOffset.y) * (nextScale / prevScale);
@@ -187,11 +207,35 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
     }
   };
 
-  // Map for fast node lookups
+  // Maps for fast lookups
   const deviceMap = useMemo(() => {
     const map = new Map<string, Device>();
     devices.forEach((d) => map.set(d.id, d));
     return map;
+  }, [devices]);
+
+  const zoneMap = useMemo(() => {
+    const map = new Map<string, GeographicZone>();
+    zones.forEach((z) => map.set(z.id, z));
+    return map;
+  }, [zones]);
+
+  // Identify Core Network Node (Center of the Star)
+  const coreNode = useMemo(() => {
+    return (
+      devices.find(
+        (d) =>
+          d.subType === 'router' ||
+          d.tags?.some((t) => t.toLowerCase().includes('passerelle') || t.toLowerCase().includes('cœur')) ||
+          d.name.toLowerCase().includes('cœur') ||
+          d.name.toLowerCase().includes('coeur') ||
+          d.name.toLowerCase().includes('udm') ||
+          d.ip.endsWith('.1') ||
+          d.ip.endsWith('.254')
+      ) ||
+      devices.find((d) => d.subType === 'switch') ||
+      devices[0]
+    );
   }, [devices]);
 
   // Compute children counts per host
@@ -213,7 +257,6 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   // Filter visible devices based on collapsed host groups
   const visibleDevices = useMemo(() => {
     return devices.filter((d) => {
-      // Hide children if parent host is collapsed
       if (d.parentHostId && collapsedHostIds.has(d.parentHostId)) {
         return false;
       }
@@ -223,29 +266,17 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
 
   const visibleDeviceIds = useMemo(() => new Set(visibleDevices.map((d) => d.id)), [visibleDevices]);
 
-  // Determine root switch or router for fallback automatic link drawing
-  const rootSwitchOrRouter = useMemo(() => {
-    return (
-      devices.find((d) => d.subType === 'switch') ||
-      devices.find((d) => d.subType === 'router') ||
-      devices.find((d) => d.ip.endsWith('.1') || d.ip.endsWith('.254')) ||
-      devices[0]
-    );
-  }, [devices]);
-
   // Links computation (only among visible nodes)
   const { physicalLinks, virtualLinks } = useMemo(() => {
     const phys: Array<{ from: Device; to: Device; label?: string; isAuto?: boolean }> = [];
     const virt: Array<{ host: Device; guest: Device; isDocker: boolean }> = [];
 
     devices.forEach((dev) => {
-      // If dev is hidden because its parent is collapsed, skip link rendering
       if (!visibleDeviceIds.has(dev.id)) return;
 
       // 1. Virtualization link (VM or Docker container to host)
       if (dev.parentHostId && deviceMap.has(dev.parentHostId)) {
         const host = deviceMap.get(dev.parentHostId)!;
-        // Only draw if host is also visible and host is not collapsed
         if (visibleDeviceIds.has(host.id) && !collapsedHostIds.has(host.id)) {
           virt.push({
             host,
@@ -269,11 +300,11 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
         return;
       }
 
-      // 3. Fallback link to core router / switch (exclude hosts and virtuals with parent)
-      if (rootSwitchOrRouter && dev.id !== rootSwitchOrRouter.id) {
-        if (visibleDeviceIds.has(rootSwitchOrRouter.id)) {
+      // 3. Fallback star ray link to core router / switch
+      if (coreNode && dev.id !== coreNode.id) {
+        if (visibleDeviceIds.has(coreNode.id)) {
           phys.push({
-            from: rootSwitchOrRouter,
+            from: coreNode,
             to: dev,
             label: dev.portOrInterface || (dev.deviceType === 'iot' ? 'Wi-Fi / LAN' : 'LAN'),
             isAuto: true
@@ -283,10 +314,9 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
     });
 
     return { physicalLinks: phys, virtualLinks: virt };
-  }, [devices, deviceMap, visibleDeviceIds, collapsedHostIds, rootSwitchOrRouter]);
+  }, [devices, deviceMap, visibleDeviceIds, collapsedHostIds, coreNode]);
 
-  // CLUSTER BOUNDING BOXES FOR VISUAL CLARITY
-  // Compute enclosing hulls for hosts that contain child VMs or Docker containers
+  // CLUSTER BOUNDING BOXES FOR HOST VIRTUALIZATION
   const hostClusters = useMemo(() => {
     if (!groupByHost) return [];
 
@@ -302,7 +332,6 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
       height: number;
     }> = [];
 
-    // Group children by host
     const childrenByHost = new Map<string, Device[]>();
     devices.forEach((d) => {
       if (d.parentHostId) {
@@ -317,7 +346,6 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
       if (!host || children.length === 0) return;
 
       const isCollapsed = collapsedHostIds.has(hostId);
-      // If collapsed, enclosing boundary only frames the host
       const allNodes = isCollapsed ? [host] : [host, ...children];
 
       let minX = Infinity;
@@ -354,6 +382,62 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
     return clusters;
   }, [devices, deviceMap, groupByHost, collapsedHostIds]);
 
+  // GEOGRAPHIC ZONE ENCLOSING BOUNDARIES (Pièces, Baies, Sous-Répartiteurs, Sites)
+  const zoneClusters = useMemo(() => {
+    if (!showZoneEnclosures) return [];
+
+    const clusters: Array<{
+      zone: GeographicZone;
+      deviceCount: number;
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    }> = [];
+
+    const devicesByZone = new Map<string, Device[]>();
+    visibleDevices.forEach((d) => {
+      if (d.zoneId) {
+        const list = devicesByZone.get(d.zoneId) || [];
+        list.push(d);
+        devicesByZone.set(d.zoneId, list);
+      }
+    });
+
+    devicesByZone.forEach((devs, zId) => {
+      const zone = zoneMap.get(zId);
+      if (!zone || devs.length === 0) return;
+
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minY = Infinity;
+      let maxY = -Infinity;
+
+      devs.forEach((node) => {
+        const x = node.position?.x ?? 100;
+        const y = node.position?.y ?? 100;
+        if (x < minX) minX = x;
+        if (x + 256 > maxX) maxX = x + 256;
+        if (y < minY) minY = y;
+        if (y + 170 > maxY) maxY = y + 170;
+      });
+
+      const padX = 36;
+      const padY = 32;
+
+      clusters.push({
+        zone,
+        deviceCount: devs.length,
+        x: Math.round(minX - padX),
+        y: Math.round(minY - padY - 36),
+        width: Math.round(maxX - minX + padX * 2),
+        height: Math.round(maxY - minY + padY * 2 + 36)
+      });
+    });
+
+    return clusters;
+  }, [visibleDevices, zoneMap, showZoneEnclosures]);
+
   // Check if all host groups are collapsed
   const allCollapsed = useMemo(() => {
     if (hostIdsWithChildren.length === 0) return false;
@@ -365,6 +449,39 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
       setCollapsedHostIds(new Set());
     } else {
       setCollapsedHostIds(new Set(hostIdsWithChildren));
+    }
+  };
+
+  // Start inline zone renaming
+  const handleStartRenameZone = (zone: GeographicZone) => {
+    setRenamingZoneId(zone.id);
+    setRenamingZoneName(zone.name);
+  };
+
+  // Submit inline zone renaming
+  const handleSaveRenameZone = (zone: GeographicZone) => {
+    if (renamingZoneName.trim() && onSaveZone) {
+      onSaveZone({
+        ...zone,
+        name: renamingZoneName.trim()
+      });
+    }
+    setRenamingZoneId(null);
+  };
+
+  // Helper for zone type icon
+  const getZoneTypeIcon = (type: string) => {
+    switch (type) {
+      case 'baie':
+        return <Server className="w-3.5 h-3.5" />;
+      case 'sous_repartiteur':
+        return <Layers className="w-3.5 h-3.5" />;
+      case 'piece':
+        return <Home className="w-3.5 h-3.5" />;
+      case 'site':
+        return <Building2 className="w-3.5 h-3.5" />;
+      default:
+        return <MapPin className="w-3.5 h-3.5" />;
     }
   };
 
@@ -389,13 +506,13 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
           </div>
           <h3 className="text-base font-semibold text-slate-200">Aucun équipement sur la topologie</h3>
           <p className="text-xs text-slate-400 max-w-sm mt-1">
-            Lancez un scan réseau ou ajoutez un équipement manuellement pour générer automatiquement le schéma.
+            Lancez un scan réseau ou ajoutez un équipement manuellement pour générer automatiquement le schéma en étoile.
           </p>
         </div>
       )}
 
       {/* Floating Canvas Action Toolbar (Top-Right) */}
-      <div className="absolute top-4 right-4 z-20 flex items-center gap-2">
+      <div className="absolute top-4 right-4 z-20 flex items-center gap-2 flex-wrap justify-end">
         {/* Direct Link Editor for selected device */}
         {selectedDevice && (
           <button
@@ -405,6 +522,32 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
           >
             <Link2 className="w-3.5 h-3.5 text-indigo-200" />
             <span className="truncate max-w-[150px]">Liaisons : {selectedDevice.name}</span>
+          </button>
+        )}
+
+        {/* Geographic Zones Toggle */}
+        <button
+          onClick={() => setShowZoneEnclosures(!showZoneEnclosures)}
+          title={showZoneEnclosures ? 'Masquer les délimitations de zones' : 'Afficher les délimitations de zones'}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg shadow-xl backdrop-blur-md transition-all active:scale-95 border cursor-pointer ${
+            showZoneEnclosures
+              ? 'bg-amber-950/70 border-amber-500/60 text-amber-200 hover:bg-amber-900/60'
+              : 'bg-slate-900/90 border-slate-700/80 text-slate-300 hover:bg-slate-800'
+          }`}
+        >
+          <MapPin className="w-3.5 h-3.5 text-amber-400" />
+          <span>Zones géographiques</span>
+        </button>
+
+        {/* Zone Manager Modal Trigger */}
+        {onOpenZoneManager && (
+          <button
+            onClick={onOpenZoneManager}
+            title="Gérer, ajouter ou renommer les zones géographiques (pièces, baies, sous-répartiteurs, sites)"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-700/80 rounded-lg shadow-xl backdrop-blur-md transition-all active:scale-95 cursor-pointer"
+          >
+            <Edit2 className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Gérer les zones ({zones.length})</span>
           </button>
         )}
 
@@ -420,14 +563,15 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
           </button>
         )}
 
+        {/* Star Auto Layout Button */}
         {onAutoLayout && (
           <button
             onClick={onAutoLayout}
-            title="Réorganiser automatiquement le schéma en vue aérée et hiérarchique"
+            title="Réorganiser automatiquement le schéma en topologie en étoile avec le cœur de réseau au centre"
             className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold bg-cyan-600/95 hover:bg-cyan-500 text-white rounded-lg shadow-xl backdrop-blur-md transition-all active:scale-95 border border-cyan-400/50 cursor-pointer"
           >
-            <LayoutGrid className="w-3.5 h-3.5" />
-            <span>Réorganiser le schéma</span>
+            <Star className="w-3.5 h-3.5 fill-cyan-200 text-cyan-200" />
+            <span>Topologie en Étoile</span>
           </button>
         )}
       </div>
@@ -472,6 +616,10 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
       {/* Legend / Overlay (Top-Left) */}
       <div className="absolute top-4 left-4 z-20 p-3 bg-slate-900/90 border border-slate-800 rounded-xl text-xs text-slate-400 space-y-2 pointer-events-none backdrop-blur-md shadow-xl">
         <div className="flex items-center gap-2">
+          <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+          <span className="text-[11px] text-amber-300 font-bold">Cœur de réseau au centre de l'étoile</span>
+        </div>
+        <div className="flex items-center gap-2">
           <span className="w-3.5 h-0.5 bg-sky-500 rounded-full" />
           <span className="text-[11px] text-slate-300 font-medium">Liaison réseau physique (Câble LAN)</span>
         </div>
@@ -483,6 +631,10 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
           <span className="w-3.5 h-0.5 border-b-2 border-cyan-400 border-dashed" />
           <span className="text-[11px] text-cyan-300 font-medium">Conteneur Docker sur Hôte physique</span>
         </div>
+        <div className="flex items-center gap-2">
+          <MapPin className="w-3.5 h-3.5 text-amber-400" />
+          <span className="text-[11px] text-slate-400">Zones géographiques éditables & renommables</span>
+        </div>
       </div>
 
       {/* Main Scaled & Panned Canvas Viewport */}
@@ -493,7 +645,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
           transition: isPanning || draggedNodeId ? 'none' : 'transform 0.1s ease-out'
         }}
       >
-        {/* SVG Canvas for Host Bounding Clusters and Links */}
+        {/* SVG Canvas for Host Clusters, Geographic Zones, and Star Rays */}
         <svg
           className="absolute inset-0 pointer-events-none"
           style={{ width: '10000px', height: '10000px' }}
@@ -523,7 +675,29 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
             </marker>
           </defs>
 
-          {/* 1. VISUAL HOST CLUSTER ENCLOSING BOUNDARIES (DOCKER & VM GROUPS) */}
+          {/* 1. GEOGRAPHIC ZONE BOUNDING ENCLOSURES (Pièces, Baies, Sous-Répartiteurs, Sites) */}
+          {zoneClusters.map((cluster) => {
+            const zColor = cluster.zone.color || '#0ea5e9';
+            return (
+              <g key={`zone-rect-${cluster.zone.id}`} className="transition-all duration-300">
+                <rect
+                  x={cluster.x}
+                  y={cluster.y}
+                  width={cluster.width}
+                  height={cluster.height}
+                  rx="22"
+                  ry="22"
+                  fill={`${zColor}0d`}
+                  stroke={zColor}
+                  strokeWidth="1.5"
+                  strokeDasharray="8 6"
+                  strokeOpacity="0.45"
+                />
+              </g>
+            );
+          })}
+
+          {/* 2. VISUAL HOST CLUSTER ENCLOSING BOUNDARIES (DOCKER & VM GROUPS) */}
           {hostClusters.map((cluster) => {
             const isDocker = cluster.isDocker;
             const isCollapsed = cluster.isCollapsed;
@@ -540,7 +714,6 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
 
             return (
               <g key={`cluster-${cluster.hostId}`} className="transition-all duration-300">
-                {/* Rounded enclosure rect */}
                 <rect
                   x={cluster.x}
                   y={cluster.y}
@@ -557,7 +730,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
             );
           })}
 
-          {/* 2. Physical Network Cables (Solid Lines with Speed / Port Label) */}
+          {/* 3. Physical Network Cables (Solid Lines with Speed / Port Label) */}
           {physicalLinks.map(({ from, to, label, isAuto }, i) => {
             const p1 = from.position || { x: 400, y: 100 };
             const p2 = to.position || { x: 400, y: 300 };
@@ -579,7 +752,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
                   d={`M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`}
                   fill="none"
                   stroke={isRelated ? '#38bdf8' : isAuto ? '#0284c7' : '#0369a1'}
-                  strokeWidth={isRelated ? '3' : isAuto ? '1.5' : '2'}
+                  strokeWidth={isRelated ? '3.5' : isAuto ? '1.5' : '2'}
                   strokeOpacity={isRelated ? '1' : isAuto ? '0.45' : '0.65'}
                 />
                 {label && (
@@ -609,7 +782,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
             );
           })}
 
-          {/* 3. Virtualization Dependency Links (Dashed Bezier Splines) */}
+          {/* 4. Virtualization Dependency Links (Dashed Bezier Splines) */}
           {virtualLinks.map(({ host, guest, isDocker }, i) => {
             const p1 = host.position || { x: 400, y: 200 };
             const p2 = guest.position || { x: 400, y: 400 };
@@ -641,7 +814,79 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
           })}
         </svg>
 
-        {/* Interactive Cluster Headers (Expand / Collapse groups) */}
+        {/* 5. INTERACTIVE GEOGRAPHIC ZONE HEADERS (Renamable & Editable inline directly from Canvas) */}
+        {zoneClusters.map((cluster) => {
+          const zone = cluster.zone;
+          const isRenaming = renamingZoneId === zone.id;
+          const zColor = zone.color || '#0ea5e9';
+
+          return (
+            <div
+              key={`zone-hdr-${zone.id}`}
+              style={{
+                position: 'absolute',
+                left: `${cluster.x + 16}px`,
+                top: `${cluster.y + 6}px`,
+                zIndex: 14
+              }}
+              className="pointer-events-auto flex items-center gap-2"
+            >
+              <div
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border shadow-lg backdrop-blur-md text-xs font-semibold bg-slate-900/90 border-slate-700/80"
+                style={{ borderColor: `${zColor}80` }}
+              >
+                <span
+                  className="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs"
+                  style={{ backgroundColor: zColor }}
+                />
+                <span className="text-slate-400">
+                  {getZoneTypeIcon(zone.type)}
+                </span>
+
+                {isRenaming ? (
+                  <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="text"
+                      value={renamingZoneName}
+                      onChange={(e) => setRenamingZoneName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveRenameZone(zone);
+                        if (e.key === 'Escape') setRenamingZoneId(null);
+                      }}
+                      className="px-2 py-0.5 text-xs bg-slate-950 border border-cyan-400 rounded text-white font-medium focus:outline-hidden"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleSaveRenameZone(zone)}
+                      title="Valider le renommage"
+                      className="p-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
+                    >
+                      <Check className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleStartRenameZone(zone)}
+                    title={`Cliquer pour renommer directement la zone "${zone.name}"`}
+                    className="flex items-center gap-1.5 hover:text-cyan-300 cursor-pointer group/ztitle"
+                  >
+                    <span className="text-slate-100 font-semibold">{zone.name}</span>
+                    <Edit2 className="w-3 h-3 text-slate-500 opacity-60 group-hover/ztitle:opacity-100 group-hover/ztitle:text-cyan-400 transition-opacity" />
+                  </button>
+                )}
+
+                <span className="text-slate-500 font-normal">·</span>
+                <span className="text-[11px] font-mono text-slate-300">
+                  {cluster.deviceCount} équipement{cluster.deviceCount > 1 ? 's' : ''}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* 6. Interactive Host Cluster Headers (Expand / Collapse groups) */}
         {hostClusters.map((cluster) => {
           const isDocker = cluster.isDocker;
           const isCollapsed = cluster.isCollapsed;
@@ -714,7 +959,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
           );
         })}
 
-        {/* Visible Device Nodes Layer */}
+        {/* 7. Visible Device Nodes Layer */}
         {visibleDevices.map((device) => {
           const pos = device.position || { x: 100, y: 100 };
           const parentDevice = device.parentHostId
@@ -723,6 +968,8 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
 
           const childCount = childrenCountMap.get(device.id) || 0;
           const isCollapsed = collapsedHostIds.has(device.id);
+          const zone = device.zoneId ? zoneMap.get(device.zoneId) : undefined;
+          const isCore = coreNode ? device.id === coreNode.id : false;
 
           return (
             <div
@@ -737,6 +984,8 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
               <DeviceNode
                 device={device}
                 parentDevice={parentDevice}
+                zone={zone}
+                isCore={isCore}
                 isSelected={selectedDevice?.id === device.id}
                 onSelect={onSelectDevice}
                 onEdit={onEditDevice}
@@ -752,70 +1001,20 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
         })}
       </div>
 
-      {/* Direct On-Canvas Quick Link & Organization Editor Modal */}
+      {/* Quick Link & Organization Modal (Directly on canvas) */}
       <QuickLinkModal
         device={linkingDevice}
         allDevices={devices}
+        zones={zones}
         isOpen={Boolean(linkingDevice)}
         onClose={() => setLinkingDevice(null)}
         onSave={(updated) => {
           if (onSaveDevice) {
             onSaveDevice(updated);
-          } else {
-            onEditDevice(updated);
           }
+          setLinkingDevice(null);
         }}
       />
-
-      {/* Empty State Overlay when inventory is completely cleared (0 devices) */}
-      {devices.length === 0 && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center p-6 pointer-events-none">
-          <div className="max-w-md w-full bg-slate-900/95 border border-slate-700/80 rounded-2xl p-6 shadow-2xl backdrop-blur-md text-center pointer-events-auto animate-in fade-in zoom-in-95 duration-200">
-            <div className="w-14 h-14 mx-auto rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 mb-4 shadow-sm">
-              <Radar className="w-7 h-7" />
-            </div>
-            <h3 className="text-base font-bold text-white tracking-tight">
-              Inventaire entièrement vide
-            </h3>
-            <p className="text-xs text-slate-400 mt-2 leading-relaxed">
-              La base d'équipements a été réinitialisée à zéro. Vous pouvez lancer un scan actif de votre sous-réseau pour découvrir vos équipements réels, ou ajouter vos machines manuellement.
-            </p>
-
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 mt-6">
-              {onTriggerScan && (
-                <button
-                  onClick={onTriggerScan}
-                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white shadow-sm transition-all active:scale-95 cursor-pointer"
-                >
-                  <Radar className="w-4 h-4" />
-                  <span>Scanner le réseau local</span>
-                </button>
-              )}
-
-              {onOpenAddModal && (
-                <button
-                  onClick={onOpenAddModal}
-                  className="w-full sm:w-auto flex items-center justify-center gap-2 px-3 py-2 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5 text-cyan-400" />
-                  <span>Ajouter manuellement</span>
-                </button>
-              )}
-
-              {onResetTopology && (
-                <button
-                  onClick={onResetTopology}
-                  title="Recharger la topologie d'exemple"
-                  className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition-colors cursor-pointer"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Recharger démo</span>
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

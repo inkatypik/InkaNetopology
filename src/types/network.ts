@@ -19,6 +19,16 @@ export type DeviceSubType =
 
 export type DeviceStatus = 'online' | 'offline' | 'warning';
 
+export type ZoneType = 'piece' | 'sous_repartiteur' | 'baie' | 'site' | 'autre';
+
+export interface GeographicZone {
+  id: string;
+  name: string;
+  type: ZoneType;
+  description?: string;
+  color?: string; // hex color or accent code
+}
+
 export interface Device {
   id: string;
   name: string;
@@ -29,6 +39,9 @@ export interface Device {
   subType: DeviceSubType;
   status: DeviceStatus;
   
+  // Geographic zone organization
+  zoneId?: string;
+
   // Dynamic host/guest virtualization relationship:
   parentHostId?: string; // Physical host hosting this VM or Docker container
   

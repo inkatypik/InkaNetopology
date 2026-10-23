@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import type { Device, DeviceType } from '../types/network';
-import { X, Save, Link2, Server, Network, Tag, Box, Cpu, Radio, Shield } from 'lucide-react';
+import type { Device, DeviceType, GeographicZone } from '../types/network';
+import { X, Save, Link2, Server, Network, Tag, Box, Cpu, Radio, Shield, MapPin } from 'lucide-react';
 import { getDeviceDefaultIcon } from '../utils/hardwareIcons';
 
 interface QuickLinkModalProps {
   device: Device | null;
   allDevices: Device[];
+  zones?: GeographicZone[];
   isOpen: boolean;
   onClose: () => void;
   onSave: (updated: Device) => void;
@@ -14,6 +15,7 @@ interface QuickLinkModalProps {
 export const QuickLinkModal: React.FC<QuickLinkModalProps> = ({
   device,
   allDevices,
+  zones = [],
   isOpen,
   onClose,
   onSave
@@ -25,6 +27,7 @@ export const QuickLinkModal: React.FC<QuickLinkModalProps> = ({
   const [connectedToSwitchId, setConnectedToSwitchId] = useState<string>(device.connectedToSwitchId || '');
   const [portOrInterface, setPortOrInterface] = useState<string>(device.portOrInterface || '');
   const [vlan, setVlan] = useState<number>(device.vlan || 1);
+  const [zoneId, setZoneId] = useState<string>(device.zoneId || '');
 
   // Sync state whenever active device changes
   useEffect(() => {
@@ -33,6 +36,7 @@ export const QuickLinkModal: React.FC<QuickLinkModalProps> = ({
     setConnectedToSwitchId(device.connectedToSwitchId || '');
     setPortOrInterface(device.portOrInterface || '');
     setVlan(device.vlan || 1);
+    setZoneId(device.zoneId || '');
   }, [device]);
 
   // Candidate physical hosts (hypervisors, servers, NAS)
@@ -53,6 +57,7 @@ export const QuickLinkModal: React.FC<QuickLinkModalProps> = ({
     const updated: Device = {
       ...device,
       deviceType,
+      zoneId: zoneId.trim() ? zoneId : undefined,
       parentHostId: parentHostId.trim() ? parentHostId : undefined,
       connectedToSwitchId: connectedToSwitchId.trim() ? connectedToSwitchId : undefined,
       portOrInterface: portOrInterface.trim() ? portOrInterface : undefined,
@@ -232,6 +237,29 @@ export const QuickLinkModal: React.FC<QuickLinkModalProps> = ({
                 Identifiant VLAN IEEE 802.1Q (1 à 4094).
               </p>
             </div>
+          </div>
+
+          {/* Zone Géographique */}
+          <div>
+            <label className="block text-xs font-medium text-slate-300 mb-1 flex items-center gap-1.5">
+              <MapPin className="w-3.5 h-3.5 text-cyan-400" />
+              Zone géographique (Pièce, Baie, Sous-répartiteur, Site)
+            </label>
+            <select
+              value={zoneId}
+              onChange={(e) => setZoneId(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-xs text-slate-100 focus:outline-hidden focus:ring-1 focus:ring-cyan-400 cursor-pointer"
+            >
+              <option value="">-- Aucune zone géographique attribuée --</option>
+              {zones.map((z) => (
+                <option key={z.id} value={z.id}>
+                  {z.name} ({z.type})
+                </option>
+              ))}
+            </select>
+            <p className="text-[10px] text-slate-400 mt-1">
+              Permet de regrouper et filtrer visuellement cet équipement dans la topologie.
+            </p>
           </div>
 
           {/* Actions */}

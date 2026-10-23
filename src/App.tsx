@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import type { Device, DeviceType, NetworkLog, ScanStatus } from './types/network';
+import type { Device, DeviceType, NetworkLog, ScanStatus, GeographicZone } from './types/network';
 import { Navbar, type ActiveTab } from './components/Navbar';
 import { Toolbar } from './components/Toolbar';
 import { TopologyCanvas } from './components/TopologyCanvas';
@@ -10,11 +10,13 @@ import { DeviceEditModal } from './components/DeviceEditModal';
 import { AddDeviceModal } from './components/AddDeviceModal';
 import { DockerDeployModal } from './components/DockerDeployModal';
 import { ClearInventoryModal } from './components/ClearInventoryModal';
+import { ZoneManagerModal } from './components/ZoneManagerModal';
 import { autoLayoutTopology } from './utils/topologyLayout';
 import { XCircle, Square } from 'lucide-react';
 
 export default function App() {
   const [devices, setDevices] = useState<Device[]>([]);
+  const [zones, setZones] = useState<GeographicZone[]>([]);
   const [logs, setLogs] = useState<NetworkLog[]>([]);
   const [activeTab, setActiveTab] = useState<ActiveTab>('topology');
   const [isDark, setIsDark] = useState<boolean>(true);
@@ -40,6 +42,7 @@ export default function App() {
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
   const [isDockerModalOpen, setIsDockerModalOpen] = useState<boolean>(false);
   const [isClearModalOpen, setIsClearModalOpen] = useState<boolean>(false);
+  const [isZoneManagerOpen, setIsZoneManagerOpen] = useState<boolean>(false);
   const [addModalPresetParentId, setAddModalPresetParentId] = useState<string | undefined>();
   const [addModalPresetType, setAddModalPresetType] = useState<DeviceType | undefined>();
 
@@ -62,7 +65,7 @@ export default function App() {
     }
   }, [isDark]);
 
-  // Initial fetch for devices, interfaces, and logs
+  // Initial fetch for devices, zones, interfaces, and logs
   useEffect(() => {
     fetch('/api/devices')
       .then((res) => res.json())
@@ -70,6 +73,13 @@ export default function App() {
         if (Array.isArray(data)) setDevices(data);
       })
       .catch((err) => console.error('Erreur chargement équipements:', err));
+
+    fetch('/api/zones')
+      .then((res) => res.json())
+      .then((data: GeographicZone[]) => {
+        if (Array.isArray(data)) setZones(data);
+      })
+      .catch((err) => console.error('Erreur chargement zones:', err));
 
     fetch('/api/logs?limit=100')
       .then((res) => res.json())
@@ -166,6 +176,21 @@ export default function App() {
       evtSource.addEventListener('device_deleted', (e) => {
         const { id } = JSON.parse(e.data);
         setDevices((prev) => prev.filter((d) => d.id !== id));
+      });
+
+      evtSource.addEventListener('zone_added', (e) => {
+        const addedZone: GeographicZone = JSON.parse(e.data);
+        setZones((prev) => [...prev.filter((z) => z.id !== addedZone.id), addedZone]);
+      });
+
+      evtSource.addEventListener('zone_updated', (e) => {
+        const updatedZone: GeographicZone = JSON.parse(e.data);
+        setZones((prev) => prev.map((z) => (z.id === updatedZone.id ? updatedZone : z)));
+      });
+
+      evtSource.addEventListener('zone_deleted', (e) => {
+        const { id } = JSON.parse(e.data);
+        setZones((prev) => prev.filter((z) => z.id !== id));
       });
 
       evtSource.addEventListener('logs_cleared', () => {
@@ -314,6 +339,49 @@ export default function App() {
     } catch (err) {
       console.error(err);
       showToast('Erreur lors de l\'ajout de l\'équipement.');
+    }
+  };
+
+  // Save / Update / Rename geographic zone
+  const handleSaveZone = async (zone: GeographicZone) => {
+    try {
+      const exists = zones.some((z) => z.id === zone.id);
+      const url = exists ? `/api/zones/${zone.id}` : '/api/zones';
+      const method = exists ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(zone)
+      });
+      const saved = await res.json();
+      setZones((prev) => {
+        const idx = prev.findIndex((z) => z.id === saved.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = saved;
+          return next;
+        }
+        return [...prev, saved];
+      });
+      showToast(`Zone "${saved.name}" enregistrée avec succès.`);
+    } catch (err) {
+      console.error('Erreur sauvegarde zone:', err);
+      showToast('Erreur lors de l\'enregistrement de la zone.');
+    }
+  };
+
+  // Delete geographic zone
+  const handleDeleteZone = async (zoneId: string) => {
+    try {
+      await fetch(`/api/zones/${zoneId}`, { method: 'DELETE' });
+      setZones((prev) => prev.filter((z) => z.id !== zoneId));
+      setDevices((prev) =>
+        prev.map((d) => (d.zoneId === zoneId ? { ...d, zoneId: undefined } : d))
+      );
+      showToast('Zone géographique supprimée.');
+    } catch (err) {
+      console.error('Erreur suppression zone:', err);
+      showToast('Erreur lors de la suppression de la zone.');
     }
   };
 
@@ -522,6 +590,7 @@ export default function App() {
         {activeTab === 'topology' && (
           <TopologyCanvas
             devices={filteredDevices}
+            zones={zones}
             selectedDevice={selectedDevice}
             onSelectDevice={setSelectedDevice}
             onEditDevice={(dev) => setEditingDevice(dev)}
@@ -532,6 +601,9 @@ export default function App() {
             onTriggerScan={handleTriggerScan}
             onResetTopology={handleResetTopology}
             onOpenAddModal={() => setIsAddModalOpen(true)}
+            onSaveZone={handleSaveZone}
+            onDeleteZone={handleDeleteZone}
+            onOpenZoneManager={() => setIsZoneManagerOpen(true)}
             groupByHost={groupByHost}
           />
         )}
@@ -553,6 +625,7 @@ export default function App() {
         {activeTab === 'inventory' && (
           <DeviceInventoryTable
             devices={filteredDevices}
+            zones={zones}
             onSelectDevice={(dev) => setSelectedDevice(dev)}
             onEditDevice={(dev) => setEditingDevice(dev)}
             onPingDevice={handlePingDevice}
@@ -574,6 +647,7 @@ export default function App() {
         <DeviceEditModal
           device={editingDevice}
           allDevices={devices}
+          zones={zones}
           isOpen={Boolean(editingDevice)}
           onClose={() => setEditingDevice(null)}
           onSave={handleSaveDevice}
@@ -589,6 +663,16 @@ export default function App() {
         allDevices={devices}
         presetParentId={addModalPresetParentId}
         presetType={addModalPresetType}
+      />
+
+      {/* Zone Manager Modal */}
+      <ZoneManagerModal
+        isOpen={isZoneManagerOpen}
+        onClose={() => setIsZoneManagerOpen(false)}
+        zones={zones}
+        devices={devices}
+        onSaveZone={handleSaveZone}
+        onDeleteZone={handleDeleteZone}
       />
 
       {/* Docker Deployment Guide Modal */}

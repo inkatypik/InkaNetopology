@@ -1,11 +1,13 @@
 import React from 'react';
-import type { Device } from '../types/network';
+import type { Device, GeographicZone } from '../types/network';
 import { getDeviceDefaultIcon, getDeviceTypeColor } from '../utils/hardwareIcons';
-import { Activity, Edit3, Link2, ChevronDown, ChevronRight, Layers } from 'lucide-react';
+import { Activity, Edit3, Link2, ChevronDown, ChevronRight, Layers, MapPin, Star } from 'lucide-react';
 
 interface DeviceNodeProps {
   device: Device;
   parentDevice?: Device;
+  zone?: GeographicZone;
+  isCore?: boolean;
   isSelected: boolean;
   onSelect: (device: Device) => void;
   onEdit: (device: Device) => void;
@@ -20,6 +22,8 @@ interface DeviceNodeProps {
 export const DeviceNode: React.FC<DeviceNodeProps> = ({
   device,
   parentDevice,
+  zone,
+  isCore,
   isSelected,
   onSelect,
   onEdit,
@@ -45,9 +49,18 @@ export const DeviceNode: React.FC<DeviceNodeProps> = ({
       } ${
         isSelected
           ? 'ring-2 ring-cyan-400 border-cyan-400 scale-[1.02] z-30 shadow-cyan-900/30'
+          : isCore
+          ? 'ring-2 ring-amber-400/60 border-amber-500/80 shadow-amber-950/30 z-20'
           : `${typeStyle.border} hover:shadow-cyan-950/20 z-10`
       } ${isDragging ? 'opacity-85 shadow-2xl scale-[1.03]' : ''}`}
     >
+      {/* Cœur de réseau Badge */}
+      {isCore && (
+        <div className="mb-2 px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-500/50 text-amber-200 text-[10px] font-bold flex items-center justify-center gap-1.5 shadow-xs">
+          <Star className="w-3 h-3 fill-amber-400 text-amber-400 shrink-0" />
+          <span>★ Cœur de Réseau (Centre Étoile)</span>
+        </div>
+      )}
       {/* Upper header: Icon / Custom Image + Status + Device Type */}
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -78,10 +91,9 @@ export const DeviceNode: React.FC<DeviceNodeProps> = ({
               title={`Cliquer pour éditer la fiche de "${device.name}"`}
               className="text-left group/title flex items-center gap-1.5 cursor-pointer max-w-full hover:opacity-100"
             >
-              <h4 className="text-xs font-semibold text-slate-100 group-hover/title:text-cyan-300 group-hover/title:underline truncate max-w-[130px] transition-colors">
+              <h4 className="text-xs font-semibold text-slate-100 group-hover/title:text-cyan-300 group-hover/title:underline truncate max-w-[150px] transition-colors">
                 {device.name}
               </h4>
-              <Edit3 className="w-3 h-3 text-slate-400 opacity-60 group-hover/title:opacity-100 group-hover/title:text-cyan-400 shrink-0 transition-opacity" />
             </button>
 
             <div className="flex items-center gap-1.5 text-[11px] font-mono tabular-nums text-slate-400 mt-0.5">
@@ -196,6 +208,24 @@ export const DeviceNode: React.FC<DeviceNodeProps> = ({
           </div>
         )}
       </div>
+
+      {/* Geographic Zone Badge */}
+      {zone && (
+        <div className="mt-2 px-1.5 py-0.5 rounded bg-slate-950/70 border border-slate-800/80 flex items-center justify-between text-[9px] text-slate-300">
+          <div className="flex items-center gap-1 min-w-0">
+            <span
+              className="w-2 h-2 rounded-full shrink-0 shadow-xs"
+              style={{ backgroundColor: zone.color || '#0ea5e9' }}
+            />
+            <span className="truncate max-w-[170px] text-slate-300 font-medium">
+              {zone.name}
+            </span>
+          </div>
+          <span className="text-[8px] uppercase tracking-wider text-slate-500 font-mono">
+            {zone.type}
+          </span>
+        </div>
+      )}
 
       {/* Dynamic Tags */}
       {device.tags && device.tags.length > 0 && (

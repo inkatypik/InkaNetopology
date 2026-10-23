@@ -1,0 +1,44 @@
+[
+  {
+    "id": "zone-baie-01",
+    "name": "Baie Rack 42U - Datacenter Principal",
+    "type": "baie",
+    "description": "Armoire principale réseau & serveurs hyperviseurs",
+    "color": "#0ea5e9"
+  },
+  {
+    "id": "zone-sr-01",
+    "name": "Sous-Répartiteur Étage 1",
+    "type": "sous_repartiteur",
+    "description": "Baie murale distribution secondaire & switchs d'accès",
+    "color": "#10b981"
+  },
+  {
+    "id": "zone-datacenter",
+    "name": "Salle Informatique / Datacenter",
+    "type": "piece",
+    "description": "Local technique sécurisé et climatisé",
+    "color": "#6366f1"
+  },
+  {
+    "id": "zone-bureau",
+    "name": "Bureau Ingénierie & CAO",
+    "type": "piece",
+    "description": "Postes de travail haute performance & développement",
+    "color": "#f59e0b"
+  },
+  {
+    "id": "zone-salon",
+    "name": "Salon / Espace Domotique",
+    "type": "piece",
+    "description": "Hubs domotiques, passerelles Zigbee et éclairage connecté",
+    "color": "#ec4899"
+  },
+  {
+    "id": "zone-site-hq",
+    "name": "Site Siège Central",
+    "type": "site",
+    "description": "Site principal de l'infrastructure",
+    "color": "#8b5cf6"
+  }
+]

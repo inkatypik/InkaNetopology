@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import type { Device, DeviceSubType, DeviceType, DeviceStatus } from '../types/network';
-import { X, Save, Plus, Trash2, Link2, Image, Activity, Tag, Info, Cpu, Box, Server } from 'lucide-react';
+import type { Device, DeviceSubType, DeviceType, DeviceStatus, GeographicZone } from '../types/network';
+import { X, Save, Plus, Trash2, Link2, Image, Activity, Tag, Info, Cpu, Box, Server, MapPin } from 'lucide-react';
 import { PRESET_HARDWARE_IMAGES } from '../utils/hardwareIcons';
 
 interface DeviceEditModalProps {
   device: Device;
   allDevices: Device[];
+  zones?: GeographicZone[];
   isOpen: boolean;
   onClose: () => void;
   onSave: (updated: Device) => void;
@@ -15,6 +16,7 @@ interface DeviceEditModalProps {
 export const DeviceEditModal: React.FC<DeviceEditModalProps> = ({
   device,
   allDevices,
+  zones = [],
   isOpen,
   onClose,
   onSave,
@@ -29,6 +31,7 @@ export const DeviceEditModal: React.FC<DeviceEditModalProps> = ({
   const [deviceType, setDeviceType] = useState<DeviceType>(device.deviceType);
   const [subType, setSubType] = useState<DeviceSubType>(device.subType);
   const [status, setStatus] = useState<DeviceStatus>(device.status);
+  const [zoneId, setZoneId] = useState<string>(device.zoneId || '');
   const [parentHostId, setParentHostId] = useState<string>(device.parentHostId || '');
   const [connectedToSwitchId, setConnectedToSwitchId] = useState<string>(device.connectedToSwitchId || '');
   const [portOrInterface, setPortOrInterface] = useState<string>(device.portOrInterface || '');
@@ -95,6 +98,7 @@ export const DeviceEditModal: React.FC<DeviceEditModalProps> = ({
       deviceType,
       subType,
       status,
+      zoneId: zoneId.trim() ? zoneId : undefined,
       parentHostId: parentHostId || undefined,
       connectedToSwitchId: connectedToSwitchId || undefined,
       portOrInterface: portOrInterface || undefined,
@@ -323,6 +327,25 @@ export const DeviceEditModal: React.FC<DeviceEditModalProps> = ({
                 placeholder="Ex: Baie RDC U10, Salon, Entrée"
                 className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-200 focus:outline-hidden focus:border-cyan-500"
               />
+            </div>
+
+            <div>
+              <label className="block text-slate-400 font-medium mb-1 flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-cyan-400" />
+                Zone Géographique
+              </label>
+              <select
+                value={zoneId}
+                onChange={(e) => setZoneId(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-200 focus:outline-hidden focus:border-cyan-500 cursor-pointer"
+              >
+                <option value="">-- Aucune zone géographique --</option>
+                {zones.map((z) => (
+                  <option key={z.id} value={z.id}>
+                    {z.name} ({z.type})
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 

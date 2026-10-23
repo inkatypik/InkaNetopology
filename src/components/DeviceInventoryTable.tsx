@@ -1,10 +1,11 @@
 import React from 'react';
-import type { Device } from '../types/network';
+import type { Device, GeographicZone } from '../types/network';
 import { getDeviceDefaultIcon, getDeviceTypeColor } from '../utils/hardwareIcons';
-import { Activity, Edit3, Trash2, Link2, ExternalLink } from 'lucide-react';
+import { Activity, Edit3, Trash2, Link2, ExternalLink, MapPin } from 'lucide-react';
 
 interface DeviceInventoryTableProps {
   devices: Device[];
+  zones?: GeographicZone[];
   onSelectDevice: (device: Device) => void;
   onEditDevice: (device: Device) => void;
   onPingDevice: (device: Device) => void;
@@ -13,6 +14,7 @@ interface DeviceInventoryTableProps {
 
 export const DeviceInventoryTable: React.FC<DeviceInventoryTableProps> = ({
   devices,
+  zones = [],
   onSelectDevice,
   onEditDevice,
   onPingDevice,
@@ -20,6 +22,9 @@ export const DeviceInventoryTable: React.FC<DeviceInventoryTableProps> = ({
 }) => {
   const deviceMap = new Map<string, Device>();
   devices.forEach((d) => deviceMap.set(d.id, d));
+
+  const zoneMap = new Map<string, GeographicZone>();
+  zones.forEach((z) => zoneMap.set(z.id, z));
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -169,9 +174,21 @@ export const DeviceInventoryTable: React.FC<DeviceInventoryTableProps> = ({
 
                       {/* Location & Tags */}
                       <td className="py-3 px-4">
-                        <div className="text-slate-300 text-[11px] truncate max-w-[130px]">
-                          {device.location || 'Baie / Non renseigné'}
-                        </div>
+                        {device.zoneId && zoneMap.has(device.zoneId) ? (
+                          <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-200 mb-0.5">
+                            <span
+                              className="w-2 h-2 rounded-full shrink-0 shadow-xs"
+                              style={{ backgroundColor: zoneMap.get(device.zoneId)?.color || '#0ea5e9' }}
+                            />
+                            <span className="truncate max-w-[130px]" title={zoneMap.get(device.zoneId)?.name}>
+                              {zoneMap.get(device.zoneId)?.name}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="text-slate-300 text-[11px] truncate max-w-[130px]">
+                            {device.location || 'Non assigné'}
+                          </div>
+                        )}
                         {device.tags && (
                           <div className="flex items-center gap-1 text-[10px] text-slate-500 mt-0.5 truncate max-w-[140px]">
                             {device.tags.join(' · ')}
