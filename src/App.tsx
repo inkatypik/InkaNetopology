@@ -449,7 +449,7 @@ export default function App() {
 
   // Reset topology
   const handleResetTopology = async () => {
-    if (!window.confirm('Voulez-vous réinitialiser la topologie au schéma par défaut ?')) {
+    if (!window.confirm('Voulez-vous réinitialiser la topologie et vider l\'inventaire ?')) {
       return;
     }
     try {
@@ -458,7 +458,11 @@ export default function App() {
       if (data.devices) {
         setDevices(data.devices);
       }
-      showToast('Topologie réinitialisée.');
+      if (data.zones) {
+        setZones(data.zones);
+      }
+      setSelectedDevice(null);
+      showToast('Topologie et inventaire réinitialisés.');
     } catch (err) {
       console.error(err);
     }

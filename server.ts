@@ -29,555 +29,13 @@ const DATA_DIR = path.resolve(__dirname, 'data');
 const DEVICES_FILE = path.join(DATA_DIR, 'devices.json');
 const ZONES_FILE = path.join(DATA_DIR, 'zones.json');
 
-// Default Geographic Zones (Pièces, Baies, Sous-Répartiteurs, Sites)
-const defaultZones: GeographicZone[] = [
-  {
-    id: 'zone-baie-01',
-    name: 'Baie Rack 42U - Salle Serveurs',
-    type: 'baie',
-    description: 'Armoire principale réseau & serveurs hyperviseurs',
-    color: '#0ea5e9' // sky
-  },
-  {
-    id: 'zone-sr-01',
-    name: 'Sous-Répartiteur Étage 1',
-    type: 'sous_repartiteur',
-    description: 'Baie murale distribution secondaire & switchs d\'accès',
-    color: '#10b981' // emerald
-  },
-  {
-    id: 'zone-datacenter',
-    name: 'Salle Informatique / Datacenter',
-    type: 'piece',
-    description: 'Local technique sécurisé et climatisé',
-    color: '#6366f1' // indigo
-  },
-  {
-    id: 'zone-bureau',
-    name: 'Bureau Ingénierie & CAO',
-    type: 'piece',
-    description: 'Postes de travail haute performance & développement',
-    color: '#f59e0b' // amber
-  },
-  {
-    id: 'zone-salon',
-    name: 'Salon / Espace Domotique',
-    type: 'piece',
-    description: 'Hubs domotiques, passerelles Zigbee et éclairage connecté',
-    color: '#ec4899' // pink
-  },
-  {
-    id: 'zone-site-hq',
-    name: 'Site Siège Central',
-    type: 'site',
-    description: 'Site principal de l\'infrastructure',
-    color: '#8b5cf6' // purple
-  }
-];
+// Default Geographic Zones (Empty by default for clean start)
+const defaultZones: GeographicZone[] = [];
 
 let zones: GeographicZone[] = [];
 
-// Default initial baseline topology
-const defaultDevices: Device[] = [
-  // 1. ROUTEUR & INFRA PHYSIQUE CENTRALE
-  {
-    id: 'dev-router-01',
-    name: 'UniFi Dream Machine Pro',
-    ip: '192.168.1.1',
-    mac: 'e0:63:da:8a:22:10',
-    vendor: 'Ubiquiti Networks',
-    deviceType: 'physical',
-    subType: 'router',
-    status: 'online',
-    isCore: true,
-    portOrInterface: 'WAN / SFP+ 10G',
-    vlan: 1,
-    os: 'UniFi OS 3.2.12',
-    openPorts: [53, 80, 443, 8443, 22],
-    location: 'Baie Principale - RDC',
-    tags: ['Passerelle', 'Réseau', 'Critique'],
-    metadata: {
-      'Rôle': 'Passerelle & Pare-feu DPI',
-      'Débit WAN': '1 Gbps Fibre',
-      'CPU': 'Quad-Core ARM Cortex-A57 @ 1.7GHz',
-      'RAM': '4 GB DDR4'
-    },
-    lastSeen: new Date().toISOString(),
-    latencyMs: 0.8,
-    position: { x: 420, y: 70 }
-  },
-  {
-    id: 'dev-switch-01',
-    name: 'Switch USW-24-PoE Gen2',
-    ip: '192.168.1.2',
-    mac: 'e0:63:da:9b:33:41',
-    vendor: 'Ubiquiti Networks',
-    deviceType: 'physical',
-    subType: 'switch',
-    status: 'online',
-    connectedToSwitchId: 'dev-router-01',
-    portOrInterface: 'SFP Port 25 (Uplink 1G)',
-    vlan: 1,
-    os: 'EdgeSwitch OS 6.5.55',
-    openPorts: [80, 443, 22, 161],
-    location: 'Baie Principale - RDC',
-    tags: ['Switch', 'PoE 95W', 'Infrastructure'],
-    metadata: {
-      'Ports Actifs': '16 / 24',
-      'Budget PoE': '58W consommés / 95W',
-      'Uplink': '1 Gbps vers UDM Pro'
-    },
-    lastSeen: new Date().toISOString(),
-    latencyMs: 1.1,
-    position: { x: 420, y: 220 }
-  },
-
-  // 2. HÔTES PHYSIQUES DE VIRTUALISATION
-  {
-    id: 'dev-host-proxmox',
-    name: 'Serveur Proxmox VE - Dell R740',
-    ip: '192.168.1.10',
-    mac: '18:66:da:44:81:90',
-    vendor: 'Dell Inc. (PowerEdge)',
-    deviceType: 'physical',
-    subType: 'server',
-    status: 'online',
-    connectedToSwitchId: 'dev-switch-01',
-    portOrInterface: 'Port 1 (LACP Bond 2x1G)',
-    vlan: 10,
-    os: 'Proxmox VE 8.2 (Debian 12)',
-    openPorts: [22, 8006, 111, 3128],
-    location: 'Baie Salle Serveur - Rack U12',
-    tags: ['Hyperviseur', 'Production', 'Cluster-PVE'],
-    metadata: {
-      'Processeur': '2x Intel Xeon Silver 4210R (40 threads)',
-      'Mémoire Vive': '128 Go ECC DDR4',
-      'Stockage': 'ZFS RAID10 NVMe (3.8 To)',
-      'Hyperviseur': 'QEMU/KVM 8.1'
-    },
-    lastSeen: new Date().toISOString(),
-    latencyMs: 0.9,
-    position: { x: 180, y: 400 }
-  },
-  {
-    id: 'dev-host-docker',
-    name: 'Hôte Docker Micro-Srv - HP ProDesk',
-    ip: '192.168.1.15',
-    mac: 'd8:9e:f3:12:7c:44',
-    vendor: 'HP Inc.',
-    deviceType: 'physical',
-    subType: 'server',
-    status: 'online',
-    connectedToSwitchId: 'dev-switch-01',
-    portOrInterface: 'Port 4 (Gigabit)',
-    vlan: 10,
-    os: 'Ubuntu Server 24.04 LTS (Docker 26.1)',
-    openPorts: [22, 2375, 9443],
-    location: 'Atelier / Lab',
-    tags: ['Docker Host', 'Microservices', 'Homelab'],
-    metadata: {
-      'Moteur': 'Docker Engine v26.1.3 + Compose v2.27',
-      'Conteneurs actifs': '4 en cours d\'exécution',
-      'Processeur': 'Intel Core i5-10500T (6C/12T)',
-      'RAM': '32 Go DDR4'
-    },
-    lastSeen: new Date().toISOString(),
-    latencyMs: 1.2,
-    position: { x: 680, y: 400 }
-  },
-  {
-    id: 'dev-nas-01',
-    name: 'NAS Synology DiskStation DS920+',
-    ip: '192.168.1.20',
-    mac: '00:11:32:89:bc:02',
-    vendor: 'Synology Inc.',
-    deviceType: 'physical',
-    subType: 'nas',
-    status: 'online',
-    connectedToSwitchId: 'dev-switch-01',
-    portOrInterface: 'Port 7 (LACP 2Gbps)',
-    vlan: 10,
-    os: 'DSM 7.2.1 Update 5',
-    openPorts: [80, 443, 5000, 5001, 2049, 445],
-    location: 'Baie Principale - U4',
-    tags: ['Stockage', 'NFS/SMB', 'Sauvegarde'],
-    metadata: {
-      'Volume': 'SHR-1 Btrfs (24 To utiles)',
-      'RAID': '4x WD Red Plus 8To',
-      'Cache': '2x 500GB NVMe M.2 Read/Write',
-      'Partages': 'NFS PVE, SMB Medias, Backup TimeMachine'
-    },
-    lastSeen: new Date().toISOString(),
-    latencyMs: 1.0,
-    position: { x: 420, y: 420 }
-  },
-
-  // 3. MACHINES VIRTUELLES
-  {
-    id: 'dev-vm-101',
-    name: 'VM-101 Web & API Gateway',
-    ip: '192.168.1.50',
-    mac: 'bc:24:11:8a:55:01',
-    vendor: 'QEMU / Proxmox Virtual NIC',
-    deviceType: 'vm',
-    subType: 'vm',
-    status: 'online',
-    parentHostId: 'dev-host-proxmox',
-    portOrInterface: 'vmbr0 (vnet101)',
-    vlan: 10,
-    os: 'Debian 12 Bookworm',
-    openPorts: [80, 443, 22, 3000],
-    location: 'Virtuel (sur Proxmox Dell R740)',
-    tags: ['VM', 'Frontend', 'Web Server'],
-    metadata: {
-      'vCPU': '4 cœurs',
-      'RAM': '8 Go dédiée',
-      'Disque': '60 Go virtio-scsi',
-      'ID PVE': 'VMID 101'
-    },
-    lastSeen: new Date().toISOString(),
-    latencyMs: 0.4,
-    position: { x: 60, y: 590 }
-  },
-  {
-    id: 'dev-vm-102',
-    name: 'VM-102 Home Assistant OS',
-    ip: '192.168.1.55',
-    mac: 'bc:24:11:8a:55:02',
-    vendor: 'QEMU / Proxmox Virtual NIC',
-    deviceType: 'vm',
-    subType: 'vm',
-    status: 'online',
-    parentHostId: 'dev-host-proxmox',
-    portOrInterface: 'vmbr0 (vnet102)',
-    vlan: 10,
-    os: 'Home Assistant OS 12.3 (Core 2024.5)',
-    openPorts: [8123, 22, 1400],
-    location: 'Virtuel (sur Proxmox Dell R740)',
-    tags: ['VM', 'Domotique', 'Supervisé'],
-    metadata: {
-      'vCPU': '2 cœurs',
-      'RAM': '4 Go dédiée',
-      'Passthrough USB': 'Clé Zigbee Sonoff ZBDongle-P',
-      'ID PVE': 'VMID 102'
-    },
-    lastSeen: new Date().toISOString(),
-    latencyMs: 0.5,
-    position: { x: 190, y: 590 }
-  },
-  {
-    id: 'dev-vm-103',
-    name: 'VM-103 Windows Server 2022 AD',
-    ip: '192.168.1.60',
-    mac: 'bc:24:11:8a:55:03',
-    vendor: 'QEMU / Proxmox Virtual NIC',
-    deviceType: 'vm',
-    subType: 'vm',
-    status: 'online',
-    parentHostId: 'dev-host-proxmox',
-    portOrInterface: 'vmbr0 (vnet103)',
-    vlan: 10,
-    os: 'Microsoft Windows Server 2022',
-    openPorts: [3389, 53, 88, 389, 445],
-    location: 'Virtuel (sur Proxmox Dell R740)',
-    tags: ['VM', 'Active Directory', 'DNS'],
-    metadata: {
-      'vCPU': '4 cœurs',
-      'RAM': '16 Go',
-      'Rôle': 'Contrôleur de domaine AD DS & DNS local',
-      'ID PVE': 'VMID 103'
-    },
-    lastSeen: new Date().toISOString(),
-    latencyMs: 0.6,
-    position: { x: 320, y: 590 }
-  },
-
-  // 4. CONTENEURS DOCKER
-  {
-    id: 'dev-ct-nginx',
-    name: 'Docker - Nginx Proxy Manager',
-    ip: '192.168.1.15',
-    mac: '02:42:ac:11:00:02',
-    vendor: 'Docker Inc. (veth-bridge)',
-    deviceType: 'docker',
-    subType: 'container',
-    status: 'online',
-    parentHostId: 'dev-host-docker',
-    portOrInterface: 'docker0 (172.17.0.2) -> Ports 80,443',
-    vlan: 10,
-    os: 'Alpine Linux 3.19 (Nginx)',
-    openPorts: [80, 443, 81],
-    location: 'Conteneur sur HP ProDesk',
-    tags: ['Docker', 'Reverse Proxy', 'SSL Certs'],
-    metadata: {
-      'Image': 'jc21/nginx-proxy-manager:latest',
-      'Réseau': 'bridge + host ports 80/443',
-      'Uptime': '14 jours 6 heures',
-      'Certificats': '12 certs Let\'s Encrypt renouvelés'
-    },
-    lastSeen: new Date().toISOString(),
-    latencyMs: 0.2,
-    position: { x: 570, y: 590 }
-  },
-  {
-    id: 'dev-ct-portainer',
-    name: 'Docker - Portainer CE Dashboard',
-    ip: '192.168.1.15',
-    mac: '02:42:ac:11:00:03',
-    vendor: 'Docker Inc. (veth-bridge)',
-    deviceType: 'docker',
-    subType: 'container',
-    status: 'online',
-    parentHostId: 'dev-host-docker',
-    portOrInterface: 'docker0 (172.17.0.3) -> Port 9443',
-    vlan: 10,
-    os: 'Alpine Linux (Portainer v2.20)',
-    openPorts: [9443, 9000],
-    location: 'Conteneur sur HP ProDesk',
-    tags: ['Docker', 'Management', 'Admin'],
-    metadata: {
-      'Image': 'portainer/portainer-ce:latest',
-      'Socket': '/var/run/docker.sock monté en lecture',
-      'Gestionnaire': 'Portainer Community Edition'
-    },
-    lastSeen: new Date().toISOString(),
-    latencyMs: 0.2,
-    position: { x: 700, y: 590 }
-  },
-  {
-    id: 'dev-ct-mqtt',
-    name: 'Docker - Eclipse Mosquitto MQTT',
-    ip: '192.168.1.15',
-    mac: '02:42:ac:11:00:04',
-    vendor: 'Docker Inc. (veth-bridge)',
-    deviceType: 'docker',
-    subType: 'container',
-    status: 'online',
-    parentHostId: 'dev-host-docker',
-    portOrInterface: 'docker0 (172.17.0.4) -> Port 1883',
-    vlan: 10,
-    os: 'Alpine Linux (Mosquitto 2.0.18)',
-    openPorts: [1883, 9001],
-    location: 'Conteneur sur HP ProDesk',
-    tags: ['Docker', 'Broker MQTT', 'IoT Core'],
-    metadata: {
-      'Image': 'eclipse-mosquitto:2',
-      'Clients connectés': '18 sondes & capteurs',
-      'Débit messages': '42 msg/sec'
-    },
-    lastSeen: new Date().toISOString(),
-    latencyMs: 0.2,
-    position: { x: 830, y: 590 }
-  },
-  {
-    id: 'dev-ct-postgres',
-    name: 'Docker - PostgreSQL 16 TSDB',
-    ip: '192.168.1.15',
-    mac: '02:42:ac:11:00:05',
-    vendor: 'Docker Inc. (veth-bridge)',
-    deviceType: 'docker',
-    subType: 'container',
-    status: 'online',
-    parentHostId: 'dev-host-docker',
-    portOrInterface: 'docker0 (172.17.0.5) -> Port 5432',
-    vlan: 10,
-    os: 'Debian 12 (Postgres 16.2)',
-    openPorts: [5432],
-    location: 'Conteneur sur HP ProDesk',
-    tags: ['Docker', 'Base de données', 'Telemetry'],
-    metadata: {
-      'Image': 'postgres:16-alpine',
-      'Base': 'telemetry_tsdb',
-      'Taille': '4.2 Go'
-    },
-    lastSeen: new Date().toISOString(),
-    latencyMs: 0.3,
-    position: { x: 960, y: 590 }
-  },
-
-  // 5. APPAREILS IOT & DOMOTIQUE
-  {
-    id: 'dev-iot-cam01',
-    name: 'Caméra Extérieure Nord - Hikvision 4K',
-    ip: '192.168.1.101',
-    mac: '44:19:b6:33:10:a1',
-    vendor: 'Hikvision Digital Tech',
-    deviceType: 'iot',
-    subType: 'camera',
-    status: 'online',
-    connectedToSwitchId: 'dev-switch-01',
-    portOrInterface: 'Port 11 (PoE 802.3af 7.5W)',
-    vlan: 20,
-    os: 'Embedded Linux (Hikvision IPC V5.7)',
-    openPorts: [80, 554, 8000],
-    location: 'Façade Nord - Parking',
-    tags: ['IoT', 'VLAN 20', 'Caméra RTSP', 'PoE'],
-    metadata: {
-      'Flux RTSP': 'rtsp://192.168.1.101:554/Streaming/Channels/101',
-      'Résolution': '3840x2160 (4K @ 25fps)',
-      'Consommation PoE': '6.8W',
-      'Vision Nocturne': 'IR 30m actif'
-    },
-    lastSeen: new Date().toISOString(),
-    latencyMs: 2.4,
-    position: { x: 80, y: 770 }
-  },
-  {
-    id: 'dev-iot-cam02',
-    name: 'Caméra Entrée Porte - Reolink Doorbell',
-    ip: '192.168.1.102',
-    mac: 'ec:71:db:11:e4:67',
-    vendor: 'Reolink Digital',
-    deviceType: 'iot',
-    subType: 'camera',
-    status: 'online',
-    connectedToSwitchId: 'dev-switch-01',
-    portOrInterface: 'Port 12 (PoE 802.3af 4.8W)',
-    vlan: 20,
-    os: 'Reolink Firmware v3.0.0',
-    openPorts: [80, 443, 554, 9000],
-    location: 'Entrée Principale',
-    tags: ['IoT', 'VLAN 20', 'Sonnette Cam', 'PoE'],
-    metadata: {
-      'Type': 'Interphone vidéo PoE ONVIF',
-      'Audio': 'Bidirectionnel Full-Duplex',
-      'Consommation': '4.2W'
-    },
-    lastSeen: new Date().toISOString(),
-    latencyMs: 2.1,
-    position: { x: 260, y: 770 }
-  },
-  {
-    id: 'dev-iot-pir01',
-    name: 'Capteur de Présence mmWave - Aqara FP2',
-    ip: '192.168.1.115',
-    mac: '54:ef:44:bc:89:12',
-    vendor: 'Lumi United Tech (Aqara)',
-    deviceType: 'iot',
-    subType: 'sensor_presence',
-    status: 'online',
-    connectedToSwitchId: 'dev-switch-01',
-    portOrInterface: 'Wi-Fi 2.4GHz (-52 dBm)',
-    vlan: 20,
-    os: 'Aqara Zigbee/Matter OS v1.2.6',
-    openPorts: [80, 5353],
-    location: 'Salon / Séjour',
-    tags: ['IoT', 'Capteur Présence', 'mmWave', 'Domotique'],
-    metadata: {
-      'Technologie': 'Radar onde millimétrique 60GHz',
-      'Portée': 'Zone quadrillée 8m x 6m',
-      'Multi-cibles': 'Jusqu\'à 5 personnes suivies',
-      'Intégration': 'Home Assistant via HomeKit Local'
-    },
-    lastSeen: new Date().toISOString(),
-    latencyMs: 4.8,
-    position: { x: 440, y: 770 }
-  },
-  {
-    id: 'dev-iot-temp01',
-    name: 'Sonde Température & Humidité - ESP32 S3',
-    ip: '192.168.1.120',
-    mac: '30:ae:a4:78:32:09',
-    vendor: 'Espressif Systems',
-    deviceType: 'iot',
-    subType: 'sensor_temp',
-    status: 'online',
-    connectedToSwitchId: 'dev-switch-01',
-    portOrInterface: 'Wi-Fi 2.4GHz (-48 dBm)',
-    vlan: 20,
-    os: 'ESPHome 2024.4.1 (FreeRTOS)',
-    openPorts: [80, 6053],
-    location: 'Baie Rack Serveurs',
-    tags: ['IoT', 'ESP32', 'Température', 'Surveillance'],
-    metadata: {
-      'Température': '21.4 °C (Nominale)',
-      'Humidité relative': '44.8 % RH',
-      'Pression': '1013.2 hPa (BME280)',
-      'Rafraîchissement': 'Toutes les 10 secondes via MQTT'
-    },
-    lastSeen: new Date().toISOString(),
-    latencyMs: 3.2,
-    position: { x: 620, y: 770 }
-  },
-  {
-    id: 'dev-iot-plug01',
-    name: 'Prise Connectée Shelly Plus 1PM',
-    ip: '192.168.1.130',
-    mac: 'bc:02:6e:aa:90:f4',
-    vendor: 'Allterco Robotics (Shelly)',
-    deviceType: 'iot',
-    subType: 'smart_plug',
-    status: 'online',
-    connectedToSwitchId: 'dev-switch-01',
-    portOrInterface: 'Wi-Fi 2.4GHz (-60 dBm)',
-    vlan: 20,
-    os: 'Shelly Gen2 Firmware v1.3.1',
-    openPorts: [80, 8000],
-    location: 'Prise Baie Rack Onduleur',
-    tags: ['IoT', 'Wattmètre', 'Shelly', 'Onduleur'],
-    metadata: {
-      'Puissance instantanée': '184.2 W',
-      'Consommation totale': '42.8 kWh ce mois',
-      'Tension mesurée': '231.4 V',
-      'Température relais': '38.2 °C'
-    },
-    lastSeen: new Date().toISOString(),
-    latencyMs: 3.6,
-    position: { x: 800, y: 770 }
-  },
-  {
-    id: 'dev-iot-hue',
-    name: 'Pont Philips Hue Bridge V2',
-    ip: '192.168.1.140',
-    mac: 'ec:b5:fa:21:49:7b',
-    vendor: 'Signify Netherlands B.V.',
-    deviceType: 'iot',
-    subType: 'other',
-    status: 'online',
-    connectedToSwitchId: 'dev-switch-01',
-    portOrInterface: 'Port 8 (100 Mbps)',
-    vlan: 20,
-    os: 'Hue Hub Software v1.63',
-    openPorts: [80, 443, 2100],
-    location: 'Salon / Meuble TV',
-    tags: ['IoT', 'Zigbee Gateway', 'Éclairage'],
-    metadata: {
-      'Canal Zigbee': 'Canal 25',
-      'Ampoules appairées': '24 luminaires',
-      'Protocole': 'Zigbee 3.0 / Matter'
-    },
-    lastSeen: new Date().toISOString(),
-    latencyMs: 1.8,
-    position: { x: 970, y: 770 }
-  },
-
-  // 6. BUREAUTIQUE / WORKSTATION
-  {
-    id: 'dev-pc-xps',
-    name: 'Station CAO / Dév - Dell XPS 8950',
-    ip: '192.168.1.75',
-    mac: '24:4b:fe:88:99:a0',
-    vendor: 'Dell Inc.',
-    deviceType: 'physical',
-    subType: 'workstation',
-    status: 'online',
-    connectedToSwitchId: 'dev-switch-01',
-    portOrInterface: 'Port 18 (2.5 Gbps)',
-    vlan: 1,
-    os: 'Windows 11 Pro 23H2',
-    openPorts: [135, 445, 3389],
-    location: 'Bureau Principal',
-    tags: ['Bureautique', 'Workstation', 'Développeur'],
-    metadata: {
-      'GPU': 'NVIDIA RTX 4080 (16GB)',
-      'CPU': 'Intel Core i9-12900K',
-      'RAM': '64 Go DDR5'
-    },
-    lastSeen: new Date().toISOString(),
-    latencyMs: 1.1,
-    position: { x: 1110, y: 400 }
-  }
-];
+// Default initial baseline topology (Empty by default for clean start)
+const defaultDevices: Device[] = [];
 
 let devices: Device[] = [];
 
@@ -993,7 +451,7 @@ function loadZonesFromFile() {
     if (fs.existsSync(ZONES_FILE)) {
       const content = fs.readFileSync(ZONES_FILE, 'utf-8');
       const parsed = JSON.parse(content);
-      if (Array.isArray(parsed) && parsed.length > 0) {
+      if (Array.isArray(parsed)) {
         zones = parsed;
         console.log(`[InkaNetopology] ${zones.length} zones géographiques chargées depuis ${ZONES_FILE}`);
         return;
@@ -1002,8 +460,8 @@ function loadZonesFromFile() {
   } catch (err) {
     console.error('Erreur lecture zones.json:', err);
   }
-  // Fallback to default initial zones
-  zones = [...defaultZones];
+  // Default to empty initial zones
+  zones = [];
   saveZonesToFile();
 }
 
@@ -1014,32 +472,6 @@ function loadDevicesFromFile() {
       const parsed = JSON.parse(content);
       if (Array.isArray(parsed)) {
         devices = parsed;
-
-        // Ensure devices have zoneId if missing
-        let hasZoneUpdates = false;
-        devices.forEach((d) => {
-          if (!d.zoneId) {
-            hasZoneUpdates = true;
-            if (d.subType === 'router' || d.subType === 'switch' || d.id === 'dev-host-proxmox' || d.id === 'dev-host-docker' || d.id === 'dev-nas-synology' || d.id === 'dev-iot-plug01') {
-              d.zoneId = 'zone-baie-01';
-            } else if (d.subType === 'camera') {
-              d.zoneId = 'zone-sr-01';
-            } else if (d.subType === 'workstation' || d.subType === 'printer') {
-              d.zoneId = 'zone-bureau';
-            } else if (d.tags?.includes('Domotique') || d.name.toLowerCase().includes('hue') || d.name.toLowerCase().includes('mosquitto')) {
-              d.zoneId = 'zone-salon';
-            } else if (d.deviceType === 'vm' || d.deviceType === 'docker') {
-              d.zoneId = 'zone-datacenter';
-            } else {
-              d.zoneId = 'zone-site-hq';
-            }
-          }
-        });
-
-        if (hasZoneUpdates) {
-          saveDevicesToFile();
-        }
-
         console.log(`[InkaNetopology] ${devices.length} équipements chargés depuis ${DEVICES_FILE}`);
         return;
       }
@@ -1047,8 +479,8 @@ function loadDevicesFromFile() {
   } catch (err) {
     console.error('Erreur lecture devices.json:', err);
   }
-  // Fallback to default initial topology only if file does not exist
-  devices = [...defaultDevices];
+  // Default to empty initial topology
+  devices = [];
   saveDevicesToFile();
 }
 
@@ -2618,20 +2050,23 @@ app.post('/api/devices/:id/ping', async (req, res) => {
   });
 });
 
-// Reset topology to factory baseline
+// Reset topology and inventory to empty state
 app.post('/api/reset-topology', (req, res) => {
-  devices = [...defaultDevices];
+  devices = [];
+  zones = [];
   saveDevicesToFile();
+  saveZonesToFile();
 
   addLog({
     level: 'WARN',
     category: 'SYSTEM',
-    message: 'Topologie réseau et inventaire réinitialisés au schéma par défaut.'
+    message: 'Topologie réseau et inventaire réinitialisés à zéro (vide).'
   });
 
   broadcastSse('topology_reset', devices);
+  broadcastSse('inventory_cleared', {});
   broadcastSse('scan_complete', { devices, scanStatus });
-  res.json({ success: true, devices });
+  res.json({ success: true, devices, zones });
 });
 
 // Auto-layout / Automatic diagram generation endpoint
