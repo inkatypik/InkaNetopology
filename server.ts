@@ -89,6 +89,7 @@ const defaultDevices: Device[] = [
     deviceType: 'physical',
     subType: 'router',
     status: 'online',
+    isCore: true,
     portOrInterface: 'WAN / SFP+ 10G',
     vlan: 1,
     os: 'UniFi OS 3.2.12',
@@ -717,37 +718,48 @@ function autoLayoutTopology(devList: Device[]): Device[] {
   const devMap = new Map<string, Device>();
   list.forEach((d) => devMap.set(d.id, d));
 
-  // 1. Identify Root Cœur de Réseau (Gateway / Core Router)
-  let coreNode = list.find(
-    (d) =>
-      d.subType === 'router' ||
-      d.ip.endsWith('.1') ||
-      d.ip.endsWith('.254') ||
-      d.name.toLowerCase().includes('passerelle') ||
-      d.name.toLowerCase().includes('cœur') ||
-      d.name.toLowerCase().includes('coeur') ||
-      d.name.toLowerCase().includes('gateway') ||
-      d.name.toLowerCase().includes('box') ||
-      d.name.toLowerCase().includes('udm')
-  );
+  // 1. Identify Root Cœur(s) de Réseau (Gateway / Core Router / Manual isCore flag)
+  const manualCoreNodes = list.filter((d) => d.isCore === true);
+  let coreNodes: Device[] = [];
 
-  if (!coreNode) {
-    coreNode =
-      list.find((d) => d.subType === 'switch') ||
-      list.find((d) => d.deviceType === 'physical') ||
-      list[0];
+  if (manualCoreNodes.length > 0) {
+    coreNodes = manualCoreNodes;
+  } else {
+    let defaultCore = list.find(
+      (d) =>
+        d.subType === 'router' ||
+        d.ip.endsWith('.1') ||
+        d.ip.endsWith('.254') ||
+        d.name.toLowerCase().includes('passerelle') ||
+        d.name.toLowerCase().includes('cœur') ||
+        d.name.toLowerCase().includes('coeur') ||
+        d.name.toLowerCase().includes('gateway') ||
+        d.name.toLowerCase().includes('box') ||
+        d.name.toLowerCase().includes('udm')
+    );
+
+    if (!defaultCore) {
+      defaultCore =
+        list.find((d) => d.subType === 'switch') ||
+        list.find((d) => d.deviceType === 'physical') ||
+        list[0];
+    }
+    if (defaultCore) coreNodes = [defaultCore];
   }
+
+  const coreNode = coreNodes[0];
+  const coreNodeIds = new Set(coreNodes.map((c) => c.id));
 
   // 2. Identify Switches & Access points
   const switches = list.filter(
-    (d) => d.id !== coreNode?.id && (d.subType === 'switch' || d.subType === 'access_point')
+    (d) => !coreNodeIds.has(d.id) && (d.subType === 'switch' || d.subType === 'access_point')
   );
   const primarySwitch = switches[0] || coreNode;
 
   // 3. Identify Physical Servers, Hypervisors, NAS
   const servers = list.filter(
     (d) =>
-      d.id !== coreNode?.id &&
+      !coreNodeIds.has(d.id) &&
       !switches.some((s) => s.id === d.id) &&
       d.deviceType === 'physical' &&
       (d.subType === 'server' || d.subType === 'nas')
@@ -793,7 +805,7 @@ function autoLayoutTopology(devList: Device[]): Device[] {
   // 5. Workstations, IoT, Printers
   const workstations = list.filter(
     (d) =>
-      d.id !== coreNode?.id &&
+      !coreNodeIds.has(d.id) &&
       !switches.some((s) => s.id === d.id) &&
       !servers.some((s) => s.id === d.id) &&
       d.deviceType === 'physical' &&
@@ -802,7 +814,7 @@ function autoLayoutTopology(devList: Device[]): Device[] {
 
   const iotAndOthers = list.filter(
     (d) =>
-      d.id !== coreNode?.id &&
+      !coreNodeIds.has(d.id) &&
       !switches.some((s) => s.id === d.id) &&
       !servers.some((s) => s.id === d.id) &&
       !vms.some((v) => v.id === d.id) &&
@@ -832,12 +844,22 @@ function autoLayoutTopology(devList: Device[]): Device[] {
   const R_RING2 = 850;
   const R_RING3 = 1240;
 
-  // 1. PLACE CORE AT THE EXACT CENTER
-  if (coreNode) {
-    coreNode.position = {
+  // 1. PLACE ALL CORE NETWORK NODES AT THE EXACT CENTER (Symmetrically spaced if multiple)
+  if (coreNodes.length === 1) {
+    coreNodes[0].position = {
       x: Math.round(centerX - halfNodeW),
       y: Math.round(centerY - halfNodeH)
     };
+  } else if (coreNodes.length > 1) {
+    const spacing = 320;
+    const totalW = (coreNodes.length - 1) * spacing;
+    const startX = centerX - totalW / 2;
+    coreNodes.forEach((cn, idx) => {
+      cn.position = {
+        x: Math.round(startX + idx * spacing - halfNodeW),
+        y: Math.round(centerY - halfNodeH)
+      };
+    });
   }
 
   // 2. BUILD MAIN STAR RAYS (Branches)
@@ -886,7 +908,7 @@ function autoLayoutTopology(devList: Device[]): Device[] {
   }
 
   const placedIds = new Set<string>();
-  if (coreNode) placedIds.add(coreNode.id);
+  coreNodes.forEach((cn) => placedIds.add(cn.id));
   starBranches.forEach((b) => {
     placedIds.add(b.head.id);
     b.children.forEach((c) => placedIds.add(c.id));
@@ -2627,15 +2649,79 @@ app.post('/api/topology/autolayout', (req, res) => {
   res.json({ success: true, devices });
 });
 
-// Export topology configuration
+// Export topology configuration (including devices, zones, and subnet info)
 app.get('/api/export', (req, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename="inkanetopology-export.json"');
   res.json({
     exportedAt: new Date().toISOString(),
     subnet: scanStatus.subnet,
     devices,
+    zones,
     logs: logs.slice(0, 100)
   });
+});
+
+// Import topology configuration (accepts { devices, zones } or Device[] array)
+app.post('/api/import', (req, res) => {
+  const body = req.body;
+  if (!body) {
+    return res.status(400).json({ error: 'Données JSON invalides.' });
+  }
+
+  let importedDevices: Device[] = [];
+  let importedZones: GeographicZone[] = [];
+
+  if (Array.isArray(body)) {
+    importedDevices = body;
+  } else if (typeof body === 'object') {
+    if (Array.isArray(body.devices)) {
+      importedDevices = body.devices;
+    }
+    if (Array.isArray(body.zones)) {
+      importedZones = body.zones;
+    }
+  }
+
+  if (importedDevices.length === 0 && importedZones.length === 0) {
+    return res.status(400).json({ error: 'Le fichier JSON ne contient aucun équipement ou zone valide.' });
+  }
+
+  if (importedDevices.length > 0) {
+    devices = importedDevices;
+    saveDevicesToFile();
+    broadcastSse('topology_updated', devices);
+  }
+
+  if (importedZones.length > 0) {
+    zones = importedZones;
+    saveZonesToFile();
+    broadcastSse('zones_updated', zones);
+  }
+
+  addLog({
+    level: 'INFO',
+    category: 'SYSTEM',
+    message: `Topologie réseau importée avec succès : ${importedDevices.length} équipements, ${importedZones.length} zones géographiques.`
+  });
+
+  res.json({
+    success: true,
+    devicesCount: devices.length,
+    zonesCount: zones.length,
+    devices,
+    zones
+  });
+});
+
+// Logo PNG direct download endpoint
+app.get(['/api/logo', '/api/logo.png'], (req, res) => {
+  const logoPath = path.resolve(__dirname, 'public/logo.png');
+  if (fs.existsSync(logoPath)) {
+    res.setHeader('Content-Type', 'image/png');
+    res.download(logoPath, 'inkanetopology-logo.png');
+  } else {
+    res.status(404).send('Logo non trouvé');
+  }
 });
 
 // Serve full standalone documentation

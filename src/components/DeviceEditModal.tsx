@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { Device, DeviceSubType, DeviceType, DeviceStatus, GeographicZone } from '../types/network';
-import { X, Save, Plus, Trash2, Link2, Image, Activity, Tag, Info, Cpu, Box, Server, MapPin } from 'lucide-react';
+import { X, Save, Plus, Trash2, Link2, Image, Activity, Tag, Info, Cpu, Box, Server, MapPin, Upload, Star } from 'lucide-react';
 import { PRESET_HARDWARE_IMAGES } from '../utils/hardwareIcons';
 
 interface DeviceEditModalProps {
@@ -31,6 +31,7 @@ export const DeviceEditModal: React.FC<DeviceEditModalProps> = ({
   const [deviceType, setDeviceType] = useState<DeviceType>(device.deviceType);
   const [subType, setSubType] = useState<DeviceSubType>(device.subType);
   const [status, setStatus] = useState<DeviceStatus>(device.status);
+  const [isCore, setIsCore] = useState<boolean>(Boolean(device.isCore));
   const [zoneId, setZoneId] = useState<string>(device.zoneId || '');
   const [parentHostId, setParentHostId] = useState<string>(device.parentHostId || '');
   const [connectedToSwitchId, setConnectedToSwitchId] = useState<string>(device.connectedToSwitchId || '');
@@ -44,6 +45,20 @@ export const DeviceEditModal: React.FC<DeviceEditModalProps> = ({
   const [metadata, setMetadata] = useState<Record<string, string>>({ ...(device.metadata || {}) });
   const [newMetaKey, setNewMetaKey] = useState('');
   const [newMetaVal, setNewMetaVal] = useState('');
+
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleLocalImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setCustomImage(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Physical host and hypervisor candidates (excluding itself and docker containers)
   const candidateHosts = allDevices.filter(
@@ -98,6 +113,7 @@ export const DeviceEditModal: React.FC<DeviceEditModalProps> = ({
       deviceType,
       subType,
       status,
+      isCore,
       zoneId: zoneId.trim() ? zoneId : undefined,
       parentHostId: parentHostId || undefined,
       connectedToSwitchId: connectedToSwitchId || undefined,
@@ -349,54 +365,121 @@ export const DeviceEditModal: React.FC<DeviceEditModalProps> = ({
             </div>
           </div>
 
-          {/* 4. CUSTOM IMAGE & REALISTIC HARDWARE REPRESENTATION */}
-          <div className="p-4 bg-slate-950/70 border border-slate-800 rounded-xl space-y-3">
-            <div className="flex items-center gap-2 text-cyan-300 font-semibold">
-              <Image className="w-4 h-4" />
-              <span>Représentation Graphique & Image Personnalisée</span>
+          {/* CŒUR DE RÉSEAU MANUEL */}
+          <div className="p-3.5 bg-amber-950/30 border border-amber-500/40 rounded-xl flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300 shrink-0">
+                <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
+              </div>
+              <div>
+                <span className="font-semibold text-amber-200 block text-xs">
+                  Équipement Cœur de Réseau (Core Network)
+                </span>
+                <span className="text-[11px] text-amber-300/80">
+                  Place cet équipement au centre névralgique de la topologie en étoile (plusieurs cœurs autorisés).
+                </span>
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer shrink-0">
+              <input
+                type="checkbox"
+                checked={isCore}
+                onChange={(e) => setIsCore(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-slate-800 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+            </label>
+          </div>
+
+          {/* 4. ICÔNE & REPRÉSENTATION DU MATÉRIEL */}
+          <div className="p-4 bg-slate-950/70 border border-slate-800 rounded-xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-cyan-300 font-semibold">
+                <Image className="w-4 h-4" />
+                <span>Icône & Représentation du Matériel</span>
+              </div>
+              {customImage && (
+                <button
+                  type="button"
+                  onClick={() => setCustomImage('')}
+                  className="text-xs text-rose-400 hover:text-rose-300 hover:underline cursor-pointer"
+                >
+                  Réinitialiser l'icône
+                </button>
+              )}
             </div>
 
-            <div>
-              <label className="block text-slate-400 font-medium mb-1">URL d'image personnalisée</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="url"
-                  value={customImage}
-                  onChange={(e) => setCustomImage(e.target.value)}
-                  placeholder="https://... (URL d'une image réaliste du matériel)"
-                  className="flex-1 px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-200 focus:outline-hidden focus:border-cyan-500"
-                />
-                {customImage && (
-                  <button
-                    type="button"
-                    onClick={() => setCustomImage('')}
-                    className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg"
-                  >
-                    Effacer
-                  </button>
+            {/* Local file picker & current preview */}
+            <div className="flex items-center gap-4 p-3 bg-slate-900 border border-slate-800 rounded-xl">
+              <div className="w-14 h-14 rounded-xl bg-slate-950 border border-slate-700 flex items-center justify-center shrink-0 overflow-hidden shadow-inner">
+                {customImage ? (
+                  <img
+                    src={customImage}
+                    alt="Aperçu"
+                    className="w-full h-full object-contain p-1"
+                  />
+                ) : (
+                  <div className="text-slate-500 text-[10px] text-center px-1">
+                    Défaut système
+                  </div>
                 )}
+              </div>
+
+              <div className="flex-1 space-y-2">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept="image/*"
+                  onChange={handleLocalImageSelect}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold bg-cyan-600/90 hover:bg-cyan-500 text-white rounded-lg shadow-sm transition-all active:scale-95 cursor-pointer"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Choisir une icône sur la machine locale...</span>
+                </button>
+                <p className="text-[10px] text-slate-400 font-mono">
+                  Formats acceptés : PNG, SVG, JPG, WEBP, ICO
+                </p>
               </div>
             </div>
 
-            {/* Presets Grid */}
+            {/* Presets Grid filtered by current device category/subtype */}
             <div>
-              <span className="block text-slate-500 text-[11px] mb-2">
-                Ou sélectionner un préréglage de matériel réaliste :
+              <span className="block text-slate-400 font-medium text-[11px] mb-2">
+                Ou sélectionner une icône vectorielle générique sympa ({deviceType}) :
               </span>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {PRESET_HARDWARE_IMAGES.map((preset) => (
+                {(
+                  PRESET_HARDWARE_IMAGES.filter(
+                    (p) => p.category === deviceType || p.subType === subType
+                  ).length > 0
+                    ? PRESET_HARDWARE_IMAGES.filter(
+                        (p) => p.category === deviceType || p.subType === subType
+                      )
+                    : PRESET_HARDWARE_IMAGES
+                ).map((preset) => (
                   <button
                     key={preset.id}
                     type="button"
                     onClick={() => handleApplyPresetImage(preset.previewUrl)}
-                    className="p-2 bg-slate-900 border border-slate-800 hover:border-cyan-500 rounded-lg flex flex-col items-center gap-1.5 transition-colors text-center group"
+                    className={`p-2.5 bg-slate-900 border rounded-xl flex flex-col items-center gap-2 transition-all text-center group cursor-pointer ${
+                      customImage === preset.previewUrl
+                        ? 'border-cyan-400 ring-1 ring-cyan-400/50 bg-cyan-950/20'
+                        : 'border-slate-800 hover:border-cyan-500/80 hover:bg-slate-800/60'
+                    }`}
                   >
                     <img
                       src={preset.previewUrl}
                       alt={preset.label}
-                      className="w-12 h-12 object-cover rounded-md border border-slate-700 group-hover:border-cyan-400"
+                      className="w-11 h-11 object-contain rounded-lg drop-shadow-sm group-hover:scale-105 transition-transform"
                     />
-                    <span className="text-[10px] text-slate-300 line-clamp-1">{preset.label}</span>
+                    <span className="text-[10px] text-slate-300 font-medium line-clamp-1">
+                      {preset.label}
+                    </span>
                   </button>
                 ))}
               </div>

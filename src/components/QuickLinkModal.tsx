@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import type { Device, DeviceType, GeographicZone } from '../types/network';
-import { X, Save, Link2, Server, Network, Tag, Box, Cpu, Radio, Shield, MapPin } from 'lucide-react';
+import { X, Save, Link2, Server, Network, Tag, Box, Cpu, Radio, Shield, MapPin, Star } from 'lucide-react';
 import { getDeviceDefaultIcon } from '../utils/hardwareIcons';
 
 interface QuickLinkModalProps {
@@ -28,6 +28,7 @@ export const QuickLinkModal: React.FC<QuickLinkModalProps> = ({
   const [portOrInterface, setPortOrInterface] = useState<string>(device.portOrInterface || '');
   const [vlan, setVlan] = useState<number>(device.vlan || 1);
   const [zoneId, setZoneId] = useState<string>(device.zoneId || '');
+  const [isCore, setIsCore] = useState<boolean>(Boolean(device.isCore));
 
   // Sync state whenever active device changes
   useEffect(() => {
@@ -37,6 +38,7 @@ export const QuickLinkModal: React.FC<QuickLinkModalProps> = ({
     setPortOrInterface(device.portOrInterface || '');
     setVlan(device.vlan || 1);
     setZoneId(device.zoneId || '');
+    setIsCore(Boolean(device.isCore));
   }, [device]);
 
   // Candidate physical hosts (hypervisors, servers, NAS)
@@ -57,6 +59,7 @@ export const QuickLinkModal: React.FC<QuickLinkModalProps> = ({
     const updated: Device = {
       ...device,
       deviceType,
+      isCore,
       zoneId: zoneId.trim() ? zoneId : undefined,
       parentHostId: parentHostId.trim() ? parentHostId : undefined,
       connectedToSwitchId: connectedToSwitchId.trim() ? connectedToSwitchId : undefined,
@@ -260,6 +263,30 @@ export const QuickLinkModal: React.FC<QuickLinkModalProps> = ({
             <p className="text-[10px] text-slate-400 mt-1">
               Permet de regrouper et filtrer visuellement cet équipement dans la topologie.
             </p>
+          </div>
+
+          {/* Cœur de réseau Switch */}
+          <div className="p-3 bg-amber-950/30 border border-amber-500/40 rounded-xl flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <Star className="w-4 h-4 fill-amber-400 text-amber-400 shrink-0" />
+              <div>
+                <span className="text-xs font-semibold text-amber-200 block">
+                  Équipement Cœur de Réseau
+                </span>
+                <span className="text-[10px] text-amber-300/80">
+                  Positionne cet équipement au centre du schéma en étoile.
+                </span>
+              </div>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer shrink-0">
+              <input
+                type="checkbox"
+                checked={isCore}
+                onChange={(e) => setIsCore(e.target.checked)}
+                className="sr-only peer"
+              />
+              <div className="w-9 h-5 bg-slate-800 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+            </label>
           </div>
 
           {/* Actions */}

@@ -11,7 +11,9 @@ import { AddDeviceModal } from './components/AddDeviceModal';
 import { DockerDeployModal } from './components/DockerDeployModal';
 import { ClearInventoryModal } from './components/ClearInventoryModal';
 import { ZoneManagerModal } from './components/ZoneManagerModal';
-import { autoLayoutTopology } from './utils/topologyLayout';
+import { autoLayoutTopology, autoLayoutByZones } from './utils/topologyLayout';
+import { toPng } from 'html-to-image';
+import jsPDF from 'jspdf';
 import { XCircle, Square } from 'lucide-react';
 
 export default function App() {
@@ -35,6 +37,11 @@ export default function App() {
   const [selectedStatus, setSelectedStatus] = useState<'all' | 'online' | 'offline'>('all');
   const [selectedVlan, setSelectedVlan] = useState<number | 'all'>('all');
   const [groupByHost, setGroupByHost] = useState<boolean>(true);
+
+  // Topology zones & fold state
+  const [showZoneEnclosures, setShowZoneEnclosures] = useState<boolean>(true);
+  const [collapsedHostIds, setCollapsedHostIds] = useState<Set<string>>(new Set());
+  const [collapsedZoneIds, setCollapsedZoneIds] = useState<Set<string>>(new Set());
 
   // Modals & Selection
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
@@ -308,9 +315,48 @@ export default function App() {
     }
   };
 
-  // Save device from edit modal
+  // Save device from edit modal with instant zone repositioning if zone changed
   const handleSaveDevice = async (updated: Device) => {
     try {
+      const existing = devices.find((d) => d.id === updated.id);
+      // Instant zone repositioning if geographic zone changed
+      if (updated.zoneId && existing?.zoneId !== updated.zoneId) {
+        const targetZoneDevs = devices.filter(
+          (d) => d.zoneId === updated.zoneId && d.id !== updated.id
+        );
+        if (targetZoneDevs.length > 0) {
+          const minX = Math.min(...targetZoneDevs.map((d) => d.position?.x ?? 200));
+          const minY = Math.min(...targetZoneDevs.map((d) => d.position?.y ?? 200));
+          const cols = Math.max(2, Math.ceil(Math.sqrt(targetZoneDevs.length + 1)));
+          const slotCol = targetZoneDevs.length % cols;
+          const slotRow = Math.floor(targetZoneDevs.length / cols);
+          let targetX = minX + slotCol * 310;
+          let targetY = minY + slotRow * 230;
+
+          // Prevent direct overlap with existing nodes
+          let collides = targetZoneDevs.some(
+            (d) =>
+              Math.abs((d.position?.x ?? 0) - targetX) < 150 &&
+              Math.abs((d.position?.y ?? 0) - targetY) < 120
+          );
+          while (collides) {
+            targetX += 310;
+            collides = targetZoneDevs.some(
+              (d) =>
+                Math.abs((d.position?.x ?? 0) - targetX) < 150 &&
+                Math.abs((d.position?.y ?? 0) - targetY) < 120
+            );
+          }
+          updated.position = { x: targetX, y: targetY };
+        } else {
+          // Dedicated initial zone position
+          const zoneIdx = Math.max(0, zones.findIndex((z) => z.id === updated.zoneId));
+          const col = zoneIdx % 3;
+          const row = Math.floor(zoneIdx / 3);
+          updated.position = { x: 180 + col * 950, y: 220 + row * 700 };
+        }
+      }
+
       const res = await fetch(`/api/devices/${updated.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -418,20 +464,155 @@ export default function App() {
     }
   };
 
-  // Reorganise & auto-layout topology into hierarchical schema
-  const handleAutoLayout = async () => {
+  // Reorganise & auto-layout topology into Star schema with core network at center
+  const handleStarTopologyLayout = async () => {
     try {
       const res = await fetch('/api/topology/autolayout', { method: 'POST' });
       const data = await res.json();
       if (data.devices) {
         setDevices(data.devices);
       }
-      showToast('Schéma de topologie réorganisé automatiquement.');
+      showToast('Topologie en étoile réorganisée avec le cœur de réseau au centre.');
     } catch {
       // Fallback client-side auto-layout
       const arranged = autoLayoutTopology(devices);
       setDevices(arranged);
-      showToast('Schéma de topologie réorganisé.');
+      showToast('Topologie en étoile réorganisée.');
+    }
+  };
+
+  // Collapse / Fold helpers
+  const hostIdsWithChildren = useMemo(() => {
+    const parentIds = new Set<string>();
+    devices.forEach((d) => {
+      if (d.parentHostId) parentIds.add(d.parentHostId);
+    });
+    return Array.from(parentIds);
+  }, [devices]);
+
+  const zoneIdsWithDevices = useMemo(() => {
+    const zoneIds = new Set<string>();
+    devices.forEach((d) => {
+      if (d.zoneId) zoneIds.add(d.zoneId);
+    });
+    return Array.from(zoneIds);
+  }, [devices]);
+
+  const hasCollapsibleGroups = hostIdsWithChildren.length > 0 || zoneIdsWithDevices.length > 0;
+  const allCollapsed =
+    hasCollapsibleGroups &&
+    hostIdsWithChildren.every((id) => collapsedHostIds.has(id)) &&
+    zoneIdsWithDevices.every((id) => collapsedZoneIds.has(id));
+
+  const handleToggleAllCollapse = () => {
+    if (allCollapsed) {
+      setCollapsedHostIds(new Set());
+      setCollapsedZoneIds(new Set());
+    } else {
+      setCollapsedHostIds(new Set(hostIdsWithChildren));
+      setCollapsedZoneIds(new Set(zoneIdsWithDevices));
+    }
+  };
+
+  const handleToggleCollapseHost = (hostId: string) => {
+    setCollapsedHostIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(hostId)) next.delete(hostId);
+      else next.add(hostId);
+      return next;
+    });
+  };
+
+  const handleToggleCollapseZone = (zoneId: string) => {
+    setCollapsedZoneIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(zoneId)) next.delete(zoneId);
+      else next.add(zoneId);
+      return next;
+    });
+  };
+
+  // Import JSON topology
+  const handleImportTopology = async (file: File) => {
+    showToast('Importation du fichier JSON en cours...');
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const res = await fetch('/api/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(parsed)
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (data.devices) setDevices(data.devices);
+        if (data.zones) setZones(data.zones);
+        showToast(`Topologie importée avec succès (${data.deviceCount} équipements, ${data.zoneCount} zones).`);
+      } else {
+        showToast(data.error || 'Erreur lors de l\'importation.');
+      }
+    } catch (err) {
+      console.error('Erreur import JSON:', err);
+      showToast('Fichier JSON invalide ou corrompu.');
+    }
+  };
+
+  // Export PNG image
+  const handleExportPng = async () => {
+    const elem = document.getElementById('topology-canvas-viewport');
+    if (!elem) {
+      showToast('Erreur: zone de dessin introuvable.');
+      return;
+    }
+    showToast('Génération de l\'image PNG...');
+    try {
+      const dataUrl = await toPng(elem, {
+        backgroundColor: '#020617',
+        cacheBust: true,
+        pixelRatio: 2
+      });
+      const link = document.createElement('a');
+      link.download = `topologie-reseau-${new Date().toISOString().slice(0, 10)}.png`;
+      link.href = dataUrl;
+      link.click();
+      showToast('Image PNG exportée avec succès !');
+    } catch (err) {
+      console.error('Erreur export PNG:', err);
+      showToast('Échec de la capture PNG.');
+    }
+  };
+
+  // Export PDF document
+  const handleExportPdf = async () => {
+    const elem = document.getElementById('topology-canvas-viewport');
+    if (!elem) {
+      showToast('Erreur: zone de dessin introuvable.');
+      return;
+    }
+    showToast('Génération du document PDF...');
+    try {
+      const dataUrl = await toPng(elem, {
+        backgroundColor: '#020617',
+        cacheBust: true,
+        pixelRatio: 2
+      });
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4'
+      });
+      const imgProps = pdf.getImageProperties(dataUrl);
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+      pdf.setFillColor(2, 6, 23);
+      pdf.rect(0, 0, pdfWidth, pdf.internal.pageSize.getHeight(), 'F');
+      pdf.addImage(dataUrl, 'PNG', 0, 0, pdfWidth, Math.min(pdfHeight, pdf.internal.pageSize.getHeight()));
+      pdf.save(`topologie-reseau-${new Date().toISOString().slice(0, 10)}.pdf`);
+      showToast('Document PDF exporté avec succès !');
+    } catch (err) {
+      console.error('Erreur export PDF:', err);
+      showToast('Échec de la génération PDF.');
     }
   };
 
@@ -579,10 +760,21 @@ export default function App() {
           setAddModalPresetType(undefined);
           setIsAddModalOpen(true);
         }}
-        onAutoLayout={handleAutoLayout}
+        onAutoLayout={handleStarTopologyLayout}
         onExport={handleExportTopology}
         onResetTopology={handleResetTopology}
         onClearInventory={() => setIsClearModalOpen(true)}
+        showGeographicZones={showZoneEnclosures}
+        onToggleShowGeographicZones={() => setShowZoneEnclosures(!showZoneEnclosures)}
+        onOpenZoneManager={() => setIsZoneManagerOpen(true)}
+        zonesCount={zones.length}
+        allCollapsed={allCollapsed}
+        onToggleAllCollapse={handleToggleAllCollapse}
+        hasCollapsibleGroups={hasCollapsibleGroups}
+        onStarTopologyLayout={handleStarTopologyLayout}
+        onImportTopology={handleImportTopology}
+        onExportPng={handleExportPng}
+        onExportPdf={handleExportPdf}
       />
 
       {/* Main View Area by Tab */}
@@ -597,7 +789,7 @@ export default function App() {
             onPingDevice={handlePingDevice}
             onSaveDevice={handleSaveDevice}
             onUpdateDevicePosition={handleUpdatePosition}
-            onAutoLayout={handleAutoLayout}
+            onAutoLayout={handleStarTopologyLayout}
             onTriggerScan={handleTriggerScan}
             onResetTopology={handleResetTopology}
             onOpenAddModal={() => setIsAddModalOpen(true)}
@@ -605,6 +797,12 @@ export default function App() {
             onDeleteZone={handleDeleteZone}
             onOpenZoneManager={() => setIsZoneManagerOpen(true)}
             groupByHost={groupByHost}
+            showZoneEnclosures={showZoneEnclosures}
+            collapsedHostIds={collapsedHostIds}
+            onToggleCollapseHost={handleToggleCollapseHost}
+            collapsedZoneIds={collapsedZoneIds}
+            onToggleCollapseZone={handleToggleCollapseZone}
+            canvasViewportId="topology-canvas-viewport"
           />
         )}
 

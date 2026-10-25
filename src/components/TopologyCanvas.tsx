@@ -15,6 +15,7 @@ import {
   Link2,
   Cpu,
   ChevronDown,
+  ChevronUp,
   ChevronRight,
   MapPin,
   Home,
@@ -22,7 +23,9 @@ import {
   Check,
   Edit2,
   Star,
-  Compass
+  Compass,
+  GripHorizontal,
+  Move
 } from 'lucide-react';
 
 interface TopologyCanvasProps {
@@ -42,6 +45,12 @@ interface TopologyCanvasProps {
   onDeleteZone?: (zoneId: string) => void;
   onOpenZoneManager?: () => void;
   groupByHost: boolean;
+  showZoneEnclosures?: boolean;
+  collapsedHostIds?: Set<string>;
+  onToggleCollapseHost?: (hostId: string) => void;
+  collapsedZoneIds?: Set<string>;
+  onToggleCollapseZone?: (zoneId: string) => void;
+  canvasViewportId?: string;
 }
 
 export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
@@ -60,7 +69,13 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   onSaveZone,
   onDeleteZone,
   onOpenZoneManager,
-  groupByHost
+  groupByHost,
+  showZoneEnclosures: propShowZoneEnclosures,
+  collapsedHostIds: propCollapsedHostIds,
+  onToggleCollapseHost: propOnToggleCollapseHost,
+  collapsedZoneIds: propCollapsedZoneIds,
+  onToggleCollapseZone: propOnToggleCollapseZone,
+  canvasViewportId = 'topology-canvas-viewport'
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.72);
@@ -68,35 +83,65 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
 
-  // Node drag state
+  // Single node drag state
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+
+  // Group / Zone multi-node drag state
+  const [draggedZoneId, setDraggedZoneId] = useState<string | null>(null);
+  const [draggedClusterHostId, setDraggedClusterHostId] = useState<string | null>(null);
+  const multiDragStartRef = useRef<{ clientX: number; clientY: number }>({ clientX: 0, clientY: 0 });
+  const multiDragInitialPositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
 
   // Quick link modal state to edit organization and links directly on topology canvas
   const [linkingDevice, setLinkingDevice] = useState<Device | null>(null);
 
-  // Collapsed host IDs (host groups folded/unfolded)
-  const [collapsedHostIds, setCollapsedHostIds] = useState<Set<string>>(new Set());
+  // Host groups collapse state (internal fallback or controlled)
+  const [internalCollapsedHostIds, setInternalCollapsedHostIds] = useState<Set<string>>(new Set());
+  const collapsedHostIds = propCollapsedHostIds ?? internalCollapsedHostIds;
+
+  const toggleCollapseHost = (hostId: string) => {
+    if (propOnToggleCollapseHost) {
+      propOnToggleCollapseHost(hostId);
+    } else {
+      setInternalCollapsedHostIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(hostId)) next.delete(hostId);
+        else next.add(hostId);
+        return next;
+      });
+    }
+  };
+
+  // Geographic zones collapse state (internal fallback or controlled)
+  const [internalCollapsedZoneIds, setInternalCollapsedZoneIds] = useState<Set<string>>(new Set());
+  const collapsedZoneIds = propCollapsedZoneIds ?? internalCollapsedZoneIds;
+
+  const toggleCollapseZone = (zoneId: string) => {
+    if (propOnToggleCollapseZone) {
+      propOnToggleCollapseZone(zoneId);
+    } else {
+      setInternalCollapsedZoneIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(zoneId)) next.delete(zoneId);
+        else next.add(zoneId);
+        return next;
+      });
+    }
+  };
 
   // Show / Hide geographic zone enclosures
-  const [showZoneEnclosures, setShowZoneEnclosures] = useState(true);
+  const showZoneEnclosures = propShowZoneEnclosures ?? true;
+
+  // Draggable & Collapsible Legend Overlay
+  const [legendPos, setLegendPos] = useState({ x: 20, y: 20 });
+  const [isLegendCollapsed, setIsLegendCollapsed] = useState(false);
+  const [isDraggingLegend, setIsDraggingLegend] = useState(false);
+  const legendDragOffsetRef = useRef({ x: 0, y: 0 });
 
   // Inline zone renaming state
   const [renamingZoneId, setRenamingZoneId] = useState<string | null>(null);
   const [renamingZoneName, setRenamingZoneName] = useState<string>('');
-
-  // Toggle single host group collapse
-  const toggleCollapseHost = (hostId: string) => {
-    setCollapsedHostIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(hostId)) {
-        next.delete(hostId);
-      } else {
-        next.add(hostId);
-      }
-      return next;
-    });
-  };
 
   // NATIVE MOUSE WHEEL ZOOM WITH MOUSE-CENTERED TRANSFORM (PASSIVE: FALSE TO PREVENT PAGE SCROLL)
   useEffect(() => {
@@ -172,6 +217,26 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
+    if (isDraggingLegend) {
+      setLegendPos({
+        x: Math.max(10, e.clientX - legendDragOffsetRef.current.x),
+        y: Math.max(10, e.clientY - legendDragOffsetRef.current.y)
+      });
+      return;
+    }
+
+    if (draggedZoneId || draggedClusterHostId) {
+      const deltaX = Math.round((e.clientX - multiDragStartRef.current.clientX) / scale);
+      const deltaY = Math.round((e.clientY - multiDragStartRef.current.clientY) / scale);
+      multiDragInitialPositionsRef.current.forEach((initialPos, id) => {
+        onUpdateDevicePosition(id, {
+          x: Math.max(10, initialPos.x + deltaX),
+          y: Math.max(10, initialPos.y + deltaY)
+        });
+      });
+      return;
+    }
+
     if (isPanning) {
       setOffset({
         x: e.clientX - panStart.x,
@@ -191,6 +256,51 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   const handleMouseUp = () => {
     setIsPanning(false);
     setDraggedNodeId(null);
+    setDraggedZoneId(null);
+    setDraggedClusterHostId(null);
+    setIsDraggingLegend(false);
+  };
+
+  // Group / Geographic Zone Drag Start (Drags all member devices together!)
+  const handleZoneHeaderMouseDown = (e: React.MouseEvent, zoneId: string) => {
+    e.stopPropagation();
+    const zoneDevices = devices.filter((d) => d.zoneId === zoneId);
+    if (zoneDevices.length === 0) return;
+
+    multiDragStartRef.current = { clientX: e.clientX, clientY: e.clientY };
+    const initialMap = new Map<string, { x: number; y: number }>();
+    zoneDevices.forEach((d) => {
+      initialMap.set(d.id, { ...(d.position || { x: 100, y: 100 }) });
+    });
+    multiDragInitialPositionsRef.current = initialMap;
+    setDraggedZoneId(zoneId);
+  };
+
+  // Host Cluster Drag Start (Drags host and all child VMs/containers together!)
+  const handleClusterHeaderMouseDown = (e: React.MouseEvent, hostId: string) => {
+    e.stopPropagation();
+    const host = devices.find((d) => d.id === hostId);
+    const children = devices.filter((d) => d.parentHostId === hostId);
+    const clusterDevices = host ? [host, ...children] : children;
+    if (clusterDevices.length === 0) return;
+
+    multiDragStartRef.current = { clientX: e.clientX, clientY: e.clientY };
+    const initialMap = new Map<string, { x: number; y: number }>();
+    clusterDevices.forEach((d) => {
+      initialMap.set(d.id, { ...(d.position || { x: 100, y: 100 }) });
+    });
+    multiDragInitialPositionsRef.current = initialMap;
+    setDraggedClusterHostId(hostId);
+  };
+
+  // Legend Drag Start
+  const handleLegendMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsDraggingLegend(true);
+    legendDragOffsetRef.current = {
+      x: e.clientX - legendPos.x,
+      y: e.clientY - legendPos.y
+    };
   };
 
   // Node drag start
@@ -220,9 +330,11 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
     return map;
   }, [zones]);
 
-  // Identify Core Network Node (Center of the Star)
-  const coreNode = useMemo(() => {
-    return (
+  // Identify Core Network Node(s)
+  const coreNodes = useMemo(() => {
+    const manuals = devices.filter((d) => d.isCore === true);
+    if (manuals.length > 0) return manuals;
+    const defaultCore =
       devices.find(
         (d) =>
           d.subType === 'router' ||
@@ -234,9 +346,11 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
           d.ip.endsWith('.254')
       ) ||
       devices.find((d) => d.subType === 'switch') ||
-      devices[0]
-    );
+      devices[0];
+    return defaultCore ? [defaultCore] : [];
   }, [devices]);
+
+  const coreNode = coreNodes[0];
 
   // Compute children counts per host
   const childrenCountMap = useMemo(() => {
@@ -254,15 +368,18 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
     return Array.from(childrenCountMap.keys()).filter((id) => (childrenCountMap.get(id) || 0) > 0);
   }, [childrenCountMap]);
 
-  // Filter visible devices based on collapsed host groups
+  // Filter visible devices based on collapsed host groups AND collapsed geographic zones
   const visibleDevices = useMemo(() => {
     return devices.filter((d) => {
       if (d.parentHostId && collapsedHostIds.has(d.parentHostId)) {
         return false;
       }
+      if (d.zoneId && collapsedZoneIds.has(d.zoneId)) {
+        return false;
+      }
       return true;
     });
-  }, [devices, collapsedHostIds]);
+  }, [devices, collapsedHostIds, collapsedZoneIds]);
 
   const visibleDeviceIds = useMemo(() => new Set(visibleDevices.map((d) => d.id)), [visibleDevices]);
 
@@ -357,13 +474,13 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
         const x = node.position?.x ?? 100;
         const y = node.position?.y ?? 100;
         if (x < minX) minX = x;
-        if (x + 256 > maxX) maxX = x + 256;
+        if (x + 270 > maxX) maxX = x + 270;
         if (y < minY) minY = y;
-        if (y + 170 > maxY) maxY = y + 170;
+        if (y + 190 > maxY) maxY = y + 190;
       });
 
-      const padX = 28;
-      const padY = 24;
+      const padX = 36;
+      const padY = 32;
       const isDocker = children.some((c) => c.deviceType === 'docker');
 
       clusters.push({
@@ -373,9 +490,9 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
         childCount: children.length,
         isCollapsed,
         x: Math.round(minX - padX),
-        y: Math.round(minY - padY - 32),
-        width: Math.round(maxX - minX + padX * 2),
-        height: Math.round(maxY - minY + padY * 2 + 32)
+        y: Math.round(minY - padY - 36),
+        width: Math.max(340, Math.round(maxX - minX + padX * 2)),
+        height: Math.max(220, Math.round(maxY - minY + padY * 2 + 36))
       });
     });
 
@@ -389,24 +506,27 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
     const clusters: Array<{
       zone: GeographicZone;
       deviceCount: number;
+      isCollapsed: boolean;
       x: number;
       y: number;
       width: number;
       height: number;
     }> = [];
 
-    const devicesByZone = new Map<string, Device[]>();
-    visibleDevices.forEach((d) => {
+    const allZoneDevices = new Map<string, Device[]>();
+    devices.forEach((d) => {
       if (d.zoneId) {
-        const list = devicesByZone.get(d.zoneId) || [];
+        const list = allZoneDevices.get(d.zoneId) || [];
         list.push(d);
-        devicesByZone.set(d.zoneId, list);
+        allZoneDevices.set(d.zoneId, list);
       }
     });
 
-    devicesByZone.forEach((devs, zId) => {
+    allZoneDevices.forEach((devs, zId) => {
       const zone = zoneMap.get(zId);
       if (!zone || devs.length === 0) return;
+
+      const isCollapsed = collapsedZoneIds.has(zId);
 
       let minX = Infinity;
       let maxX = -Infinity;
@@ -417,26 +537,40 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
         const x = node.position?.x ?? 100;
         const y = node.position?.y ?? 100;
         if (x < minX) minX = x;
-        if (x + 256 > maxX) maxX = x + 256;
+        if (x + 270 > maxX) maxX = x + 270;
         if (y < minY) minY = y;
-        if (y + 170 > maxY) maxY = y + 170;
+        if (y + 190 > maxY) maxY = y + 190;
       });
 
-      const padX = 36;
-      const padY = 32;
+      const padX = 40;
+      const padY = 36;
+      const headerH = 48;
 
-      clusters.push({
-        zone,
-        deviceCount: devs.length,
-        x: Math.round(minX - padX),
-        y: Math.round(minY - padY - 36),
-        width: Math.round(maxX - minX + padX * 2),
-        height: Math.round(maxY - minY + padY * 2 + 36)
-      });
+      if (isCollapsed) {
+        clusters.push({
+          zone,
+          deviceCount: devs.length,
+          isCollapsed: true,
+          x: Math.round(minX - padX),
+          y: Math.round(minY - padY - headerH),
+          width: 310,
+          height: 52
+        });
+      } else {
+        clusters.push({
+          zone,
+          deviceCount: devs.length,
+          isCollapsed: false,
+          x: Math.round(minX - padX),
+          y: Math.round(minY - padY - headerH),
+          width: Math.max(360, Math.round(maxX - minX + padX * 2)),
+          height: Math.max(240, Math.round(maxY - minY + padY * 2 + headerH))
+        });
+      }
     });
 
     return clusters;
-  }, [visibleDevices, zoneMap, showZoneEnclosures]);
+  }, [devices, zoneMap, showZoneEnclosures, collapsedZoneIds]);
 
   // Check if all host groups are collapsed
   const allCollapsed = useMemo(() => {
@@ -445,10 +579,16 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   }, [hostIdsWithChildren, collapsedHostIds]);
 
   const toggleAllCollapse = () => {
-    if (allCollapsed) {
-      setCollapsedHostIds(new Set());
+    if (propOnToggleCollapseHost) {
+      hostIdsWithChildren.forEach((id) => {
+        if (allCollapsed && collapsedHostIds.has(id)) {
+          propOnToggleCollapseHost(id);
+        } else if (!allCollapsed && !collapsedHostIds.has(id)) {
+          propOnToggleCollapseHost(id);
+        }
+      });
     } else {
-      setCollapsedHostIds(new Set(hostIdsWithChildren));
+      setInternalCollapsedHostIds(allCollapsed ? new Set() : new Set(hostIdsWithChildren));
     }
   };
 
@@ -524,59 +664,9 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
             <span className="truncate max-w-[150px]">Liaisons : {selectedDevice.name}</span>
           </button>
         )}
-
-        {/* Geographic Zones Toggle */}
-        <button
-          onClick={() => setShowZoneEnclosures(!showZoneEnclosures)}
-          title={showZoneEnclosures ? 'Masquer les délimitations de zones' : 'Afficher les délimitations de zones'}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg shadow-xl backdrop-blur-md transition-all active:scale-95 border cursor-pointer ${
-            showZoneEnclosures
-              ? 'bg-amber-950/70 border-amber-500/60 text-amber-200 hover:bg-amber-900/60'
-              : 'bg-slate-900/90 border-slate-700/80 text-slate-300 hover:bg-slate-800'
-          }`}
-        >
-          <MapPin className="w-3.5 h-3.5 text-amber-400" />
-          <span>Zones géographiques</span>
-        </button>
-
-        {/* Zone Manager Modal Trigger */}
-        {onOpenZoneManager && (
-          <button
-            onClick={onOpenZoneManager}
-            title="Gérer, ajouter ou renommer les zones géographiques (pièces, baies, sous-répartiteurs, sites)"
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-700/80 rounded-lg shadow-xl backdrop-blur-md transition-all active:scale-95 cursor-pointer"
-          >
-            <Edit2 className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Gérer les zones ({zones.length})</span>
-          </button>
-        )}
-
-        {/* Global Expand / Collapse All Groups */}
-        {hostIdsWithChildren.length > 0 && (
-          <button
-            onClick={toggleAllCollapse}
-            title={allCollapsed ? 'Déplier tous les groupes hôtes/machines' : 'Replier tous les groupes hôtes/machines'}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-700/80 rounded-lg shadow-xl backdrop-blur-md transition-all active:scale-95 cursor-pointer"
-          >
-            <Layers className="w-3.5 h-3.5 text-cyan-400" />
-            <span>{allCollapsed ? 'Tout déplier' : 'Tout replier'}</span>
-          </button>
-        )}
-
-        {/* Star Auto Layout Button */}
-        {onAutoLayout && (
-          <button
-            onClick={onAutoLayout}
-            title="Réorganiser automatiquement le schéma en topologie en étoile avec le cœur de réseau au centre"
-            className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold bg-cyan-600/95 hover:bg-cyan-500 text-white rounded-lg shadow-xl backdrop-blur-md transition-all active:scale-95 border border-cyan-400/50 cursor-pointer"
-          >
-            <Star className="w-3.5 h-3.5 fill-cyan-200 text-cyan-200" />
-            <span>Topologie en Étoile</span>
-          </button>
-        )}
       </div>
 
-      {/* Zoom Controls Overlay (Bottom-Right) - "Centrer la vue" is completely removed */}
+      {/* Zoom Controls Overlay (Bottom-Right) - "Centrer la vue" and mouse helper text removed */}
       <div className="absolute bottom-5 right-5 z-20 flex flex-col items-end gap-2">
         <div className="flex items-center gap-1 p-1 bg-slate-900/95 border border-slate-800 rounded-xl shadow-2xl backdrop-blur-md">
           <button
@@ -606,39 +696,89 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
             {Math.round(scale * 100)}%
           </div>
         </div>
-
-        {/* Mouse wheel helper badge */}
-        <div className="px-2 py-0.5 rounded-md bg-slate-900/80 border border-slate-800/80 text-[10px] text-slate-400 font-mono pointer-events-none backdrop-blur-xs">
-          Molette : Zoom · Glisser : Déplacement · Clic Nom : Éditer
-        </div>
       </div>
 
-      {/* Legend / Overlay (Top-Left) */}
-      <div className="absolute top-4 left-4 z-20 p-3 bg-slate-900/90 border border-slate-800 rounded-xl text-xs text-slate-400 space-y-2 pointer-events-none backdrop-blur-md shadow-xl">
-        <div className="flex items-center gap-2">
-          <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-          <span className="text-[11px] text-amber-300 font-bold">Cœur de réseau au centre de l'étoile</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-3.5 h-0.5 bg-sky-500 rounded-full" />
-          <span className="text-[11px] text-slate-300 font-medium">Liaison réseau physique (Câble LAN)</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-3.5 h-0.5 border-b-2 border-indigo-400 border-dashed" />
-          <span className="text-[11px] text-indigo-300 font-medium">Rattachement Machine Virtuelle (Hyperviseur)</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="w-3.5 h-0.5 border-b-2 border-cyan-400 border-dashed" />
-          <span className="text-[11px] text-cyan-300 font-medium">Conteneur Docker sur Hôte physique</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <MapPin className="w-3.5 h-3.5 text-amber-400" />
-          <span className="text-[11px] text-slate-400">Zones géographiques éditables & renommables</span>
-        </div>
+      {/* Draggable & Minimizable Legend Overlay */}
+      <div
+        style={{
+          position: 'absolute',
+          left: `${legendPos.x}px`,
+          top: `${legendPos.y}px`,
+          zIndex: 35
+        }}
+        className="transition-shadow"
+      >
+        {isLegendCollapsed ? (
+          <div
+            onMouseDown={handleLegendMouseDown}
+            className="flex items-center gap-2 px-3 py-1.5 bg-slate-900/95 border border-slate-700/80 hover:border-cyan-500/60 rounded-xl shadow-2xl backdrop-blur-md cursor-grab active:cursor-grabbing text-xs select-none"
+          >
+            <GripHorizontal className="w-3.5 h-3.5 text-slate-500" />
+            <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+            <span className="text-slate-200 font-semibold text-[11px]">Légende</span>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsLegendCollapsed(false);
+              }}
+              title="Agrandir la légende"
+              className="p-0.5 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition-colors cursor-pointer ml-1"
+            >
+              <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
+          <div className="p-3 bg-slate-900/95 border border-slate-700/80 rounded-xl text-xs text-slate-400 space-y-2 backdrop-blur-md shadow-2xl min-w-[270px] select-none">
+            {/* Draggable Header */}
+            <div
+              onMouseDown={handleLegendMouseDown}
+              className="flex items-center justify-between gap-3 pb-1.5 border-b border-slate-800 cursor-grab active:cursor-grabbing"
+            >
+              <div className="flex items-center gap-1.5">
+                <GripHorizontal className="w-3.5 h-3.5 text-slate-500" />
+                <span className="text-[11px] font-bold text-slate-200">Légende de la topologie</span>
+              </div>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsLegendCollapsed(true);
+                }}
+                title="Réduire la légende"
+                className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <ChevronUp className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 shrink-0" />
+              <span className="text-[11px] text-amber-300 font-bold">Cœur de réseau au centre</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3.5 h-0.5 bg-sky-500 rounded-full shrink-0" />
+              <span className="text-[11px] text-slate-300 font-medium">Liaison réseau physique (LAN)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3.5 h-0.5 border-b-2 border-indigo-400 border-dashed shrink-0" />
+              <span className="text-[11px] text-indigo-300 font-medium">Machine Virtuelle (Hyperviseur)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-3.5 h-0.5 border-b-2 border-cyan-400 border-dashed shrink-0" />
+              <span className="text-[11px] text-cyan-300 font-medium">Conteneur Docker sur Hôte</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span className="text-[11px] text-slate-400">Zones géographiques déplaçables</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Main Scaled & Panned Canvas Viewport */}
       <div
+        id={canvasViewportId}
         className="absolute inset-0 origin-top-left"
         style={{
           transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
@@ -814,11 +954,12 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
           })}
         </svg>
 
-        {/* 5. INTERACTIVE GEOGRAPHIC ZONE HEADERS (Renamable & Editable inline directly from Canvas) */}
+        {/* 5. INTERACTIVE GEOGRAPHIC ZONE HEADERS (Renamable, Draggable & Foldable) */}
         {zoneClusters.map((cluster) => {
           const zone = cluster.zone;
           const isRenaming = renamingZoneId === zone.id;
           const zColor = zone.color || '#0ea5e9';
+          const isCollapsed = cluster.isCollapsed;
 
           return (
             <div
@@ -832,9 +973,12 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
               className="pointer-events-auto flex items-center gap-2"
             >
               <div
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border shadow-lg backdrop-blur-md text-xs font-semibold bg-slate-900/90 border-slate-700/80"
+                onMouseDown={(e) => handleZoneHeaderMouseDown(e, zone.id)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border shadow-lg backdrop-blur-md text-xs font-semibold bg-slate-900/90 border-slate-700/80 cursor-grab active:cursor-grabbing hover:border-cyan-400/60 transition-all select-none group/zonehdr"
                 style={{ borderColor: `${zColor}80` }}
+                title="Glisser pour déplacer toute la zone géographique"
               >
+                <Move className="w-3.5 h-3.5 text-slate-400 group-hover/zonehdr:text-cyan-400 shrink-0" />
                 <span
                   className="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs"
                   style={{ backgroundColor: zColor }}
@@ -868,7 +1012,10 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
                 ) : (
                   <button
                     type="button"
-                    onClick={() => handleStartRenameZone(zone)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleStartRenameZone(zone);
+                    }}
                     title={`Cliquer pour renommer directement la zone "${zone.name}"`}
                     className="flex items-center gap-1.5 hover:text-cyan-300 cursor-pointer group/ztitle"
                   >
@@ -881,12 +1028,43 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
                 <span className="text-[11px] font-mono text-slate-300">
                   {cluster.deviceCount} équipement{cluster.deviceCount > 1 ? 's' : ''}
                 </span>
+
+                {/* Zone Fold / Unfold Button */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleCollapseZone(zone.id);
+                  }}
+                  title={
+                    isCollapsed
+                      ? `Déplier la zone ${zone.name} (${cluster.deviceCount} équipements)`
+                      : `Replier la zone ${zone.name}`
+                  }
+                  className={`ml-1 flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono transition-all cursor-pointer border ${
+                    isCollapsed
+                      ? 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/40'
+                      : 'bg-slate-800/80 hover:bg-slate-700 text-slate-200 border-slate-700'
+                  }`}
+                >
+                  {isCollapsed ? (
+                    <>
+                      <ChevronRight className="w-3 h-3 text-amber-400" />
+                      <span>Déplier ({cluster.deviceCount})</span>
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="w-3 h-3 text-cyan-400" />
+                      <span>Replier</span>
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           );
         })}
 
-        {/* 6. Interactive Host Cluster Headers (Expand / Collapse groups) */}
+        {/* 6. Interactive Host Cluster Headers (Draggable & Foldable) */}
         {hostClusters.map((cluster) => {
           const isDocker = cluster.isDocker;
           const isCollapsed = cluster.isCollapsed;
@@ -903,14 +1081,17 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
               className="pointer-events-auto flex items-center gap-2"
             >
               <div
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border shadow-lg backdrop-blur-md text-xs font-semibold ${
+                onMouseDown={(e) => handleClusterHeaderMouseDown(e, cluster.hostId)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border shadow-lg backdrop-blur-md text-xs font-semibold cursor-grab active:cursor-grabbing select-none group/clusterhdr ${
                   isCollapsed
                     ? 'bg-amber-950/90 border-amber-500/50 text-amber-200'
                     : isDocker
                     ? 'bg-sky-950/90 border-cyan-500/50 text-cyan-200'
                     : 'bg-indigo-950/90 border-indigo-500/50 text-indigo-200'
                 }`}
+                title="Glisser pour déplacer le groupe hôte et ses machines"
               >
+                <Move className="w-3.5 h-3.5 opacity-60 group-hover/clusterhdr:opacity-100 shrink-0" />
                 <span className="flex items-center gap-1.5">
                   {isDocker ? (
                     <Cpu className="w-3.5 h-3.5 text-cyan-400" />

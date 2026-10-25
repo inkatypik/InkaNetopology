@@ -31,10 +31,15 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <header className="sticky top-0 z-40 w-full border-b border-slate-800/80 bg-slate-950/90 backdrop-blur-md transition-colors">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-8">
-        {/* Zone 1: Wordmark Brand */}
+        {/* Zone 1: Wordmark Brand with PNG Logo */}
         <div className="flex items-center gap-3 shrink-0">
-          <div className="w-9 h-9 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shadow-sm">
-            <Radar className={`w-5 h-5 ${isScanning ? 'animate-spin' : ''}`} />
+          <div className="w-10 h-10 rounded-xl overflow-hidden border border-cyan-500/40 bg-slate-900 shadow-sm flex items-center justify-center">
+            <img
+              src="/logo.png"
+              alt="Logo InkaNetopology"
+              referrerPolicy="no-referrer"
+              className="w-full h-full object-cover"
+            />
           </div>
           <div className="flex flex-col">
             <span className="text-lg font-bold tracking-tight text-white whitespace-nowrap">

@@ -50,6 +50,9 @@ export interface Device {
   portOrInterface?: string; // e.g. "Port 4 (1Gbps)", "Wi-Fi 5GHz", "veth4a91"
   vlan?: number;
   
+  // Core network manual flag (can have multiple core devices)
+  isCore?: boolean;
+
   os?: string;
   openPorts?: number[];
   location?: string;

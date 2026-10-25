@@ -113,37 +113,48 @@ export function autoLayoutTopology(devList: Device[]): Device[] {
   const devMap = new Map<string, Device>();
   devices.forEach((d) => devMap.set(d.id, d));
 
-  // 1. Identify Root Cœur de Réseau (Gateway / Core Router)
-  let coreNode = devices.find(
-    (d) =>
-      d.subType === 'router' ||
-      d.ip.endsWith('.1') ||
-      d.ip.endsWith('.254') ||
-      d.name.toLowerCase().includes('passerelle') ||
-      d.name.toLowerCase().includes('cœur') ||
-      d.name.toLowerCase().includes('coeur') ||
-      d.name.toLowerCase().includes('gateway') ||
-      d.name.toLowerCase().includes('box') ||
-      d.name.toLowerCase().includes('udm')
-  );
+  // 1. Identify Root Cœur(s) de Réseau (Gateway / Core Router / Manual isCore flag)
+  const manualCoreNodes = devices.filter((d) => d.isCore === true);
+  let coreNodes: Device[] = [];
 
-  if (!coreNode) {
-    coreNode =
-      devices.find((d) => d.subType === 'switch') ||
-      devices.find((d) => d.deviceType === 'physical') ||
-      devices[0];
+  if (manualCoreNodes.length > 0) {
+    coreNodes = manualCoreNodes;
+  } else {
+    let defaultCore = devices.find(
+      (d) =>
+        d.subType === 'router' ||
+        d.ip.endsWith('.1') ||
+        d.ip.endsWith('.254') ||
+        d.name.toLowerCase().includes('passerelle') ||
+        d.name.toLowerCase().includes('cœur') ||
+        d.name.toLowerCase().includes('coeur') ||
+        d.name.toLowerCase().includes('gateway') ||
+        d.name.toLowerCase().includes('box') ||
+        d.name.toLowerCase().includes('udm')
+    );
+
+    if (!defaultCore) {
+      defaultCore =
+        devices.find((d) => d.subType === 'switch') ||
+        devices.find((d) => d.deviceType === 'physical') ||
+        devices[0];
+    }
+    if (defaultCore) coreNodes = [defaultCore];
   }
+
+  const coreNode = coreNodes[0];
+  const coreNodeIds = new Set(coreNodes.map((c) => c.id));
 
   // 2. Identify Switches & Access points
   const switches = devices.filter(
-    (d) => d.id !== coreNode?.id && (d.subType === 'switch' || d.subType === 'access_point')
+    (d) => !coreNodeIds.has(d.id) && (d.subType === 'switch' || d.subType === 'access_point')
   );
   const primarySwitch = switches[0] || coreNode;
 
   // 3. Identify Physical Servers, Hypervisors, NAS
   const servers = devices.filter(
     (d) =>
-      d.id !== coreNode?.id &&
+      !coreNodeIds.has(d.id) &&
       !switches.some((s) => s.id === d.id) &&
       d.deviceType === 'physical' &&
       (d.subType === 'server' || d.subType === 'nas')
@@ -190,7 +201,7 @@ export function autoLayoutTopology(devList: Device[]): Device[] {
   // 5. Workstations, IoT, Printers
   const workstations = devices.filter(
     (d) =>
-      d.id !== coreNode?.id &&
+      !coreNodeIds.has(d.id) &&
       !switches.some((s) => s.id === d.id) &&
       !servers.some((s) => s.id === d.id) &&
       d.deviceType === 'physical' &&
@@ -199,7 +210,7 @@ export function autoLayoutTopology(devList: Device[]): Device[] {
 
   const iotAndOthers = devices.filter(
     (d) =>
-      d.id !== coreNode?.id &&
+      !coreNodeIds.has(d.id) &&
       !switches.some((s) => s.id === d.id) &&
       !servers.some((s) => s.id === d.id) &&
       !vms.some((v) => v.id === d.id) &&
@@ -233,12 +244,22 @@ export function autoLayoutTopology(devList: Device[]): Device[] {
   const R_RING2 = 850; // Second-tier switches, VMs, Docker containers, workstations
   const R_RING3 = 1240; // Outer IoT devices, sensors, peripheral equipment
 
-  // 1. PLACE CORE AT THE EXACT CENTER
-  if (coreNode) {
-    coreNode.position = {
+  // 1. PLACE ALL CORE NETWORK NODES AT THE EXACT CENTER (Symmetrically spaced if multiple)
+  if (coreNodes.length === 1) {
+    coreNodes[0].position = {
       x: Math.round(centerX - halfNodeW),
       y: Math.round(centerY - halfNodeH)
     };
+  } else if (coreNodes.length > 1) {
+    const spacing = 320;
+    const totalW = (coreNodes.length - 1) * spacing;
+    const startX = centerX - totalW / 2;
+    coreNodes.forEach((cn, idx) => {
+      cn.position = {
+        x: Math.round(startX + idx * spacing - halfNodeW),
+        y: Math.round(centerY - halfNodeH)
+      };
+    });
   }
 
   // 2. BUILD MAIN STAR RAYS (Branches)
@@ -292,7 +313,7 @@ export function autoLayoutTopology(devList: Device[]): Device[] {
 
   // If there are orphaned VMs or containers not attached to any positioned server
   const placedIds = new Set<string>();
-  if (coreNode) placedIds.add(coreNode.id);
+  coreNodes.forEach((cn) => placedIds.add(cn.id));
   starBranches.forEach((b) => {
     placedIds.add(b.head.id);
     b.children.forEach((c) => placedIds.add(c.id));
@@ -379,30 +400,39 @@ export function autoLayoutByZones(devList: Device[], zones: GeographicZone[]): D
 
   const zoneIds = Array.from(devicesByZone.keys());
   const cols = Math.min(3, Math.max(1, Math.ceil(Math.sqrt(zoneIds.length))));
-  const zoneBoxWidth = 820;
-  const zoneBoxHeight = 620;
-  const gap = 120;
 
-  zoneIds.forEach((zId, idx) => {
-    const col = idx % cols;
-    const row = Math.floor(idx / cols);
-    const startX = 100 + col * (zoneBoxWidth + gap);
-    const startY = 100 + row * (zoneBoxHeight + gap);
+  // Compute layout with dynamic heights per zone row
+  let currentY = 100;
+  for (let r = 0; r < Math.ceil(zoneIds.length / cols); r++) {
+    let maxRowHeight = 400;
+    const rowZoneIds = zoneIds.slice(r * cols, (r + 1) * cols);
 
-    const devInZone = devicesByZone.get(zId) || [];
-    const itemsPerRow = 2;
-    const colW = 340;
-    const rowH = 220;
+    rowZoneIds.forEach((zId, colIdx) => {
+      const devInZone = devicesByZone.get(zId) || [];
+      const itemsPerRow = devInZone.length > 4 ? 3 : 2;
+      const colW = 320;
+      const rowH = 230;
 
-    devInZone.forEach((dev, dIdx) => {
-      const devCol = dIdx % itemsPerRow;
-      const devRow = Math.floor(dIdx / itemsPerRow);
-      dev.position = {
-        x: Math.round(startX + 40 + devCol * colW),
-        y: Math.round(startY + 80 + devRow * rowH)
-      };
+      const numRows = Math.max(1, Math.ceil(devInZone.length / itemsPerRow));
+      const zoneW = itemsPerRow * colW + 80;
+      const zoneH = numRows * rowH + 110;
+      if (zoneH > maxRowHeight) maxRowHeight = zoneH;
+
+      const startX = 100 + colIdx * (1000 + 100);
+      const startY = currentY;
+
+      devInZone.forEach((dev, dIdx) => {
+        const devCol = dIdx % itemsPerRow;
+        const devRow = Math.floor(dIdx / itemsPerRow);
+        dev.position = {
+          x: Math.round(startX + 40 + devCol * colW),
+          y: Math.round(startY + 75 + devRow * rowH)
+        };
+      });
     });
-  });
+
+    currentY += maxRowHeight + 140;
+  }
 
   return devices;
 }
