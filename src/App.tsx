@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import type { Device, DeviceType, NetworkLog, ScanStatus, GeographicZone } from './types/network';
+import type { Device, DeviceType, NetworkLog, ScanStatus, GeographicZone, DeviceTypeDefinition, DeviceSubTypeDefinition } from './types/network';
 import { Navbar, type ActiveTab } from './components/Navbar';
 import { Toolbar } from './components/Toolbar';
 import { TopologyCanvas } from './components/TopologyCanvas';
@@ -11,6 +11,7 @@ import { AddDeviceModal } from './components/AddDeviceModal';
 import { DockerDeployModal } from './components/DockerDeployModal';
 import { ClearInventoryModal } from './components/ClearInventoryModal';
 import { ZoneManagerModal } from './components/ZoneManagerModal';
+import { TypeManagerModal } from './components/TypeManagerModal';
 import { autoLayoutTopology, autoLayoutByZones } from './utils/topologyLayout';
 import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
@@ -19,6 +20,8 @@ import { XCircle, Square } from 'lucide-react';
 export default function App() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [zones, setZones] = useState<GeographicZone[]>([]);
+  const [deviceTypes, setDeviceTypes] = useState<DeviceTypeDefinition[]>([]);
+  const [deviceSubTypes, setDeviceSubTypes] = useState<DeviceSubTypeDefinition[]>([]);
   const [logs, setLogs] = useState<NetworkLog[]>([]);
   const [activeTab, setActiveTab] = useState<ActiveTab>('topology');
   const [isDark, setIsDark] = useState<boolean>(true);
@@ -33,7 +36,7 @@ export default function App() {
 
   // Filters
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [selectedType, setSelectedType] = useState<DeviceType | 'all'>('all');
+  const [selectedType, setSelectedType] = useState<string | 'all'>('all');
   const [selectedStatus, setSelectedStatus] = useState<'all' | 'online' | 'offline'>('all');
   const [selectedVlan, setSelectedVlan] = useState<number | 'all'>('all');
   const [groupByHost, setGroupByHost] = useState<boolean>(true);
@@ -50,6 +53,7 @@ export default function App() {
   const [isDockerModalOpen, setIsDockerModalOpen] = useState<boolean>(false);
   const [isClearModalOpen, setIsClearModalOpen] = useState<boolean>(false);
   const [isZoneManagerOpen, setIsZoneManagerOpen] = useState<boolean>(false);
+  const [isTypeManagerOpen, setIsTypeManagerOpen] = useState<boolean>(false);
   const [addModalPresetParentId, setAddModalPresetParentId] = useState<string | undefined>();
   const [addModalPresetType, setAddModalPresetType] = useState<DeviceType | undefined>();
 
@@ -72,7 +76,7 @@ export default function App() {
     }
   }, [isDark]);
 
-  // Initial fetch for devices, zones, interfaces, and logs
+  // Initial fetch for devices, zones, types, subtypes, interfaces, and logs
   useEffect(() => {
     fetch('/api/devices')
       .then((res) => res.json())
@@ -87,6 +91,20 @@ export default function App() {
         if (Array.isArray(data)) setZones(data);
       })
       .catch((err) => console.error('Erreur chargement zones:', err));
+
+    fetch('/api/types')
+      .then((res) => res.json())
+      .then((data: DeviceTypeDefinition[]) => {
+        if (Array.isArray(data)) setDeviceTypes(data);
+      })
+      .catch((err) => console.error('Erreur chargement types:', err));
+
+    fetch('/api/subtypes')
+      .then((res) => res.json())
+      .then((data: DeviceSubTypeDefinition[]) => {
+        if (Array.isArray(data)) setDeviceSubTypes(data);
+      })
+      .catch((err) => console.error('Erreur chargement sous-types:', err));
 
     fetch('/api/logs?limit=100')
       .then((res) => res.json())
@@ -198,6 +216,46 @@ export default function App() {
       evtSource.addEventListener('zone_deleted', (e) => {
         const { id } = JSON.parse(e.data);
         setZones((prev) => prev.filter((z) => z.id !== id));
+      });
+
+      evtSource.addEventListener('type_added', (e) => {
+        const addedType: DeviceTypeDefinition = JSON.parse(e.data);
+        setDeviceTypes((prev) => [...prev.filter((t) => t.id !== addedType.id), addedType]);
+      });
+
+      evtSource.addEventListener('type_updated', (e) => {
+        const updatedType: DeviceTypeDefinition = JSON.parse(e.data);
+        setDeviceTypes((prev) => prev.map((t) => (t.id === updatedType.id ? updatedType : t)));
+      });
+
+      evtSource.addEventListener('type_deleted', (e) => {
+        const { id } = JSON.parse(e.data);
+        setDeviceTypes((prev) => prev.filter((t) => t.id !== id));
+      });
+
+      evtSource.addEventListener('types_updated', (e) => {
+        const list: DeviceTypeDefinition[] = JSON.parse(e.data);
+        setDeviceTypes(list);
+      });
+
+      evtSource.addEventListener('subtype_added', (e) => {
+        const addedSubType: DeviceSubTypeDefinition = JSON.parse(e.data);
+        setDeviceSubTypes((prev) => [...prev.filter((s) => s.id !== addedSubType.id), addedSubType]);
+      });
+
+      evtSource.addEventListener('subtype_updated', (e) => {
+        const updatedSubType: DeviceSubTypeDefinition = JSON.parse(e.data);
+        setDeviceSubTypes((prev) => prev.map((s) => (s.id === updatedSubType.id ? updatedSubType : s)));
+      });
+
+      evtSource.addEventListener('subtype_deleted', (e) => {
+        const { id } = JSON.parse(e.data);
+        setDeviceSubTypes((prev) => prev.filter((s) => s.id !== id));
+      });
+
+      evtSource.addEventListener('subtypes_updated', (e) => {
+        const list: DeviceSubTypeDefinition[] = JSON.parse(e.data);
+        setDeviceSubTypes(list);
       });
 
       evtSource.addEventListener('logs_cleared', () => {
@@ -536,6 +594,86 @@ export default function App() {
     });
   };
 
+  // Save / Update Equipment Type Definition
+  const handleSaveType = async (typeDef: DeviceTypeDefinition) => {
+    try {
+      const exists = deviceTypes.some((t) => t.id === typeDef.id);
+      const url = exists ? `/api/types/${typeDef.id}` : '/api/types';
+      const method = exists ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(typeDef)
+      });
+      const saved = await res.json();
+      setDeviceTypes((prev) => {
+        const idx = prev.findIndex((t) => t.id === saved.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = saved;
+          return next;
+        }
+        return [...prev, saved];
+      });
+      showToast(`Type "${saved.name}" enregistré avec succès.`);
+    } catch (err) {
+      console.error('Erreur sauvegarde type:', err);
+      showToast('Erreur lors de l\'enregistrement du type.');
+    }
+  };
+
+  // Delete Equipment Type
+  const handleDeleteType = async (typeId: string) => {
+    try {
+      await fetch(`/api/types/${typeId}`, { method: 'DELETE' });
+      setDeviceTypes((prev) => prev.filter((t) => t.id !== typeId));
+      showToast('Type d\'équipement supprimé.');
+    } catch (err) {
+      console.error('Erreur suppression type:', err);
+      showToast('Erreur lors de la suppression du type.');
+    }
+  };
+
+  // Save / Update SubType or Role
+  const handleSaveSubType = async (subTypeDef: DeviceSubTypeDefinition) => {
+    try {
+      const exists = deviceSubTypes.some((s) => s.id === subTypeDef.id);
+      const url = exists ? `/api/subtypes/${subTypeDef.id}` : '/api/subtypes';
+      const method = exists ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(subTypeDef)
+      });
+      const saved = await res.json();
+      setDeviceSubTypes((prev) => {
+        const idx = prev.findIndex((s) => s.id === saved.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = saved;
+          return next;
+        }
+        return [...prev, saved];
+      });
+      showToast(`Rôle/Sous-type "${saved.name}" enregistré.`);
+    } catch (err) {
+      console.error('Erreur sauvegarde sous-type:', err);
+      showToast('Erreur lors de l\'enregistrement du sous-type.');
+    }
+  };
+
+  // Delete SubType or Role
+  const handleDeleteSubType = async (subTypeId: string) => {
+    try {
+      await fetch(`/api/subtypes/${subTypeId}`, { method: 'DELETE' });
+      setDeviceSubTypes((prev) => prev.filter((s) => s.id !== subTypeId));
+      showToast('Sous-type / rôle supprimé.');
+    } catch (err) {
+      console.error('Erreur suppression sous-type:', err);
+      showToast('Erreur lors de la suppression du sous-type.');
+    }
+  };
+
   // Import JSON topology
   const handleImportTopology = async (file: File) => {
     showToast('Importation du fichier JSON en cours...');
@@ -551,6 +689,8 @@ export default function App() {
       if (res.ok && data.success) {
         if (data.devices) setDevices(data.devices);
         if (data.zones) setZones(data.zones);
+        if (data.types) setDeviceTypes(data.types);
+        if (data.subTypes) setDeviceSubTypes(data.subTypes);
         showToast(`Topologie importée avec succès (${data.deviceCount} équipements, ${data.zoneCount} zones).`);
       } else {
         showToast(data.error || 'Erreur lors de l\'importation.');
@@ -563,17 +703,36 @@ export default function App() {
 
   // Export PNG image
   const handleExportPng = async () => {
-    const elem = document.getElementById('topology-canvas-viewport');
-    if (!elem) {
+    if (activeTab !== 'topology') {
+      setActiveTab('topology');
+      showToast('Bascule sur la vue Topologie pour l\'export...');
+      await new Promise((r) => setTimeout(r, 250));
+    }
+
+    const container = document.getElementById('topology-canvas-container');
+    if (!container) {
       showToast('Erreur: zone de dessin introuvable.');
       return;
     }
-    showToast('Génération de l\'image PNG...');
+
+    if (devices.length === 0) {
+      showToast('Aucun équipement présent sur la topologie pour l\'export.');
+      return;
+    }
+
+    showToast('Génération de l\'image PNG en cours...');
     try {
-      const dataUrl = await toPng(elem, {
+      const dataUrl = await toPng(container, {
         backgroundColor: '#020617',
-        cacheBust: true,
-        pixelRatio: 2
+        filter: (node) => {
+          if ((node as HTMLElement)?.classList?.contains('export-exclude')) {
+            return false;
+          }
+          return true;
+        },
+        pixelRatio: 2,
+        skipFonts: true,
+        cacheBust: true
       });
       const link = document.createElement('a');
       link.download = `topologie-reseau-${new Date().toISOString().slice(0, 10)}.png`;
@@ -588,17 +747,36 @@ export default function App() {
 
   // Export PDF document
   const handleExportPdf = async () => {
-    const elem = document.getElementById('topology-canvas-viewport');
-    if (!elem) {
+    if (activeTab !== 'topology') {
+      setActiveTab('topology');
+      showToast('Bascule sur la vue Topologie pour l\'export...');
+      await new Promise((r) => setTimeout(r, 250));
+    }
+
+    const container = document.getElementById('topology-canvas-container');
+    if (!container) {
       showToast('Erreur: zone de dessin introuvable.');
       return;
     }
-    showToast('Génération du document PDF...');
+
+    if (devices.length === 0) {
+      showToast('Aucun équipement présent sur la topologie pour l\'export.');
+      return;
+    }
+
+    showToast('Génération du document PDF en cours...');
     try {
-      const dataUrl = await toPng(elem, {
+      const dataUrl = await toPng(container, {
         backgroundColor: '#020617',
-        cacheBust: true,
-        pixelRatio: 2
+        filter: (node) => {
+          if ((node as HTMLElement)?.classList?.contains('export-exclude')) {
+            return false;
+          }
+          return true;
+        },
+        pixelRatio: 2,
+        skipFonts: true,
+        cacheBust: true
       });
       const pdf = new jsPDF({
         orientation: 'landscape',
@@ -638,14 +816,21 @@ export default function App() {
 
   // Dynamic device counts
   const counts = useMemo(() => {
-    return {
+    const c: Record<string, number> = {
       all: devices.length,
-      physical: devices.filter((d) => d.deviceType === 'physical').length,
-      vm: devices.filter((d) => d.deviceType === 'vm').length,
-      docker: devices.filter((d) => d.deviceType === 'docker').length,
-      iot: devices.filter((d) => d.deviceType === 'iot').length
+      physical: 0,
+      vm: 0,
+      docker: 0,
+      iot: 0
     };
-  }, [devices]);
+    deviceTypes.forEach((t) => {
+      c[t.id] = 0;
+    });
+    devices.forEach((d) => {
+      c[d.deviceType] = (c[d.deviceType] || 0) + 1;
+    });
+    return c;
+  }, [devices, deviceTypes]);
 
   // Available VLANs
   const availableVlans = useMemo(() => {
@@ -768,6 +953,8 @@ export default function App() {
         onExport={handleExportTopology}
         onResetTopology={handleResetTopology}
         onClearInventory={() => setIsClearModalOpen(true)}
+        types={deviceTypes}
+        onOpenTypeManager={() => setIsTypeManagerOpen(true)}
         showGeographicZones={showZoneEnclosures}
         onToggleShowGeographicZones={() => setShowZoneEnclosures(!showZoneEnclosures)}
         onOpenZoneManager={() => setIsZoneManagerOpen(true)}
@@ -787,6 +974,8 @@ export default function App() {
           <TopologyCanvas
             devices={filteredDevices}
             zones={zones}
+            types={deviceTypes}
+            subTypes={deviceSubTypes}
             selectedDevice={selectedDevice}
             onSelectDevice={setSelectedDevice}
             onEditDevice={(dev) => setEditingDevice(dev)}
@@ -850,6 +1039,10 @@ export default function App() {
           device={editingDevice}
           allDevices={devices}
           zones={zones}
+          types={deviceTypes}
+          subTypes={deviceSubTypes}
+          onOpenTypeManager={() => setIsTypeManagerOpen(true)}
+          onSaveSubType={handleSaveSubType}
           isOpen={Boolean(editingDevice)}
           onClose={() => setEditingDevice(null)}
           onSave={handleSaveDevice}
@@ -863,8 +1056,23 @@ export default function App() {
         onClose={() => setIsAddModalOpen(false)}
         onAdd={handleAddDevice}
         allDevices={devices}
+        types={deviceTypes}
+        subTypes={deviceSubTypes}
         presetParentId={addModalPresetParentId}
-        presetType={addModalPresetType}
+        presetType={addModalPresetType as any}
+      />
+
+      {/* Type & SubType / Role Manager Modal */}
+      <TypeManagerModal
+        isOpen={isTypeManagerOpen}
+        onClose={() => setIsTypeManagerOpen(false)}
+        types={deviceTypes}
+        subTypes={deviceSubTypes}
+        devices={devices}
+        onSaveType={handleSaveType}
+        onDeleteType={handleDeleteType}
+        onSaveSubType={handleSaveSubType}
+        onDeleteSubType={handleDeleteSubType}
       />
 
       {/* Zone Manager Modal */}

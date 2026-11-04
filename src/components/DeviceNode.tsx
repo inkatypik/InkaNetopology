@@ -1,12 +1,14 @@
 import React from 'react';
-import type { Device, GeographicZone } from '../types/network';
+import type { Device, GeographicZone, DeviceTypeDefinition, DeviceSubTypeDefinition } from '../types/network';
 import { getDeviceDefaultIcon, getDeviceTypeColor } from '../utils/hardwareIcons';
-import { Activity, Edit3, Link2, ChevronDown, ChevronRight, Layers, MapPin, Star } from 'lucide-react';
+import { Activity, Edit3, Link2, ChevronDown, ChevronRight, Layers, MapPin, Star, Tag } from 'lucide-react';
 
 interface DeviceNodeProps {
   device: Device;
   parentDevice?: Device;
   zone?: GeographicZone;
+  types?: DeviceTypeDefinition[];
+  subTypes?: DeviceSubTypeDefinition[];
   isCore?: boolean;
   isSelected: boolean;
   onSelect: (device: Device) => void;
@@ -23,6 +25,8 @@ export const DeviceNode: React.FC<DeviceNodeProps> = ({
   device,
   parentDevice,
   zone,
+  types = [],
+  subTypes = [],
   isCore,
   isSelected,
   onSelect,
@@ -34,7 +38,7 @@ export const DeviceNode: React.FC<DeviceNodeProps> = ({
   isCollapsed = false,
   onToggleCollapse
 }) => {
-  const typeStyle = getDeviceTypeColor(device.deviceType);
+  const typeStyle = getDeviceTypeColor(device.deviceType, types);
   const isOnline = device.status === 'online';
   const hasChildren = childCount > 0;
 
@@ -76,7 +80,7 @@ export const DeviceNode: React.FC<DeviceNodeProps> = ({
             />
           ) : (
             <div className="w-9 h-9 rounded-lg bg-slate-800/80 border border-slate-700/60 flex items-center justify-center shrink-0">
-              {getDeviceDefaultIcon(device.subType, device.deviceType)}
+              {getDeviceDefaultIcon(device.subType, device.deviceType, subTypes, types)}
             </div>
           )}
 
@@ -101,6 +105,15 @@ export const DeviceNode: React.FC<DeviceNodeProps> = ({
               <span className="text-slate-600">·</span>
               <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400 shadow-xs shadow-emerald-400/50' : 'bg-rose-500'}`} />
             </div>
+
+            {device.role && (
+              <div className="mt-1">
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium bg-indigo-950/80 border border-indigo-500/40 text-indigo-300 truncate max-w-[150px]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 shrink-0" />
+                  <span className="truncate">{device.role}</span>
+                </span>
+              </div>
+            )}
           </div>
         </div>
 

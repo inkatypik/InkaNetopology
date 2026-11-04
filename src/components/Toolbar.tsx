@@ -17,13 +17,13 @@ import {
   FileImage,
   FileText
 } from 'lucide-react';
-import type { DeviceType } from '../types/network';
+import type { DeviceType, DeviceTypeDefinition } from '../types/network';
 
 interface ToolbarProps {
   searchQuery: string;
   onSearchChange: (q: string) => void;
-  selectedType: DeviceType | 'all';
-  onSelectType: (type: DeviceType | 'all') => void;
+  selectedType: string | 'all';
+  onSelectType: (type: any) => void;
   selectedStatus: 'all' | 'online' | 'offline';
   onSelectStatus: (st: 'all' | 'online' | 'offline') => void;
   selectedVlan: number | 'all';
@@ -31,13 +31,7 @@ interface ToolbarProps {
   availableVlans: number[];
   groupByHost: boolean;
   onToggleGroupByHost: () => void;
-  counts: {
-    all: number;
-    physical: number;
-    vm: number;
-    docker: number;
-    iot: number;
-  };
+  counts: Record<string, number>;
   subnet: string;
   onSubnetChange: (sub: string) => void;
   scanMode: 'fast' | 'deep' | 'iot';
@@ -47,6 +41,10 @@ interface ToolbarProps {
   onExport: () => void;
   onResetTopology: () => void;
   onClearInventory?: () => void;
+
+  // Types & Subtypes / Roles management
+  types?: DeviceTypeDefinition[];
+  onOpenTypeManager?: () => void;
 
   // Re-located buttons next to "Grouper par hôte parent":
   showGeographicZones?: boolean;
@@ -90,6 +88,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onToggleShowGeographicZones,
   onOpenZoneManager,
   zonesCount = 0,
+  types = [],
+  onOpenTypeManager,
   allCollapsed = false,
   onToggleAllCollapse,
   hasCollapsibleGroups = false,
@@ -251,61 +251,93 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       {/* Lower row: Type tabs, Status & VLAN filters, Grouping and Geographic controls */}
       <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-slate-800/50">
         {/* Dynamic Type Filter Tabs */}
-        <div className="flex items-center gap-1 p-0.5 bg-slate-950/70 border border-slate-800 rounded-lg">
+        <div className="flex items-center gap-1 p-0.5 bg-slate-950/70 border border-slate-800 rounded-lg overflow-x-auto max-w-full">
           <button
             onClick={() => onSelectType('all')}
-            className={`px-3 py-1 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
+            className={`px-3 py-1 text-xs font-medium rounded-md whitespace-nowrap transition-colors cursor-pointer ${
               selectedType === 'all'
                 ? 'bg-slate-800 text-white shadow-xs'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            Tous <span className="font-mono tabular-nums text-[10px] text-slate-400">({counts.all})</span>
+            Tous <span className="font-mono tabular-nums text-[10px] text-slate-400">({counts.all ?? 0})</span>
           </button>
 
-          <button
-            onClick={() => onSelectType('physical')}
-            className={`px-3 py-1 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
-              selectedType === 'physical'
-                ? 'bg-blue-900/40 text-blue-300 border border-blue-700/50'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Physique <span className="font-mono tabular-nums text-[10px] text-blue-400">({counts.physical})</span>
-          </button>
+          {types.length > 0 ? (
+            types.map((t) => {
+              const isSelected = selectedType === t.id;
+              const count = counts[t.id] ?? 0;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => onSelectType(t.id)}
+                  className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md whitespace-nowrap transition-colors cursor-pointer ${
+                    isSelected
+                      ? 'bg-slate-800 text-white shadow-xs border'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                  style={{
+                    borderColor: isSelected ? t.color || '#38bdf8' : 'transparent'
+                  }}
+                >
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: t.color || '#38bdf8' }}
+                  />
+                  <span>{t.name}</span>
+                  <span className="font-mono tabular-nums text-[10px] opacity-75">
+                    ({count})
+                  </span>
+                </button>
+              );
+            })
+          ) : (
+            <>
+              <button
+                onClick={() => onSelectType('physical')}
+                className={`px-3 py-1 text-xs font-medium rounded-md whitespace-nowrap transition-colors cursor-pointer ${
+                  selectedType === 'physical'
+                    ? 'bg-blue-900/40 text-blue-300 border border-blue-700/50'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Physique <span className="font-mono tabular-nums text-[10px] text-blue-400">({counts.physical ?? 0})</span>
+              </button>
 
-          <button
-            onClick={() => onSelectType('vm')}
-            className={`px-3 py-1 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
-              selectedType === 'vm'
-                ? 'bg-indigo-900/40 text-indigo-300 border border-indigo-700/50'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Virtuel (VM) <span className="font-mono tabular-nums text-[10px] text-indigo-400">({counts.vm})</span>
-          </button>
+              <button
+                onClick={() => onSelectType('vm')}
+                className={`px-3 py-1 text-xs font-medium rounded-md whitespace-nowrap transition-colors cursor-pointer ${
+                  selectedType === 'vm'
+                    ? 'bg-indigo-900/40 text-indigo-300 border border-indigo-700/50'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Virtuel (VM) <span className="font-mono tabular-nums text-[10px] text-indigo-400">({counts.vm ?? 0})</span>
+              </button>
 
-          <button
-            onClick={() => onSelectType('docker')}
-            className={`px-3 py-1 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
-              selectedType === 'docker'
-                ? 'bg-cyan-900/40 text-cyan-300 border border-cyan-700/50'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Docker <span className="font-mono tabular-nums text-[10px] text-cyan-400">({counts.docker})</span>
-          </button>
+              <button
+                onClick={() => onSelectType('docker')}
+                className={`px-3 py-1 text-xs font-medium rounded-md whitespace-nowrap transition-colors cursor-pointer ${
+                  selectedType === 'docker'
+                    ? 'bg-cyan-900/40 text-cyan-300 border border-cyan-700/50'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Docker <span className="font-mono tabular-nums text-[10px] text-cyan-400">({counts.docker ?? 0})</span>
+              </button>
 
-          <button
-            onClick={() => onSelectType('iot')}
-            className={`px-3 py-1 text-xs font-medium rounded-md whitespace-nowrap transition-colors ${
-              selectedType === 'iot'
-                ? 'bg-emerald-900/40 text-emerald-300 border border-emerald-700/50'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            IoT & Capteurs <span className="font-mono tabular-nums text-[10px] text-emerald-400">({counts.iot})</span>
-          </button>
+              <button
+                onClick={() => onSelectType('iot')}
+                className={`px-3 py-1 text-xs font-medium rounded-md whitespace-nowrap transition-colors cursor-pointer ${
+                  selectedType === 'iot'
+                    ? 'bg-emerald-900/40 text-emerald-300 border border-emerald-700/50'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                IoT & Capteurs <span className="font-mono tabular-nums text-[10px] text-emerald-400">({counts.iot ?? 0})</span>
+              </button>
+            </>
+          )}
         </div>
 
         {/* Secondary filters & Grouping and Geographic controls */}
@@ -373,6 +405,18 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             >
               <Edit2 className="w-3.5 h-3.5 text-cyan-400" />
               <span>Gérer les zones ({zonesCount})</span>
+            </button>
+          )}
+
+          {/* Gérer les types & sous-types / rôles */}
+          {onOpenTypeManager && (
+            <button
+              onClick={onOpenTypeManager}
+              title="Gérer les types d'équipements, sous-types et rôles métier"
+              className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium bg-slate-950/70 hover:bg-slate-800 text-slate-300 border border-slate-800 hover:border-slate-700 rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Types & Rôles ({types.length || 4})</span>
             </button>
           )}
 

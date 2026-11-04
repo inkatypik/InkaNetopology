@@ -1,0 +1,34 @@
+[
+  {
+    "id": "physical",
+    "name": "Machine Physique",
+    "color": "#3b82f6",
+    "icon": "Server",
+    "description": "Serveurs physiques, routeurs, switchs et baies",
+    "isBuiltin": true
+  },
+  {
+    "id": "vm",
+    "name": "Machine Virtuelle (VM)",
+    "color": "#6366f1",
+    "icon": "Layers",
+    "description": "Hyperviseurs Proxmox, VMware ESXi, KVM",
+    "isBuiltin": true
+  },
+  {
+    "id": "docker",
+    "name": "Conteneur Docker",
+    "color": "#06b6d4",
+    "icon": "Box",
+    "description": "Conteneurs Docker, microservices, Podman",
+    "isBuiltin": true
+  },
+  {
+    "id": "iot",
+    "name": "Périphérique IoT",
+    "color": "#10b981",
+    "icon": "Radio",
+    "description": "Objets connectés, capteurs, caméras, domotique",
+    "isBuiltin": true
+  }
+]

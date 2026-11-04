@@ -1,26 +1,34 @@
-import React, { useState } from 'react';
-import type { Device, DeviceSubType, DeviceType, DeviceStatus, GeographicZone } from '../types/network';
-import { X, Save, Plus, Trash2, Link2, Image, Activity, Tag, Info, Cpu, Box, Server, MapPin, Upload, Star } from 'lucide-react';
-import { PRESET_HARDWARE_IMAGES } from '../utils/hardwareIcons';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import type { Device, DeviceSubType, DeviceType, DeviceStatus, GeographicZone, DeviceTypeDefinition, DeviceSubTypeDefinition } from '../types/network';
+import { X, Save, Plus, Trash2, Link2, Image, Activity, Tag, Info, Cpu, Box, Server, MapPin, Upload, Star, Settings, Check } from 'lucide-react';
+import { PRESET_HARDWARE_IMAGES, getIconComponentByName } from '../utils/hardwareIcons';
 
 interface DeviceEditModalProps {
   device: Device;
   allDevices: Device[];
   zones?: GeographicZone[];
+  types?: DeviceTypeDefinition[];
+  subTypes?: DeviceSubTypeDefinition[];
   isOpen: boolean;
   onClose: () => void;
   onSave: (updated: Device) => void;
   onPing: (device: Device) => void;
+  onOpenTypeManager?: () => void;
+  onSaveSubType?: (subType: DeviceSubTypeDefinition) => void;
 }
 
 export const DeviceEditModal: React.FC<DeviceEditModalProps> = ({
   device,
   allDevices,
   zones = [],
+  types = [],
+  subTypes = [],
   isOpen,
   onClose,
   onSave,
-  onPing
+  onPing,
+  onOpenTypeManager,
+  onSaveSubType
 }) => {
   if (!isOpen) return null;
 
@@ -30,9 +38,14 @@ export const DeviceEditModal: React.FC<DeviceEditModalProps> = ({
   const [vendor, setVendor] = useState(device.vendor);
   const [deviceType, setDeviceType] = useState<DeviceType>(device.deviceType);
   const [subType, setSubType] = useState<DeviceSubType>(device.subType);
+  const [role, setRole] = useState<string>(device.role || '');
   const [status, setStatus] = useState<DeviceStatus>(device.status);
   const [isCore, setIsCore] = useState<boolean>(Boolean(device.isCore));
   const [zoneId, setZoneId] = useState<string>(device.zoneId || '');
+
+  // Quick role creation state for this device
+  const [isQuickCreatingRole, setIsQuickCreatingRole] = useState(false);
+  const [quickRoleName, setQuickRoleName] = useState('');
   const [parentHostId, setParentHostId] = useState<string>(device.parentHostId || '');
   const [connectedToSwitchId, setConnectedToSwitchId] = useState<string>(device.connectedToSwitchId || '');
   const [portOrInterface, setPortOrInterface] = useState<string>(device.portOrInterface || '');
@@ -81,7 +94,7 @@ export const DeviceEditModal: React.FC<DeviceEditModalProps> = ({
   };
 
   const handleRemoveTag = (t: string) => {
-    setTags(tags.filter((item) => item !== t));
+    setTags(tags.filter((item: string) => item !== t));
   };
 
   const handleAddMetadata = () => {
@@ -112,6 +125,7 @@ export const DeviceEditModal: React.FC<DeviceEditModalProps> = ({
       vendor,
       deviceType,
       subType,
+      role: role.trim() || undefined,
       status,
       isCore,
       zoneId: zoneId.trim() ? zoneId : undefined,
@@ -215,41 +229,202 @@ export const DeviceEditModal: React.FC<DeviceEditModalProps> = ({
               />
             </div>
 
+            {/* Type d'équipement */}
             <div>
-              <label className="block text-slate-400 font-medium mb-1">Type d'Équipement</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-slate-400 font-medium">Type d'Équipement</label>
+                {onOpenTypeManager && (
+                  <button
+                    type="button"
+                    onClick={onOpenTypeManager}
+                    className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Settings className="w-3 h-3" /> Gérer les types
+                  </button>
+                )}
+              </div>
               <select
                 value={deviceType}
                 onChange={(e) => setDeviceType(e.target.value as DeviceType)}
                 className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-200 focus:outline-hidden focus:border-cyan-500"
               >
-                <option value="physical">Machine Physique (Serveur, Switch, Routeur)</option>
-                <option value="vm">Machine Virtuelle (VM)</option>
-                <option value="docker">Conteneur Docker</option>
-                <option value="iot">Périphérique IoT (Caméra, Capteur, Prise)</option>
+                {types.length > 0 ? (
+                  types.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))
+                ) : (
+                  <>
+                    <option value="physical">Machine Physique (Serveur, Switch, Routeur)</option>
+                    <option value="vm">Machine Virtuelle (VM)</option>
+                    <option value="docker">Conteneur Docker</option>
+                    <option value="iot">Périphérique IoT (Caméra, Capteur, Prise)</option>
+                  </>
+                )}
               </select>
             </div>
 
+            {/* Sous-Type & Rôle métier */}
             <div>
-              <label className="block text-slate-400 font-medium mb-1">Sous-Type / Rôle</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-slate-400 font-medium">Sous-Type / Rôle Métier</label>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsQuickCreatingRole(!isQuickCreatingRole)}
+                    className="text-[10px] text-cyan-400 hover:text-cyan-300 flex items-center gap-0.5 cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" /> Nouveau rôle
+                  </button>
+                  {onOpenTypeManager && (
+                    <button
+                      type="button"
+                      onClick={onOpenTypeManager}
+                      className="text-[10px] text-slate-400 hover:text-slate-200 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Settings className="w-3 h-3" /> Gérer
+                    </button>
+                  )}
+                </div>
+              </div>
               <select
                 value={subType}
-                onChange={(e) => setSubType(e.target.value as DeviceSubType)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSubType(val as DeviceSubType);
+                  const matched = subTypes.find((s) => s.id === val);
+                  if (matched?.role && !role) {
+                    setRole(matched.role);
+                  }
+                }}
                 className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-200 focus:outline-hidden focus:border-cyan-500"
               >
-                <option value="router">Passerelle / Routeur</option>
-                <option value="switch">Switch Réseau</option>
-                <option value="server">Serveur Physique</option>
-                <option value="nas">Stockage NAS</option>
-                <option value="vm">Machine Virtuelle</option>
-                <option value="container">Conteneur Docker</option>
-                <option value="camera">Caméra IP / RTSP</option>
-                <option value="sensor_presence">Capteur de Présence</option>
-                <option value="sensor_temp">Sonde de Température</option>
-                <option value="smart_plug">Prise Connectée</option>
-                <option value="workstation">Station de Travail</option>
-                <option value="other">Autre équipement</option>
+                {/* Specific to this device */}
+                {subTypes.filter((s) => s.deviceId === device.id).length > 0 && (
+                  <optgroup label="⭐ Rôles spécifiques à cet équipement">
+                    {subTypes
+                      .filter((s) => s.deviceId === device.id)
+                      .map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name} ({s.role || s.name})
+                        </option>
+                      ))}
+                  </optgroup>
+                )}
+
+                {/* Filtered for selected type */}
+                <optgroup label="Rôles compatibles">
+                  {subTypes
+                    .filter((s) => !s.deviceId && (s.typeId === deviceType || s.typeId === 'all' || !s.typeId))
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                </optgroup>
+
+                {/* Other available roles */}
+                {subTypes.filter((s) => !s.deviceId && s.typeId && s.typeId !== deviceType && s.typeId !== 'all').length > 0 && (
+                  <optgroup label="Autres rôles du catalogue">
+                    {subTypes
+                      .filter((s) => !s.deviceId && s.typeId && s.typeId !== deviceType && s.typeId !== 'all')
+                      .map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                  </optgroup>
+                )}
+
+                {subTypes.length === 0 && (
+                  <>
+                    <option value="router">Passerelle / Routeur</option>
+                    <option value="switch">Switch Réseau</option>
+                    <option value="server">Serveur Physique</option>
+                    <option value="nas">Stockage NAS</option>
+                    <option value="vm">Machine Virtuelle</option>
+                    <option value="container">Conteneur Docker</option>
+                    <option value="camera">Caméra IP / RTSP</option>
+                    <option value="sensor_presence">Capteur de Présence</option>
+                    <option value="sensor_temp">Sonde de Température</option>
+                    <option value="smart_plug">Prise Connectée</option>
+                    <option value="workstation">Station de Travail</option>
+                    <option value="other">Autre équipement</option>
+                  </>
+                )}
               </select>
             </div>
+          </div>
+
+          {/* Quick role creation inline panel */}
+          {isQuickCreatingRole && (
+            <div className="p-3 bg-cyan-950/30 border border-cyan-500/40 rounded-xl space-y-2 animate-in slide-in-from-top-1">
+              <div className="flex items-center justify-between text-cyan-300 font-semibold text-[11px]">
+                <span>Créer et lier un nouveau rôle spécifiquement pour cet équipement</span>
+                <button
+                  type="button"
+                  onClick={() => setIsQuickCreatingRole(false)}
+                  className="text-slate-400 hover:text-slate-200"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={quickRoleName}
+                  onChange={(e) => setQuickRoleName(e.target.value)}
+                  placeholder="Ex: Serveur DNS & Filtrage Pi-hole"
+                  className="flex-1 px-3 py-1.5 text-xs bg-slate-950 border border-slate-700 rounded-lg text-slate-100 focus:outline-hidden focus:border-cyan-400"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!quickRoleName.trim()) return;
+                    const rawId = `role-${quickRoleName.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_')}-${Date.now().toString(36).slice(-4)}`;
+                    const newSt: DeviceSubTypeDefinition = {
+                      id: rawId,
+                      name: quickRoleName.trim(),
+                      role: quickRoleName.trim(),
+                      typeId: deviceType,
+                      deviceId: device.id,
+                      icon: 'Cpu',
+                      description: `Rôle spécifique pour ${name || device.name}`
+                    };
+                    if (onSaveSubType) {
+                      onSaveSubType(newSt);
+                    }
+                    setSubType(rawId);
+                    setRole(quickRoleName.trim());
+                    setQuickRoleName('');
+                    setIsQuickCreatingRole(false);
+                  }}
+                  disabled={!quickRoleName.trim()}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white rounded-lg font-semibold cursor-pointer"
+                >
+                  <Check className="w-3.5 h-3.5" /> Lier à cet équipement
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Rôle spécifique personnalisé de cet équipement */}
+          <div>
+            <label className="block text-slate-400 font-medium mb-1">
+              Rôle Opérationnel Précis de cet Équipement (Optionnel)
+            </label>
+            <input
+              type="text"
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              placeholder="Ex: Passerelle WAN 10G avec pare-feu DPI et VPN WireGuard"
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-slate-200 focus:outline-hidden focus:border-cyan-500"
+            />
+            <p className="text-[10px] text-slate-500 mt-1">
+              Ce rôle sera mis en valeur sur la fiche de l'équipement et dans la topologie réseau.
+            </p>
           </div>
 
           {/* 2. DYNAMIC VIRTUALIZATION DEPENDENCY LINK (Hôte physique) */}
@@ -494,7 +669,7 @@ export const DeviceEditModal: React.FC<DeviceEditModalProps> = ({
             </div>
 
             <div className="flex flex-wrap gap-1.5">
-              {tags.map((t) => (
+              {tags.map((t: string) => (
                 <span
                   key={t}
                   className="flex items-center gap-1 px-2 py-1 bg-slate-800 text-slate-200 rounded-md border border-slate-700 text-[11px]"
@@ -552,7 +727,7 @@ export const DeviceEditModal: React.FC<DeviceEditModalProps> = ({
                 >
                   <span className="font-medium text-slate-400">{key}:</span>
                   <span className="text-slate-200 font-mono text-[11px] truncate max-w-sm px-2">
-                    {val}
+                    {String(val)}
                   </span>
                   <button
                     type="button"

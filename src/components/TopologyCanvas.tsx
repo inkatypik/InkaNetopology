@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react';
-import type { Device, GeographicZone } from '../types/network';
+import type { Device, GeographicZone, DeviceTypeDefinition, DeviceSubTypeDefinition } from '../types/network';
 import { DeviceNode } from './DeviceNode';
 import { QuickLinkModal } from './QuickLinkModal';
 import {
@@ -31,6 +31,8 @@ import {
 interface TopologyCanvasProps {
   devices: Device[];
   zones?: GeographicZone[];
+  types?: DeviceTypeDefinition[];
+  subTypes?: DeviceSubTypeDefinition[];
   selectedDevice: Device | null;
   onSelectDevice: (device: Device | null) => void;
   onEditDevice: (device: Device) => void;
@@ -56,6 +58,8 @@ interface TopologyCanvasProps {
 export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   devices,
   zones = [],
+  types = [],
+  subTypes = [],
   selectedDevice,
   onSelectDevice,
   onEditDevice,
@@ -628,6 +632,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   return (
     <div
       ref={containerRef}
+      id="topology-canvas-container"
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
@@ -652,7 +657,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
       )}
 
       {/* Floating Canvas Action Toolbar (Top-Right) */}
-      <div className="absolute top-4 right-4 z-20 flex items-center gap-2 flex-wrap justify-end">
+      <div className="absolute top-4 right-4 z-20 flex items-center gap-2 flex-wrap justify-end export-exclude">
         {/* Direct Link Editor for selected device */}
         {selectedDevice && (
           <button
@@ -667,7 +672,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
       </div>
 
       {/* Zoom Controls Overlay (Bottom-Right) - "Centrer la vue" and mouse helper text removed */}
-      <div className="absolute bottom-5 right-5 z-20 flex flex-col items-end gap-2">
+      <div className="absolute bottom-5 right-5 z-20 flex flex-col items-end gap-2 export-exclude">
         <div className="flex items-center gap-1 p-1 bg-slate-900/95 border border-slate-800 rounded-xl shadow-2xl backdrop-blur-md">
           <button
             onClick={() => handleZoom(0.15)}
@@ -787,8 +792,8 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
       >
         {/* SVG Canvas for Host Clusters, Geographic Zones, and Star Rays */}
         <svg
-          className="absolute inset-0 pointer-events-none"
-          style={{ width: '10000px', height: '10000px' }}
+          className="absolute inset-0 pointer-events-none w-full h-full"
+          style={{ overflow: 'visible' }}
         >
           <defs>
             <marker
@@ -1166,6 +1171,8 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
                 device={device}
                 parentDevice={parentDevice}
                 zone={zone}
+                types={types}
+                subTypes={subTypes}
                 isCore={isCore}
                 isSelected={selectedDevice?.id === device.id}
                 onSelect={onSelectDevice}

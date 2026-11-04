@@ -1,5 +1,5 @@
 import React from 'react';
-import type { DeviceSubType, DeviceType } from '../types/network';
+import type { DeviceSubType, DeviceType, DeviceTypeDefinition, DeviceSubTypeDefinition } from '../types/network';
 import {
   Server,
   Network,
@@ -15,7 +15,12 @@ import {
   Wifi,
   Radio,
   Layers,
-  HelpCircle
+  HelpCircle,
+  Shield,
+  Cloud,
+  Database,
+  Lock,
+  Globe
 } from 'lucide-react';
 
 export interface PresetImage {
@@ -243,8 +248,55 @@ export const PRESET_HARDWARE_IMAGES: PresetImage[] = [
   }
 ];
 
-export function getDeviceDefaultIcon(subType: DeviceSubType, deviceType: DeviceType): React.ReactNode {
+export function getIconComponentByName(iconName?: string, className = "w-5 h-5", strokeWidth = 1.8): React.ReactNode {
+  const props = { className, strokeWidth };
+  switch (iconName?.toLowerCase()) {
+    case 'server': return <Server {...props} />;
+    case 'network': return <Network {...props} />;
+    case 'cpu': return <Cpu {...props} />;
+    case 'box': return <Box {...props} />;
+    case 'camera': return <Camera {...props} />;
+    case 'activity': return <Activity {...props} />;
+    case 'thermometer': return <Thermometer {...props} />;
+    case 'zap': return <Zap {...props} />;
+    case 'harddrive': return <HardDrive {...props} />;
+    case 'monitor': return <Monitor {...props} />;
+    case 'printer': return <Printer {...props} />;
+    case 'wifi': return <Wifi {...props} />;
+    case 'radio': return <Radio {...props} />;
+    case 'layers': return <Layers {...props} />;
+    case 'shield': return <Shield {...props} />;
+    case 'cloud': return <Cloud {...props} />;
+    case 'database': return <Database {...props} />;
+    case 'lock': return <Lock {...props} />;
+    case 'globe': return <Globe {...props} />;
+    default: return <HelpCircle {...props} />;
+  }
+}
+
+export function getDeviceDefaultIcon(
+  subType: DeviceSubType,
+  deviceType: DeviceType,
+  customSubTypes?: DeviceSubTypeDefinition[],
+  customTypes?: DeviceTypeDefinition[]
+): React.ReactNode {
   const iconProps = { className: "w-5 h-5", strokeWidth: 1.8 };
+
+  // Check custom subtype icon if defined
+  if (customSubTypes) {
+    const match = customSubTypes.find((s) => s.id === subType);
+    if (match?.icon) {
+      return getIconComponentByName(match.icon, "w-5 h-5 text-cyan-400");
+    }
+  }
+
+  // Check custom type icon if defined
+  if (customTypes) {
+    const matchType = customTypes.find((t) => t.id === deviceType);
+    if (matchType?.icon) {
+      return getIconComponentByName(matchType.icon, "w-5 h-5 text-indigo-400");
+    }
+  }
 
   if (deviceType === 'docker') {
     return <Box {...iconProps} className="w-5 h-5 text-cyan-400" />;
@@ -280,18 +332,45 @@ export function getDeviceDefaultIcon(subType: DeviceSubType, deviceType: DeviceT
       return <Box {...iconProps} className="w-5 h-5 text-cyan-400" />;
     case 'vm':
       return <Layers {...iconProps} className="w-5 h-5 text-indigo-400" />;
+    case 'reverse_proxy':
+      return <Network {...iconProps} className="w-5 h-5 text-cyan-400" />;
+    case 'database':
+      return <HardDrive {...iconProps} className="w-5 h-5 text-indigo-400" />;
+    case 'monitoring':
+      return <Activity {...iconProps} className="w-5 h-5 text-purple-400" />;
+    case 'dns':
+      return <Shield {...iconProps} className="w-5 h-5 text-amber-400" />;
     default:
       return <HelpCircle {...iconProps} className="w-5 h-5 text-slate-400" />;
   }
 }
 
-export function getDeviceTypeColor(deviceType: DeviceType): {
+export function getDeviceTypeColor(
+  deviceType: DeviceType,
+  customTypes?: DeviceTypeDefinition[]
+): {
   bg: string;
   border: string;
   text: string;
   badge: string;
   glow: string;
+  colorHex?: string;
 } {
+  // If custom type found in catalog
+  if (customTypes) {
+    const custom = customTypes.find((t) => t.id === deviceType);
+    if (custom) {
+      return {
+        bg: 'bg-slate-900/90 dark:bg-slate-900/95',
+        border: 'border-slate-700/80 hover:border-cyan-400',
+        text: 'text-slate-200',
+        badge: 'bg-slate-800 text-slate-200 border-slate-700',
+        glow: `${custom.color || '#3b82f6'}40`,
+        colorHex: custom.color || '#3b82f6'
+      };
+    }
+  }
+
   switch (deviceType) {
     case 'physical':
       return {
@@ -299,7 +378,8 @@ export function getDeviceTypeColor(deviceType: DeviceType): {
         border: 'border-blue-500/30 hover:border-blue-400',
         text: 'text-blue-400',
         badge: 'bg-blue-500/10 text-blue-300 border-blue-500/20',
-        glow: 'rgba(59, 130, 246, 0.25)'
+        glow: 'rgba(59, 130, 246, 0.25)',
+        colorHex: '#3b82f6'
       };
     case 'vm':
       return {
@@ -307,7 +387,8 @@ export function getDeviceTypeColor(deviceType: DeviceType): {
         border: 'border-indigo-500/30 hover:border-indigo-400',
         text: 'text-indigo-400',
         badge: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20',
-        glow: 'rgba(99, 102, 241, 0.25)'
+        glow: 'rgba(99, 102, 241, 0.25)',
+        colorHex: '#6366f1'
       };
     case 'docker':
       return {
@@ -315,7 +396,8 @@ export function getDeviceTypeColor(deviceType: DeviceType): {
         border: 'border-cyan-500/30 hover:border-cyan-400',
         text: 'text-cyan-400',
         badge: 'bg-cyan-500/10 text-cyan-300 border-cyan-500/20',
-        glow: 'rgba(6, 182, 212, 0.25)'
+        glow: 'rgba(6, 182, 212, 0.25)',
+        colorHex: '#06b6d4'
       };
     case 'iot':
       return {
@@ -323,12 +405,27 @@ export function getDeviceTypeColor(deviceType: DeviceType): {
         border: 'border-emerald-500/30 hover:border-emerald-400',
         text: 'text-emerald-400',
         badge: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20',
-        glow: 'rgba(16, 185, 129, 0.25)'
+        glow: 'rgba(16, 185, 129, 0.25)',
+        colorHex: '#10b981'
+      };
+    default:
+      return {
+        bg: 'bg-slate-900/90 dark:bg-slate-900/95',
+        border: 'border-slate-700/80 hover:border-cyan-400',
+        text: 'text-slate-300',
+        badge: 'bg-slate-800 text-slate-300 border-slate-700',
+        glow: 'rgba(148, 163, 184, 0.25)',
+        colorHex: '#64748b'
       };
   }
 }
 
-export function getDeviceTypeLabel(deviceType: DeviceType): string {
+export function getDeviceTypeLabel(deviceType: DeviceType, customTypes?: DeviceTypeDefinition[]): string {
+  if (customTypes) {
+    const custom = customTypes.find((t) => t.id === deviceType);
+    if (custom) return custom.name;
+  }
+
   switch (deviceType) {
     case 'physical':
       return 'Machine Physique';
@@ -338,5 +435,7 @@ export function getDeviceTypeLabel(deviceType: DeviceType): string {
       return 'Conteneur Docker';
     case 'iot':
       return 'Périphérique IoT';
+    default:
+      return deviceType;
   }
 }

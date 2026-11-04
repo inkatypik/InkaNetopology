@@ -10,7 +10,7 @@ import dns from 'dns';
 import { execFile, exec } from 'child_process';
 import { promisify } from 'util';
 import { fileURLToPath } from 'url';
-import type { Device, DeviceType, DeviceSubType, NetworkLog, ScanStatus, GeographicZone, ZoneType } from './src/types/network.js';
+import type { Device, DeviceType, DeviceSubType, DeviceTypeDefinition, DeviceSubTypeDefinition, NetworkLog, ScanStatus, GeographicZone, ZoneType } from './src/types/network.js';
 
 const execPromise = promisify(exec);
 const execFilePromise = promisify(execFile);
@@ -28,6 +28,43 @@ app.use(express.json());
 const DATA_DIR = path.resolve(__dirname, 'data');
 const DEVICES_FILE = path.join(DATA_DIR, 'devices.json');
 const ZONES_FILE = path.join(DATA_DIR, 'zones.json');
+const TYPES_FILE = path.join(DATA_DIR, 'device-types.json');
+const SUBTYPES_FILE = path.join(DATA_DIR, 'device-subtypes.json');
+
+// Default Device Types
+const defaultDeviceTypes: DeviceTypeDefinition[] = [
+  { id: 'physical', name: 'Machine Physique', color: '#3b82f6', icon: 'Server', description: 'Serveurs physiques, routeurs, switchs et baies', isBuiltin: true },
+  { id: 'vm', name: 'Machine Virtuelle (VM)', color: '#6366f1', icon: 'Layers', description: 'Hyperviseurs Proxmox, VMware ESXi, KVM', isBuiltin: true },
+  { id: 'docker', name: 'Conteneur Docker', color: '#06b6d4', icon: 'Box', description: 'Conteneurs Docker, microservices, Podman', isBuiltin: true },
+  { id: 'iot', name: 'Périphérique IoT', color: '#10b981', icon: 'Radio', description: 'Objets connectés, capteurs, caméras, domotique', isBuiltin: true }
+];
+
+// Default Device Sub-Types & Roles
+const defaultDeviceSubTypes: DeviceSubTypeDefinition[] = [
+  { id: 'router', name: 'Passerelle / Routeur', typeId: 'physical', role: 'Passerelle WAN & Routage IP', icon: 'Network', isBuiltin: true },
+  { id: 'switch', name: 'Switch Réseau', typeId: 'physical', role: 'Commutateur Ethernet & VLAN', icon: 'Layers', isBuiltin: true },
+  { id: 'server', name: 'Serveur Physique', typeId: 'physical', role: 'Hôte d\'exécution & calcul', icon: 'Server', isBuiltin: true },
+  { id: 'nas', name: 'Stockage NAS / SAN', typeId: 'physical', role: 'Serveur de fichiers & stockage iSCSI/NFS', icon: 'HardDrive', isBuiltin: true },
+  { id: 'workstation', name: 'Poste de Travail / PC', typeId: 'physical', role: 'Station de travail bureautique/CAO', icon: 'Monitor', isBuiltin: true },
+  { id: 'printer', name: 'Imprimante Réseau', typeId: 'physical', role: 'Imprimante réseau partagée', icon: 'Printer', isBuiltin: true },
+  { id: 'access_point', name: 'Point d\'Accès Wi-Fi', typeId: 'physical', role: 'Borne Wi-Fi & couverture sans-fil', icon: 'Wifi', isBuiltin: true },
+  { id: 'vm', name: 'Machine Virtuelle', typeId: 'vm', role: 'Instance VM généraliste', icon: 'Layers', isBuiltin: true },
+  { id: 'truenas', name: 'Stockage VM (TrueNAS)', typeId: 'vm', role: 'Stockage virtualisé ZFS', icon: 'HardDrive', isBuiltin: true },
+  { id: 'dns', name: 'DNS / Pare-feu (Pi-hole/pfSense)', typeId: 'vm', role: 'Résolveur DNS & sécurité réseau', icon: 'Shield', isBuiltin: true },
+  { id: 'container', name: 'Conteneur Docker', typeId: 'docker', role: 'Microservice conteneurisé', icon: 'Box', isBuiltin: true },
+  { id: 'reverse_proxy', name: 'Proxy Inverse (Nginx/Traefik)', typeId: 'docker', role: 'Reverse Proxy HTTP/HTTPS & SSL', icon: 'Network', isBuiltin: true },
+  { id: 'database', name: 'Base de Données', typeId: 'docker', role: 'SGBD PostgreSQL / MySQL / Redis', icon: 'HardDrive', isBuiltin: true },
+  { id: 'monitoring', name: 'Supervision (Grafana/Zabbix)', typeId: 'docker', role: 'Surveillance métriques & alertes', icon: 'Activity', isBuiltin: true },
+  { id: 'camera', name: 'Caméra Surveillance IP', typeId: 'iot', role: 'Caméra IP flux RTSP / Sécurité', icon: 'Camera', isBuiltin: true },
+  { id: 'sensor_presence', name: 'Capteur de Présence mmWave', typeId: 'iot', role: 'Détection d\'occupation radar', icon: 'Activity', isBuiltin: true },
+  { id: 'sensor_temp', name: 'Sonde Température & Humidité', typeId: 'iot', role: 'Télémétrie environnementale', icon: 'Thermometer', isBuiltin: true },
+  { id: 'smart_plug', name: 'Prise Connectée / Wattmètre', typeId: 'iot', role: 'Mesure électrique & commande relais', icon: 'Zap', isBuiltin: true },
+  { id: 'smart_bulb', name: 'Éclairage Connecté', typeId: 'iot', role: 'Point d\'éclairage pilotable', icon: 'Zap', isBuiltin: true },
+  { id: 'other', name: 'Autre équipement', typeId: 'all', role: 'Rôle généraliste', icon: 'HelpCircle', isBuiltin: true }
+];
+
+let deviceTypes: DeviceTypeDefinition[] = [];
+let deviceSubTypes: DeviceSubTypeDefinition[] = [];
 
 // Default Geographic Zones (Empty by default for clean start)
 const defaultZones: GeographicZone[] = [];
@@ -484,7 +521,67 @@ function loadDevicesFromFile() {
   saveDevicesToFile();
 }
 
-// Initial load for zones and devices
+function saveTypesToFile() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(TYPES_FILE, JSON.stringify(deviceTypes, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Erreur sauvegarde device-types.json:', err);
+  }
+}
+
+function loadTypesFromFile() {
+  try {
+    if (fs.existsSync(TYPES_FILE)) {
+      const content = fs.readFileSync(TYPES_FILE, 'utf-8');
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        deviceTypes = parsed;
+        console.log(`[InkaNetopology] ${deviceTypes.length} types d'équipements chargés depuis ${TYPES_FILE}`);
+        return;
+      }
+    }
+  } catch (err) {
+    console.error('Erreur lecture device-types.json:', err);
+  }
+  deviceTypes = [...defaultDeviceTypes];
+  saveTypesToFile();
+}
+
+function saveSubTypesToFile() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(SUBTYPES_FILE, JSON.stringify(deviceSubTypes, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Erreur sauvegarde device-subtypes.json:', err);
+  }
+}
+
+function loadSubTypesFromFile() {
+  try {
+    if (fs.existsSync(SUBTYPES_FILE)) {
+      const content = fs.readFileSync(SUBTYPES_FILE, 'utf-8');
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        deviceSubTypes = parsed;
+        console.log(`[InkaNetopology] ${deviceSubTypes.length} sous-types/rôles chargés depuis ${SUBTYPES_FILE}`);
+        return;
+      }
+    }
+  } catch (err) {
+    console.error('Erreur lecture device-subtypes.json:', err);
+  }
+  deviceSubTypes = [...defaultDeviceSubTypes];
+  saveSubTypesToFile();
+}
+
+// Initial load for types, sub-types, zones and devices
+loadTypesFromFile();
+loadSubTypesFromFile();
 loadZonesFromFile();
 loadDevicesFromFile();
 
@@ -1223,6 +1320,234 @@ app.get('/api/interfaces', (req, res) => {
     platform: os.platform(),
     uptime: os.uptime()
   });
+});
+
+// ---------------- DEVICE TYPES & SUBTYPES API ROUTES ----------------
+// Get all device types and sub-types / roles
+app.get('/api/types', (req, res) => {
+  res.json({
+    types: deviceTypes,
+    subTypes: deviceSubTypes
+  });
+});
+
+// Create new device type
+app.post('/api/types', (req, res) => {
+  const { id, name, color, icon, description } = req.body;
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'Le nom du type est requis.' });
+  }
+
+  const rawId = (id || name).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+  const typeId = rawId.startsWith('type-') ? rawId : `type-${rawId}-${Date.now().toString(36).slice(-4)}`;
+
+  // Check unique ID
+  const existing = deviceTypes.find((t) => t.id === typeId || t.name.toLowerCase() === name.trim().toLowerCase());
+  if (existing) {
+    return res.status(400).json({ error: `Un type nommé "${name}" existe déjà.` });
+  }
+
+  const newType: DeviceTypeDefinition = {
+    id: typeId,
+    name: name.trim(),
+    color: color || '#3b82f6',
+    icon: icon || 'Server',
+    description: description || '',
+    isBuiltin: false
+  };
+
+  deviceTypes.push(newType);
+  saveTypesToFile();
+
+  addLog({
+    level: 'INFO',
+    category: 'SYSTEM',
+    message: `Nouveau type d'équipement créé: "${newType.name}" (${newType.id})`
+  });
+
+  broadcastSse('type_added', newType);
+  res.status(201).json(newType);
+});
+
+// Update device type
+app.put('/api/types/:id', (req, res) => {
+  const { id } = req.params;
+  const index = deviceTypes.findIndex((t) => t.id === id);
+  if (index === -1) {
+    return res.status(404).json({ error: 'Type d\'équipement non trouvé.' });
+  }
+
+  const prev = deviceTypes[index];
+  const updated: DeviceTypeDefinition = {
+    ...prev,
+    ...req.body,
+    id, // protect id
+    isBuiltin: prev.isBuiltin // protect builtin status
+  };
+
+  deviceTypes[index] = updated;
+  saveTypesToFile();
+
+  addLog({
+    level: 'INFO',
+    category: 'SYSTEM',
+    message: `Type d'équipement mis à jour: "${updated.name}"`
+  });
+
+  broadcastSse('type_updated', updated);
+  res.json(updated);
+});
+
+// Delete device type
+app.delete('/api/types/:id', (req, res) => {
+  const { id } = req.params;
+  const index = deviceTypes.findIndex((t) => t.id === id);
+  if (index === -1) {
+    return res.status(404).json({ error: 'Type d\'équipement non trouvé.' });
+  }
+
+  const removed = deviceTypes[index];
+  deviceTypes = deviceTypes.filter((t) => t.id !== id);
+  saveTypesToFile();
+
+  // If any devices had this type, fallback to 'physical' or first available type
+  const fallbackType = deviceTypes[0]?.id || 'physical';
+  let devUpdated = false;
+  devices.forEach((d) => {
+    if (d.deviceType === id) {
+      d.deviceType = fallbackType;
+      devUpdated = true;
+    }
+  });
+
+  if (devUpdated) {
+    saveDevicesToFile();
+    broadcastSse('topology_updated', devices);
+  }
+
+  addLog({
+    level: 'WARN',
+    category: 'SYSTEM',
+    message: `Type d'équipement supprimé: "${removed.name}"`
+  });
+
+  broadcastSse('type_deleted', { id });
+  res.json({ success: true, id });
+});
+
+// Get all sub-types / roles
+app.get('/api/subtypes', (req, res) => {
+  res.json(deviceSubTypes);
+});
+
+// Create new sub-type / role (can be linked to a particular equipment)
+app.post('/api/subtypes', (req, res) => {
+  const { id, name, typeId, role, icon, description, deviceId } = req.body;
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'Le nom du sous-type / rôle est requis.' });
+  }
+
+  const rawId = (id || name).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+  const subTypeId = rawId.startsWith('sub-') ? rawId : `sub-${rawId}-${Date.now().toString(36).slice(-4)}`;
+
+  const newSubType: DeviceSubTypeDefinition = {
+    id: subTypeId,
+    name: name.trim(),
+    typeId: typeId || 'all',
+    role: role || name.trim(),
+    icon: icon || 'Cpu',
+    description: description || '',
+    deviceId: deviceId || undefined,
+    isBuiltin: false
+  };
+
+  deviceSubTypes.push(newSubType);
+  saveSubTypesToFile();
+
+  // If linked to a specific device, optionally update device role
+  if (deviceId) {
+    const targetDev = devices.find((d) => d.id === deviceId);
+    if (targetDev) {
+      targetDev.subType = newSubType.id;
+      if (newSubType.role) targetDev.role = newSubType.role;
+      saveDevicesToFile();
+      broadcastSse('device_updated', targetDev);
+    }
+  }
+
+  addLog({
+    level: 'INFO',
+    category: 'SYSTEM',
+    message: `Nouveau sous-type / rôle créé: "${newSubType.name}"${deviceId ? ' (Lié à un équipement spécifique)' : ''}`
+  });
+
+  broadcastSse('subtype_added', newSubType);
+  res.status(201).json(newSubType);
+});
+
+// Update sub-type / role
+app.put('/api/subtypes/:id', (req, res) => {
+  const { id } = req.params;
+  const index = deviceSubTypes.findIndex((st) => st.id === id);
+  if (index === -1) {
+    return res.status(404).json({ error: 'Sous-type / rôle non trouvé.' });
+  }
+
+  const prev = deviceSubTypes[index];
+  const updated: DeviceSubTypeDefinition = {
+    ...prev,
+    ...req.body,
+    id, // protect id
+    isBuiltin: prev.isBuiltin
+  };
+
+  deviceSubTypes[index] = updated;
+  saveSubTypesToFile();
+
+  addLog({
+    level: 'INFO',
+    category: 'SYSTEM',
+    message: `Sous-type / rôle mis à jour: "${updated.name}"`
+  });
+
+  broadcastSse('subtype_updated', updated);
+  res.json(updated);
+});
+
+// Delete sub-type / role
+app.delete('/api/subtypes/:id', (req, res) => {
+  const { id } = req.params;
+  const index = deviceSubTypes.findIndex((st) => st.id === id);
+  if (index === -1) {
+    return res.status(404).json({ error: 'Sous-type / rôle non trouvé.' });
+  }
+
+  const removed = deviceSubTypes[index];
+  deviceSubTypes = deviceSubTypes.filter((st) => st.id !== id);
+  saveSubTypesToFile();
+
+  // If any devices had this subType, fallback to 'other'
+  let devUpdated = false;
+  devices.forEach((d) => {
+    if (d.subType === id) {
+      d.subType = 'other';
+      devUpdated = true;
+    }
+  });
+
+  if (devUpdated) {
+    saveDevicesToFile();
+    broadcastSse('topology_updated', devices);
+  }
+
+  addLog({
+    level: 'WARN',
+    category: 'SYSTEM',
+    message: `Sous-type / rôle supprimé: "${removed.name}"`
+  });
+
+  broadcastSse('subtype_deleted', { id });
+  res.json({ success: true, id });
 });
 
 // ---------------- GEOGRAPHIC ZONES API ROUTES ----------------
@@ -2084,7 +2409,7 @@ app.post('/api/topology/autolayout', (req, res) => {
   res.json({ success: true, devices });
 });
 
-// Export topology configuration (including devices, zones, and subnet info)
+// Export topology configuration (including devices, zones, types, sub-types, and subnet info)
 app.get('/api/export', (req, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename="inkanetopology-export.json"');
   res.json({
@@ -2092,11 +2417,13 @@ app.get('/api/export', (req, res) => {
     subnet: scanStatus.subnet,
     devices,
     zones,
+    types: deviceTypes,
+    subTypes: deviceSubTypes,
     logs: logs.slice(0, 100)
   });
 });
 
-// Import topology configuration (accepts { devices, zones } or Device[] array)
+// Import topology configuration (accepts { devices, zones, types, subTypes } or Device[] array)
 app.post('/api/import', (req, res) => {
   const body = req.body;
   if (!body) {
@@ -2105,20 +2432,32 @@ app.post('/api/import', (req, res) => {
 
   let importedDevices: Device[] = [];
   let importedZones: GeographicZone[] = [];
+  let importedTypes: DeviceTypeDefinition[] = [];
+  let importedSubTypes: DeviceSubTypeDefinition[] = [];
 
   if (Array.isArray(body)) {
     importedDevices = body;
   } else if (typeof body === 'object') {
-    if (Array.isArray(body.devices)) {
-      importedDevices = body.devices;
-    }
-    if (Array.isArray(body.zones)) {
-      importedZones = body.zones;
-    }
+    if (Array.isArray(body.devices)) importedDevices = body.devices;
+    if (Array.isArray(body.zones)) importedZones = body.zones;
+    if (Array.isArray(body.types)) importedTypes = body.types;
+    if (Array.isArray(body.subTypes)) importedSubTypes = body.subTypes;
   }
 
-  if (importedDevices.length === 0 && importedZones.length === 0) {
-    return res.status(400).json({ error: 'Le fichier JSON ne contient aucun équipement ou zone valide.' });
+  if (importedDevices.length === 0 && importedZones.length === 0 && importedTypes.length === 0 && importedSubTypes.length === 0) {
+    return res.status(400).json({ error: 'Le fichier JSON ne contient aucun équipement, zone ou type valide.' });
+  }
+
+  if (importedTypes.length > 0) {
+    deviceTypes = importedTypes;
+    saveTypesToFile();
+    broadcastSse('types_updated', deviceTypes);
+  }
+
+  if (importedSubTypes.length > 0) {
+    deviceSubTypes = importedSubTypes;
+    saveSubTypesToFile();
+    broadcastSse('subtypes_updated', deviceSubTypes);
   }
 
   if (importedDevices.length > 0) {
@@ -2136,15 +2475,18 @@ app.post('/api/import', (req, res) => {
   addLog({
     level: 'INFO',
     category: 'SYSTEM',
-    message: `Topologie réseau importée avec succès : ${importedDevices.length} équipements, ${importedZones.length} zones géographiques.`
+    message: `Topologie réseau importée avec succès : ${importedDevices.length} équipements, ${importedZones.length} zones, ${importedTypes.length} types.`
   });
 
   res.json({
     success: true,
     devicesCount: devices.length,
     zonesCount: zones.length,
+    typesCount: deviceTypes.length,
     devices,
-    zones
+    zones,
+    types: deviceTypes,
+    subTypes: deviceSubTypes
   });
 });
 

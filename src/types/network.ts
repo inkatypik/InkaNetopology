@@ -1,21 +1,26 @@
-export type DeviceType = 'physical' | 'vm' | 'docker' | 'iot';
+export type DeviceType = string;
+export type DeviceSubType = string;
 
-export type DeviceSubType =
-  | 'router'
-  | 'switch'
-  | 'server'
-  | 'nas'
-  | 'workstation'
-  | 'vm'
-  | 'container'
-  | 'camera'
-  | 'sensor_presence'
-  | 'sensor_temp'
-  | 'smart_plug'
-  | 'smart_bulb'
-  | 'access_point'
-  | 'printer'
-  | 'other';
+export interface DeviceTypeDefinition {
+  id: string;
+  name: string;
+  color: string;
+  icon?: string;
+  description?: string;
+  isBuiltin?: boolean;
+}
+
+export interface DeviceSubTypeDefinition {
+  id: string;
+  name: string;
+  typeId?: string; // 'all' or specific DeviceType id
+  applicableDeviceTypes?: string[];
+  role?: string;
+  icon?: string;
+  description?: string;
+  deviceId?: string; // linked specifically to a particular equipment
+  isBuiltin?: boolean;
+}
 
 export type DeviceStatus = 'online' | 'offline' | 'warning';
 
@@ -37,6 +42,7 @@ export interface Device {
   vendor: string;
   deviceType: DeviceType;
   subType: DeviceSubType;
+  role?: string; // Descriptive or custom role tied to this equipment
   status: DeviceStatus;
   
   // Geographic zone organization
