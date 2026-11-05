@@ -1,0 +1,162 @@
+[
+  {
+    "id": "router",
+    "name": "Passerelle / Routeur",
+    "typeId": "physical",
+    "role": "Passerelle WAN & Routage IP",
+    "icon": "Network",
+    "isBuiltin": true
+  },
+  {
+    "id": "switch",
+    "name": "Switch Réseau",
+    "typeId": "physical",
+    "role": "Commutateur Ethernet & VLAN",
+    "icon": "Layers",
+    "isBuiltin": true
+  },
+  {
+    "id": "server",
+    "name": "Serveur Physique",
+    "typeId": "physical",
+    "role": "Hôte d'exécution & calcul",
+    "icon": "Server",
+    "isBuiltin": true
+  },
+  {
+    "id": "nas",
+    "name": "Stockage NAS / SAN",
+    "typeId": "physical",
+    "role": "Serveur de fichiers & stockage iSCSI/NFS",
+    "icon": "HardDrive",
+    "isBuiltin": true
+  },
+  {
+    "id": "workstation",
+    "name": "Poste de Travail / PC",
+    "typeId": "physical",
+    "role": "Station de travail bureautique/CAO",
+    "icon": "Monitor",
+    "isBuiltin": true
+  },
+  {
+    "id": "printer",
+    "name": "Imprimante Réseau",
+    "typeId": "physical",
+    "role": "Imprimante réseau partagée",
+    "icon": "Printer",
+    "isBuiltin": true
+  },
+  {
+    "id": "access_point",
+    "name": "Point d'Accès Wi-Fi",
+    "typeId": "physical",
+    "role": "Borne Wi-Fi & couverture sans-fil",
+    "icon": "Wifi",
+    "isBuiltin": true
+  },
+  {
+    "id": "vm",
+    "name": "Machine Virtuelle",
+    "typeId": "vm",
+    "role": "Instance VM généraliste",
+    "icon": "Layers",
+    "isBuiltin": true
+  },
+  {
+    "id": "truenas",
+    "name": "Stockage VM (TrueNAS)",
+    "typeId": "vm",
+    "role": "Stockage virtualisé ZFS",
+    "icon": "HardDrive",
+    "isBuiltin": true
+  },
+  {
+    "id": "dns",
+    "name": "DNS / Pare-feu (Pi-hole/pfSense)",
+    "typeId": "vm",
+    "role": "Résolveur DNS & sécurité réseau",
+    "icon": "Shield",
+    "isBuiltin": true
+  },
+  {
+    "id": "container",
+    "name": "Conteneur Docker",
+    "typeId": "docker",
+    "role": "Microservice conteneurisé",
+    "icon": "Box",
+    "isBuiltin": true
+  },
+  {
+    "id": "reverse_proxy",
+    "name": "Proxy Inverse (Nginx/Traefik)",
+    "typeId": "docker",
+    "role": "Reverse Proxy HTTP/HTTPS & SSL",
+    "icon": "Network",
+    "isBuiltin": true
+  },
+  {
+    "id": "database",
+    "name": "Base de Données",
+    "typeId": "docker",
+    "role": "SGBD PostgreSQL / MySQL / Redis",
+    "icon": "HardDrive",
+    "isBuiltin": true
+  },
+  {
+    "id": "monitoring",
+    "name": "Supervision (Grafana/Zabbix)",
+    "typeId": "docker",
+    "role": "Surveillance métriques & alertes",
+    "icon": "Activity",
+    "isBuiltin": true
+  },
+  {
+    "id": "camera",
+    "name": "Caméra Surveillance IP",
+    "typeId": "iot",
+    "role": "Caméra IP flux RTSP / Sécurité",
+    "icon": "Camera",
+    "isBuiltin": true
+  },
+  {
+    "id": "sensor_presence",
+    "name": "Capteur de Présence mmWave",
+    "typeId": "iot",
+    "role": "Détection d'occupation radar",
+    "icon": "Activity",
+    "isBuiltin": true
+  },
+  {
+    "id": "sensor_temp",
+    "name": "Sonde Température & Humidité",
+    "typeId": "iot",
+    "role": "Télémétrie environnementale",
+    "icon": "Thermometer",
+    "isBuiltin": true
+  },
+  {
+    "id": "smart_plug",
+    "name": "Prise Connectée / Wattmètre",
+    "typeId": "iot",
+    "role": "Mesure électrique & commande relais",
+    "icon": "Zap",
+    "isBuiltin": true
+  },
+  {
+    "id": "smart_bulb",
+    "name": "Éclairage Connecté",
+    "typeId": "iot",
+    "role": "Point d'éclairage pilotable",
+    "icon": "Zap",
+    "isBuiltin": true
+  },
+  {
+    "id": "other",
+    "name": "Autre équipement",
+    "typeId": "all",
+    "role": "Rôle généraliste",
+    "icon": "HelpCircle",
+    "isBuiltin": true
+  }
+]

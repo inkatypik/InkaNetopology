@@ -25,8 +25,10 @@ import {
   Star,
   Compass,
   GripHorizontal,
-  Move
+  Move,
+  Tag
 } from 'lucide-react';
+import { getDeviceTypeColor, getDeviceTypeLabel } from '../utils/hardwareIcons';
 
 interface TopologyCanvasProps {
   devices: Device[];
@@ -140,6 +142,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   // Draggable & Collapsible Legend Overlay
   const [legendPos, setLegendPos] = useState({ x: 20, y: 20 });
   const [isLegendCollapsed, setIsLegendCollapsed] = useState(false);
+  const [legendTab, setLegendTab] = useState<'general' | 'zones' | 'types' | 'roles'>('general');
   const [isDraggingLegend, setIsDraggingLegend] = useState(false);
   const legendDragOffsetRef = useRef({ x: 0, y: 0 });
 
@@ -629,6 +632,116 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
     }
   };
 
+  // Helper for zone type French label
+  const getZoneTypeLabel = (type: string) => {
+    switch (type) {
+      case 'baie':
+        return 'Baie';
+      case 'sous_repartiteur':
+        return 'Sous-répartiteur';
+      case 'piece':
+        return 'Pièce';
+      case 'site':
+        return 'Site';
+      default:
+        return 'Autre';
+    }
+  };
+
+  // Statistics and categorizations for the comprehensive Legend
+  const legendStats = useMemo(() => {
+    // 1. Zones breakdown with device count
+    const zoneCounts = new Map<string, number>();
+    devices.forEach((d) => {
+      if (d.zoneId) {
+        zoneCounts.set(d.zoneId, (zoneCounts.get(d.zoneId) || 0) + 1);
+      }
+    });
+
+    const activeZones = zones.map((z) => ({
+      zone: z,
+      count: zoneCounts.get(z.id) || 0
+    }));
+
+    const unassignedZoneCount = devices.filter((d) => !d.zoneId).length;
+
+    // 2. Types breakdown with device count
+    const builtInTypeIds = ['physical', 'vm', 'docker', 'iot'];
+    const allTypeIds = new Set<string>(builtInTypeIds);
+    types.forEach((t) => allTypeIds.add(t.id));
+    devices.forEach((d) => {
+      if (d.deviceType) allTypeIds.add(d.deviceType);
+    });
+
+    const typeCounts = new Map<string, number>();
+    devices.forEach((d) => {
+      const t = d.deviceType || 'physical';
+      typeCounts.set(t, (typeCounts.get(t) || 0) + 1);
+    });
+
+    const typeItems = Array.from(allTypeIds).map((typeId) => {
+      const customDef = types.find((t) => t.id === typeId);
+      const name = customDef?.name || getDeviceTypeLabel(typeId, types);
+      const colorStyle = getDeviceTypeColor(typeId, types);
+      const count = typeCounts.get(typeId) || 0;
+      return {
+        id: typeId,
+        name,
+        colorHex: colorStyle.colorHex || '#64748b',
+        count,
+        isCustom: !builtInTypeIds.includes(typeId)
+      };
+    });
+
+    // 3. Roles and Sub-types breakdown with device count
+    const roleMap = new Map<string, { role: string; subType?: string; typeId?: string; count: number; deviceNames: string[] }>();
+    devices.forEach((d) => {
+      const roleStr = d.role?.trim() || d.subType?.trim();
+      if (roleStr) {
+        const key = roleStr.toLowerCase();
+        const existing = roleMap.get(key);
+        if (existing) {
+          existing.count += 1;
+          if (existing.deviceNames.length < 3) existing.deviceNames.push(d.name);
+        } else {
+          roleMap.set(key, {
+            role: roleStr,
+            subType: d.subType,
+            typeId: d.deviceType,
+            count: 1,
+            deviceNames: [d.name]
+          });
+        }
+      }
+    });
+
+    // Also include configured subTypes definitions
+    subTypes.forEach((st) => {
+      const roleStr = st.role?.trim() || st.name.trim();
+      if (roleStr) {
+        const key = roleStr.toLowerCase();
+        if (!roleMap.has(key)) {
+          roleMap.set(key, {
+            role: roleStr,
+            subType: st.name,
+            typeId: st.typeId,
+            count: 0,
+            deviceNames: []
+          });
+        }
+      }
+    });
+
+    const roleItems = Array.from(roleMap.values()).sort((a, b) => b.count - a.count);
+
+    return {
+      activeZones,
+      typeItems,
+      roleItems,
+      unassignedZoneCount
+    };
+  }, [devices, zones, types, subTypes]);
+
   return (
     <div
       ref={containerRef}
@@ -703,7 +816,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
         </div>
       </div>
 
-      {/* Draggable & Minimizable Legend Overlay */}
+      {/* Draggable & Minimizable Enhanced Legend Overlay */}
       <div
         style={{
           position: 'absolute',
@@ -718,9 +831,12 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
             onMouseDown={handleLegendMouseDown}
             className="flex items-center gap-2 px-3 py-1.5 bg-slate-900/95 border border-slate-700/80 hover:border-cyan-500/60 rounded-xl shadow-2xl backdrop-blur-md cursor-grab active:cursor-grabbing text-xs select-none"
           >
-            <GripHorizontal className="w-3.5 h-3.5 text-slate-500" />
-            <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+            <GripHorizontal className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+            <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 shrink-0" />
             <span className="text-slate-200 font-semibold text-[11px]">Légende</span>
+            <span className="px-1.5 py-0.5 bg-slate-800 text-cyan-400 font-mono text-[10px] rounded-full border border-slate-700">
+              {zones.length}Z · {legendStats.typeItems.length}T · {legendStats.roleItems.length}R
+            </span>
             <button
               type="button"
               onClick={(e) => {
@@ -734,11 +850,11 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
             </button>
           </div>
         ) : (
-          <div className="p-3 bg-slate-900/95 border border-slate-700/80 rounded-xl text-xs text-slate-400 space-y-2 backdrop-blur-md shadow-2xl min-w-[270px] select-none">
+          <div className="p-3 bg-slate-900/95 border border-slate-700/80 rounded-xl text-xs text-slate-400 space-y-2.5 backdrop-blur-md shadow-2xl w-[320px] sm:w-[360px] select-none">
             {/* Draggable Header */}
             <div
               onMouseDown={handleLegendMouseDown}
-              className="flex items-center justify-between gap-3 pb-1.5 border-b border-slate-800 cursor-grab active:cursor-grabbing"
+              className="flex items-center justify-between gap-3 pb-2 border-b border-slate-800 cursor-grab active:cursor-grabbing"
             >
               <div className="flex items-center gap-1.5">
                 <GripHorizontal className="w-3.5 h-3.5 text-slate-500" />
@@ -757,25 +873,238 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
               </button>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 shrink-0" />
-              <span className="text-[11px] text-amber-300 font-bold">Cœur de réseau au centre</span>
+            {/* Segmented Category Tabs */}
+            <div className="grid grid-cols-4 gap-1 p-0.5 bg-slate-950/80 rounded-lg border border-slate-800 text-[10px] font-semibold">
+              <button
+                type="button"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={() => setLegendTab('general')}
+                className={`py-1 px-1 rounded transition-colors text-center truncate ${
+                  legendTab === 'general'
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-xs'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 border border-transparent'
+                }`}
+              >
+                Général
+              </button>
+              <button
+                type="button"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={() => setLegendTab('zones')}
+                title="Zones géographiques"
+                className={`py-1 px-1 rounded transition-colors text-center truncate ${
+                  legendTab === 'zones'
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-xs'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 border border-transparent'
+                }`}
+              >
+                Zones ({zones.length})
+              </button>
+              <button
+                type="button"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={() => setLegendTab('types')}
+                title="Types d'équipements"
+                className={`py-1 px-1 rounded transition-colors text-center truncate ${
+                  legendTab === 'types'
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-xs'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 border border-transparent'
+                }`}
+              >
+                Types ({legendStats.typeItems.length})
+              </button>
+              <button
+                type="button"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={() => setLegendTab('roles')}
+                title="Rôles & Sous-types"
+                className={`py-1 px-1 rounded transition-colors text-center truncate ${
+                  legendTab === 'roles'
+                    ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-xs'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 border border-transparent'
+                }`}
+              >
+                Rôles ({legendStats.roleItems.length})
+              </button>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3.5 h-0.5 bg-sky-500 rounded-full shrink-0" />
-              <span className="text-[11px] text-slate-300 font-medium">Liaison réseau physique (LAN)</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3.5 h-0.5 border-b-2 border-indigo-400 border-dashed shrink-0" />
-              <span className="text-[11px] text-indigo-300 font-medium">Machine Virtuelle (Hyperviseur)</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-3.5 h-0.5 border-b-2 border-cyan-400 border-dashed shrink-0" />
-              <span className="text-[11px] text-cyan-300 font-medium">Conteneur Docker sur Hôte</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              <span className="text-[11px] text-slate-400">Zones géographiques déplaçables</span>
+
+            {/* Scrollable Legend Content by Active Tab */}
+            <div className="max-h-60 overflow-y-auto pr-1">
+              {/* TAB 1: GÉNÉRAL */}
+              {legendTab === 'general' && (
+                <div className="space-y-2 py-0.5">
+                  <div className="flex items-center gap-2">
+                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400 shrink-0" />
+                    <span className="text-[11px] text-amber-300 font-bold">Cœur de réseau au centre (Étoile)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-0.5 bg-sky-500 rounded-full shrink-0" />
+                    <span className="text-[11px] text-slate-300 font-medium">Liaison réseau physique (LAN Ethernet/Wi-Fi)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-0.5 border-b-2 border-indigo-400 border-dashed shrink-0" />
+                    <span className="text-[11px] text-indigo-300 font-medium">Machine Virtuelle (Hyperviseur parent)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-0.5 border-b-2 border-cyan-400 border-dashed shrink-0" />
+                    <span className="text-[11px] text-cyan-300 font-medium">Conteneur Docker sur Hôte parent</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span className="text-[11px] text-slate-300">Zones géographiques (déplaçables & éditables)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Layers className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                    <span className="text-[11px] text-slate-300">Groupes hôtes physiques (repliables / dépliables)</span>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: ZONES GÉOGRAPHIQUES */}
+              {legendTab === 'zones' && (
+                <div className="space-y-1.5 py-0.5">
+                  {legendStats.activeZones.length === 0 ? (
+                    <div className="text-center py-3 text-slate-400 text-[11px]">
+                      <p>Aucune zone géographique créée.</p>
+                      {onOpenZoneManager && (
+                        <button
+                          type="button"
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={onOpenZoneManager}
+                          className="mt-2 text-cyan-400 hover:text-cyan-300 underline font-semibold text-[10px] cursor-pointer"
+                        >
+                          Gérer les zones géographiques
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      {legendStats.activeZones.map(({ zone, count }) => {
+                        const isCollapsed = collapsedZoneIds.has(zone.id);
+                        const zColor = zone.color || '#0ea5e9';
+                        return (
+                          <div
+                            key={`leg-zone-${zone.id}`}
+                            className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-950/60 border border-slate-800/80 hover:border-slate-700 transition-colors"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span
+                                className="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs"
+                                style={{ backgroundColor: zColor }}
+                              />
+                              <span className="text-slate-400 shrink-0">
+                                {getZoneTypeIcon(zone.type)}
+                              </span>
+                              <span className="text-[11px] font-medium text-slate-200 truncate" title={zone.name}>
+                                {zone.name}
+                              </span>
+                              <span className="text-[9px] px-1 py-0.2 rounded bg-slate-800 text-slate-400 border border-slate-700 font-mono shrink-0">
+                                {getZoneTypeLabel(zone.type)}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800/80 text-cyan-400 border border-slate-700">
+                                {count} {count > 1 ? 'équip.' : 'équip.'}
+                              </span>
+                              {count > 0 && (
+                                <button
+                                  type="button"
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                  onClick={() => toggleCollapseZone(zone.id)}
+                                  title={isCollapsed ? 'Déplier la zone' : 'Replier la zone'}
+                                  className="p-0.5 rounded text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+                                >
+                                  {isCollapsed ? (
+                                    <ChevronRight className="w-3.5 h-3.5 text-amber-400" />
+                                  ) : (
+                                    <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {legendStats.unassignedZoneCount > 0 && (
+                        <div className="flex items-center justify-between text-[10px] text-slate-400 px-2 pt-1 border-t border-slate-800/60 font-mono">
+                          <span>Non assignés à une zone</span>
+                          <span className="text-amber-400 font-semibold">{legendStats.unassignedZoneCount} équip.</span>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 3: TYPES D'ÉQUIPEMENTS */}
+              {legendTab === 'types' && (
+                <div className="space-y-1.5 py-0.5">
+                  {legendStats.typeItems.map((item) => (
+                    <div
+                      key={`leg-type-${item.id}`}
+                      className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-950/60 border border-slate-800/80 hover:border-slate-700 transition-colors"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span
+                          className="w-2.5 h-2.5 rounded-full shrink-0 shadow-xs"
+                          style={{ backgroundColor: item.colorHex }}
+                        />
+                        <span className="text-[11px] font-medium text-slate-200 truncate" title={item.name}>
+                          {item.name}
+                        </span>
+                        {item.isCustom && (
+                          <span className="text-[9px] px-1 py-0.2 rounded bg-indigo-950/60 text-indigo-300 border border-indigo-800/60 font-mono shrink-0">
+                            Perso
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800/80 text-cyan-400 border border-slate-700 shrink-0">
+                        {item.count} {item.count > 1 ? 'équip.' : 'équip.'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* TAB 4: RÔLES & SOUS-TYPES */}
+              {legendTab === 'roles' && (
+                <div className="space-y-1.5 py-0.5">
+                  {legendStats.roleItems.length === 0 ? (
+                    <div className="text-center py-3 text-slate-400 text-[11px]">
+                      <p>Aucun rôle ou sous-type spécifique défini.</p>
+                      <p className="text-[10px] text-slate-500 mt-1">
+                        Définissez les rôles de vos équipements lors de leur édition.
+                      </p>
+                    </div>
+                  ) : (
+                    legendStats.roleItems.map((item, idx) => (
+                      <div
+                        key={`leg-role-${idx}-${item.role}`}
+                        className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-950/60 border border-slate-800/80 hover:border-slate-700 transition-colors"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Tag className="w-3 h-3 text-indigo-400 shrink-0" />
+                          <div className="min-w-0">
+                            <div className="text-[11px] font-semibold text-slate-200 truncate" title={item.role}>
+                              {item.role}
+                            </div>
+                            {item.typeId && (
+                              <div className="text-[9px] text-slate-400 font-mono truncate">
+                                {getDeviceTypeLabel(item.typeId, types)}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800/80 text-cyan-400 border border-slate-700">
+                            {item.count} {item.count > 1 ? 'équip.' : 'équip.'}
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -795,31 +1124,6 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
           className="absolute inset-0 pointer-events-none w-full h-full"
           style={{ overflow: 'visible' }}
         >
-          <defs>
-            <marker
-              id="arrow-vm"
-              viewBox="0 0 10 10"
-              refX="8"
-              refY="5"
-              markerWidth="6"
-              markerHeight="6"
-              orient="auto-start-reverse"
-            >
-              <path d="M 0 1 L 9 5 L 0 9 z" fill="#818cf8" />
-            </marker>
-            <marker
-              id="arrow-docker"
-              viewBox="0 0 10 10"
-              refX="8"
-              refY="5"
-              markerWidth="6"
-              markerHeight="6"
-              orient="auto-start-reverse"
-            >
-              <path d="M 0 1 L 9 5 L 0 9 z" fill="#22d3ee" />
-            </marker>
-          </defs>
-
           {/* 1. GEOGRAPHIC ZONE BOUNDING ENCLOSURES (Pièces, Baies, Sous-Répartiteurs, Sites) */}
           {zoneClusters.map((cluster) => {
             const zColor = cluster.zone.color || '#0ea5e9';
@@ -952,7 +1256,12 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
                   strokeWidth={isRelated ? '3.5' : '2.5'}
                   strokeDasharray="6 4"
                   strokeOpacity={isRelated ? '1' : '0.8'}
-                  markerEnd={isDocker ? 'url(#arrow-docker)' : 'url(#arrow-vm)'}
+                />
+                {/* Direct inline vector arrow pointing down into guest node */}
+                <polygon
+                  points={`${x2},${y2 + 2} ${x2 - 5},${y2 - 7} ${x2 + 5},${y2 - 7}`}
+                  fill={strokeColor}
+                  opacity={isRelated ? 1 : 0.85}
                 />
               </g>
             );

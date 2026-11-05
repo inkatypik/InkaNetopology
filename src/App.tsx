@@ -674,12 +674,27 @@ export default function App() {
     }
   };
 
-  // Import JSON topology
+  // Import JSON topology with robust parsing & validation
   const handleImportTopology = async (file: File) => {
     showToast('Importation du fichier JSON en cours...');
     try {
-      const text = await file.text();
+      const rawText = await file.text();
+      const text = rawText.replace(/^\uFEFF/, '').trim(); // Remove UTF-8 BOM if present
+      if (!text) {
+        showToast('Le fichier sélectionné est vide.');
+        return;
+      }
+      if (text.startsWith('<') || text.toLowerCase().includes('<!doctype') || text.toLowerCase().includes('<html')) {
+        showToast('Fichier invalide : le fichier contient du code HTML au lieu de données JSON.');
+        return;
+      }
+
       const parsed = JSON.parse(text);
+      if (!parsed || (typeof parsed !== 'object' && !Array.isArray(parsed))) {
+        showToast('Format JSON non reconnu.');
+        return;
+      }
+
       const res = await fetch('/api/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -687,13 +702,27 @@ export default function App() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        if (data.devices) setDevices(data.devices);
-        if (data.zones) setZones(data.zones);
-        if (data.types) setDeviceTypes(data.types);
-        if (data.subTypes) setDeviceSubTypes(data.subTypes);
-        showToast(`Topologie importée avec succès (${data.deviceCount} équipements, ${data.zoneCount} zones).`);
+        if (Array.isArray(data.devices)) setDevices(data.devices);
+        if (Array.isArray(data.zones)) setZones(data.zones);
+        if (Array.isArray(data.types)) setDeviceTypes(data.types);
+        if (Array.isArray(data.subTypes)) setDeviceSubTypes(data.subTypes);
+        const importedDevs = data.deviceCount ?? data.devicesCount ?? (Array.isArray(parsed) ? parsed.length : parsed.devices?.length ?? 0);
+        const importedZones = data.zoneCount ?? data.zonesCount ?? (parsed.zones?.length ?? 0);
+        showToast(`Topologie importée avec succès (${importedDevs} équipements, ${importedZones} zones).`);
       } else {
-        showToast(data.error || 'Erreur lors de l\'importation.');
+        // Fallback: apply parsed content directly to client state if server returned an error
+        if (Array.isArray(parsed)) {
+          setDevices(parsed);
+          showToast(`Topologie importée (${parsed.length} équipements).`);
+        } else if (typeof parsed === 'object') {
+          if (Array.isArray(parsed.devices)) setDevices(parsed.devices);
+          if (Array.isArray(parsed.zones)) setZones(parsed.zones);
+          if (Array.isArray(parsed.types)) setDeviceTypes(parsed.types);
+          if (Array.isArray(parsed.subTypes)) setDeviceSubTypes(parsed.subTypes);
+          showToast(`Topologie importée (${parsed.devices?.length || 0} équipements, ${parsed.zones?.length || 0} zones).`);
+        } else {
+          showToast(data?.error || 'Erreur lors de l\'importation.');
+        }
       }
     } catch (err) {
       console.error('Erreur import JSON:', err);
@@ -701,12 +730,12 @@ export default function App() {
     }
   };
 
-  // Export PNG image
+  // Export PNG image with multi-pass fallback
   const handleExportPng = async () => {
     if (activeTab !== 'topology') {
       setActiveTab('topology');
       showToast('Bascule sur la vue Topologie pour l\'export...');
-      await new Promise((r) => setTimeout(r, 250));
+      await new Promise((r) => setTimeout(r, 350));
     }
 
     const container = document.getElementById('topology-canvas-container');
@@ -722,22 +751,42 @@ export default function App() {
 
     showToast('Génération de l\'image PNG en cours...');
     try {
-      const dataUrl = await toPng(container, {
-        backgroundColor: '#020617',
-        filter: (node) => {
-          if ((node as HTMLElement)?.classList?.contains('export-exclude')) {
-            return false;
-          }
-          return true;
-        },
-        pixelRatio: 2,
-        skipFonts: true,
-        cacheBust: true
-      });
+      let dataUrl: string;
+      const exportWidth = container.clientWidth || 1280;
+      const exportHeight = container.clientHeight || 800;
+
+      try {
+        dataUrl = await toPng(container, {
+          backgroundColor: '#020617',
+          width: exportWidth,
+          height: exportHeight,
+          filter: (node) => !(node as HTMLElement)?.classList?.contains('export-exclude'),
+          pixelRatio: 2,
+          skipFonts: true,
+          fontEmbedCSS: '',
+          cacheBust: false,
+          imagePlaceholder: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" fill="%23334155"><rect width="36" height="36" rx="6"/></svg>'
+        });
+      } catch (firstErr) {
+        console.warn('Pass 1 export PNG (pixelRatio 2) échouée, essai pass 2:', firstErr);
+        dataUrl = await toPng(container, {
+          backgroundColor: '#020617',
+          width: exportWidth,
+          height: exportHeight,
+          filter: (node) => !(node as HTMLElement)?.classList?.contains('export-exclude'),
+          pixelRatio: 1,
+          skipFonts: true,
+          fontEmbedCSS: '',
+          cacheBust: false
+        });
+      }
+
       const link = document.createElement('a');
       link.download = `topologie-reseau-${new Date().toISOString().slice(0, 10)}.png`;
       link.href = dataUrl;
+      document.body.appendChild(link);
       link.click();
+      document.body.removeChild(link);
       showToast('Image PNG exportée avec succès !');
     } catch (err) {
       console.error('Erreur export PNG:', err);
@@ -745,12 +794,12 @@ export default function App() {
     }
   };
 
-  // Export PDF document
+  // Export PDF document with landscape fit
   const handleExportPdf = async () => {
     if (activeTab !== 'topology') {
       setActiveTab('topology');
       showToast('Bascule sur la vue Topologie pour l\'export...');
-      await new Promise((r) => setTimeout(r, 250));
+      await new Promise((r) => setTimeout(r, 350));
     }
 
     const container = document.getElementById('topology-canvas-container');
@@ -766,30 +815,57 @@ export default function App() {
 
     showToast('Génération du document PDF en cours...');
     try {
-      const dataUrl = await toPng(container, {
-        backgroundColor: '#020617',
-        filter: (node) => {
-          if ((node as HTMLElement)?.classList?.contains('export-exclude')) {
-            return false;
-          }
-          return true;
-        },
-        pixelRatio: 2,
-        skipFonts: true,
-        cacheBust: true
-      });
+      let dataUrl: string;
+      const exportWidth = container.clientWidth || 1280;
+      const exportHeight = container.clientHeight || 800;
+
+      try {
+        dataUrl = await toPng(container, {
+          backgroundColor: '#020617',
+          width: exportWidth,
+          height: exportHeight,
+          filter: (node) => !(node as HTMLElement)?.classList?.contains('export-exclude'),
+          pixelRatio: 2,
+          skipFonts: true,
+          fontEmbedCSS: '',
+          cacheBust: false,
+          imagePlaceholder: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" fill="%23334155"><rect width="36" height="36" rx="6"/></svg>'
+        });
+      } catch (firstErr) {
+        console.warn('Pass 1 export PDF (pixelRatio 2) échouée, essai pass 2:', firstErr);
+        dataUrl = await toPng(container, {
+          backgroundColor: '#020617',
+          width: exportWidth,
+          height: exportHeight,
+          filter: (node) => !(node as HTMLElement)?.classList?.contains('export-exclude'),
+          pixelRatio: 1,
+          skipFonts: true,
+          fontEmbedCSS: '',
+          cacheBust: false
+        });
+      }
+
       const pdf = new jsPDF({
         orientation: 'landscape',
         unit: 'mm',
         format: 'a4'
       });
       const imgProps = pdf.getImageProperties(dataUrl);
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      const margin = 8;
+      const maxW = pageWidth - margin * 2;
+      const maxH = pageHeight - margin * 2;
+      const ratio = Math.min(maxW / imgProps.width, maxH / imgProps.height);
+      const renderW = imgProps.width * ratio;
+      const renderH = imgProps.height * ratio;
+      const posX = (pageWidth - renderW) / 2;
+      const posY = (pageHeight - renderH) / 2;
 
       pdf.setFillColor(2, 6, 23);
-      pdf.rect(0, 0, pdfWidth, pdf.internal.pageSize.getHeight(), 'F');
-      pdf.addImage(dataUrl, 'PNG', 0, 0, pdfWidth, Math.min(pdfHeight, pdf.internal.pageSize.getHeight()));
+      pdf.rect(0, 0, pageWidth, pageHeight, 'F');
+      pdf.addImage(dataUrl, 'PNG', posX, posY, renderW, renderH);
       pdf.save(`topologie-reseau-${new Date().toISOString().slice(0, 10)}.pdf`);
       showToast('Document PDF exporté avec succès !');
     } catch (err) {
@@ -798,9 +874,74 @@ export default function App() {
     }
   };
 
-  // Export JSON
-  const handleExportTopology = () => {
-    window.location.href = '/api/export';
+  // Export JSON topology (clean client-side blob download - immune to iframe navigation/HTML corruption)
+  const handleExportTopology = async () => {
+    try {
+      showToast('Préparation de l\'export JSON...');
+      let exportData: any = null;
+      try {
+        const res = await fetch('/api/export');
+        if (res.ok) {
+          exportData = await res.json();
+        }
+      } catch (err) {
+        console.warn('Endpoint /api/export inaccessible, utilisation de l\'état client:', err);
+      }
+
+      if (!exportData || typeof exportData !== 'object') {
+        exportData = {
+          exportedAt: new Date().toISOString(),
+          subnet,
+          devices,
+          zones,
+          types: deviceTypes,
+          subTypes: deviceSubTypes
+        };
+      }
+
+      // Ensure all current items are present
+      if (!exportData.devices) exportData.devices = devices;
+      if (!exportData.zones) exportData.zones = zones;
+      if (!exportData.types) exportData.types = deviceTypes;
+      if (!exportData.subTypes) exportData.subTypes = deviceSubTypes;
+
+      const jsonStr = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `inkanetopology-export-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      const devCount = exportData.devices?.length || 0;
+      const zCount = exportData.zones?.length || 0;
+      showToast(`Fichier JSON exporté avec succès (${devCount} équipements, ${zCount} zones).`);
+    } catch (err) {
+      console.error('Erreur export JSON:', err);
+      // Safe fallback from local state
+      const fallbackData = {
+        exportedAt: new Date().toISOString(),
+        subnet,
+        devices,
+        zones,
+        types: deviceTypes,
+        subTypes: deviceSubTypes
+      };
+      const jsonStr = JSON.stringify(fallbackData, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `inkanetopology-export-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      showToast('Export JSON généré depuis l\'état local.');
+    }
   };
 
   // Clear logs

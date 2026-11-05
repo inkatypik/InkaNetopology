@@ -2411,6 +2411,7 @@ app.post('/api/topology/autolayout', (req, res) => {
 
 // Export topology configuration (including devices, zones, types, sub-types, and subnet info)
 app.get('/api/export', (req, res) => {
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="inkanetopology-export.json"');
   res.json({
     exportedAt: new Date().toISOString(),
@@ -2427,60 +2428,59 @@ app.get('/api/export', (req, res) => {
 app.post('/api/import', (req, res) => {
   const body = req.body;
   if (!body) {
-    return res.status(400).json({ error: 'Données JSON invalides.' });
+    return res.status(400).json({ error: 'Données JSON invalides ou corps de requête vide.' });
   }
 
-  let importedDevices: Device[] = [];
-  let importedZones: GeographicZone[] = [];
-  let importedTypes: DeviceTypeDefinition[] = [];
-  let importedSubTypes: DeviceSubTypeDefinition[] = [];
+  let hasValidPayload = false;
 
   if (Array.isArray(body)) {
-    importedDevices = body;
-  } else if (typeof body === 'object') {
-    if (Array.isArray(body.devices)) importedDevices = body.devices;
-    if (Array.isArray(body.zones)) importedZones = body.zones;
-    if (Array.isArray(body.types)) importedTypes = body.types;
-    if (Array.isArray(body.subTypes)) importedSubTypes = body.subTypes;
-  }
-
-  if (importedDevices.length === 0 && importedZones.length === 0 && importedTypes.length === 0 && importedSubTypes.length === 0) {
-    return res.status(400).json({ error: 'Le fichier JSON ne contient aucun équipement, zone ou type valide.' });
-  }
-
-  if (importedTypes.length > 0) {
-    deviceTypes = importedTypes;
-    saveTypesToFile();
-    broadcastSse('types_updated', deviceTypes);
-  }
-
-  if (importedSubTypes.length > 0) {
-    deviceSubTypes = importedSubTypes;
-    saveSubTypesToFile();
-    broadcastSse('subtypes_updated', deviceSubTypes);
-  }
-
-  if (importedDevices.length > 0) {
-    devices = importedDevices;
+    // Direct device array
+    devices = body;
     saveDevicesToFile();
     broadcastSse('topology_updated', devices);
+    hasValidPayload = true;
+  } else if (typeof body === 'object') {
+    if (Array.isArray(body.devices)) {
+      devices = body.devices;
+      saveDevicesToFile();
+      broadcastSse('topology_updated', devices);
+      hasValidPayload = true;
+    }
+    if (Array.isArray(body.zones)) {
+      zones = body.zones;
+      saveZonesToFile();
+      broadcastSse('zones_updated', zones);
+      hasValidPayload = true;
+    }
+    if (Array.isArray(body.types)) {
+      deviceTypes = body.types;
+      saveTypesToFile();
+      broadcastSse('types_updated', deviceTypes);
+      hasValidPayload = true;
+    }
+    if (Array.isArray(body.subTypes)) {
+      deviceSubTypes = body.subTypes;
+      saveSubTypesToFile();
+      broadcastSse('subtypes_updated', deviceSubTypes);
+      hasValidPayload = true;
+    }
   }
 
-  if (importedZones.length > 0) {
-    zones = importedZones;
-    saveZonesToFile();
-    broadcastSse('zones_updated', zones);
+  if (!hasValidPayload) {
+    return res.status(400).json({ error: 'Le fichier JSON ne contient aucune section reconnue (devices, zones, types ou subTypes).' });
   }
 
   addLog({
     level: 'INFO',
     category: 'SYSTEM',
-    message: `Topologie réseau importée avec succès : ${importedDevices.length} équipements, ${importedZones.length} zones, ${importedTypes.length} types.`
+    message: `Topologie réseau importée avec succès : ${devices.length} équipements, ${zones.length} zones, ${deviceTypes.length} types.`
   });
 
   res.json({
     success: true,
+    deviceCount: devices.length,
     devicesCount: devices.length,
+    zoneCount: zones.length,
     zonesCount: zones.length,
     typesCount: deviceTypes.length,
     devices,
