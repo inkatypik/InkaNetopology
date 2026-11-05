@@ -22,7 +22,8 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = 3000;
 
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // ---------------- PERSISTENCE ----------------
 const DATA_DIR = path.resolve(__dirname, 'data');
@@ -2424,7 +2425,7 @@ app.get('/api/export', (req, res) => {
   });
 });
 
-// Import topology configuration (accepts { devices, zones, types, subTypes } or Device[] array)
+// Import topology configuration (accepts { devices, zones, types, subTypes }, legacy schemas, or Device[] array)
 app.post('/api/import', (req, res) => {
   const body = req.body;
   if (!body) {
@@ -2433,33 +2434,90 @@ app.post('/api/import', (req, res) => {
 
   let hasValidPayload = false;
 
-  if (Array.isArray(body)) {
-    // Direct device array
-    devices = body;
+  // 1. Devices extraction (direct array or nested properties)
+  const rawDevices = Array.isArray(body)
+    ? body
+    : (body.devices || body.deviceList || body.nodes || body.elements || body.topology?.devices || body.data?.devices);
+
+  if (Array.isArray(rawDevices)) {
+    devices = rawDevices.map((d: any, idx: number) => ({
+      id: String(d.id || `imported-dev-${Date.now()}-${idx}`),
+      name: String(d.name || d.hostname || d.ip || `Équipement ${idx + 1}`),
+      ip: String(d.ip || ''),
+      mac: String(d.mac || ''),
+      vendor: String(d.vendor || 'Inconnu'),
+      deviceType: String(d.deviceType || d.type || 'physical'),
+      subType: String(d.subType || d.role || 'server'),
+      role: d.role ? String(d.role) : undefined,
+      status: (d.status === 'offline' || d.status === 'warning') ? d.status : 'online',
+      zoneId: d.zoneId ? String(d.zoneId) : undefined,
+      parentHostId: d.parentHostId ? String(d.parentHostId) : undefined,
+      connectedToSwitchId: d.connectedToSwitchId ? String(d.connectedToSwitchId) : undefined,
+      portOrInterface: d.portOrInterface ? String(d.portOrInterface) : undefined,
+      vlan: typeof d.vlan === 'number' ? d.vlan : (d.vlan ? Number(d.vlan) : undefined),
+      isCore: Boolean(d.isCore),
+      os: d.os ? String(d.os) : undefined,
+      openPorts: Array.isArray(d.openPorts) ? d.openPorts : [],
+      location: d.location ? String(d.location) : undefined,
+      customImage: d.customImage ? String(d.customImage) : undefined,
+      tags: Array.isArray(d.tags) ? d.tags : [],
+      metadata: typeof d.metadata === 'object' && d.metadata !== null ? d.metadata : {},
+      lastSeen: d.lastSeen ? String(d.lastSeen) : new Date().toISOString(),
+      latencyMs: typeof d.latencyMs === 'number' ? d.latencyMs : undefined,
+      position: (d.position && typeof d.position.x === 'number' && typeof d.position.y === 'number')
+        ? d.position
+        : { x: 200 + (idx % 4) * 300, y: 180 + Math.floor(idx / 4) * 220 }
+    }));
     saveDevicesToFile();
     broadcastSse('topology_updated', devices);
     hasValidPayload = true;
-  } else if (typeof body === 'object') {
-    if (Array.isArray(body.devices)) {
-      devices = body.devices;
-      saveDevicesToFile();
-      broadcastSse('topology_updated', devices);
-      hasValidPayload = true;
-    }
-    if (Array.isArray(body.zones)) {
-      zones = body.zones;
+  }
+
+  // 2. Zones extraction
+  if (typeof body === 'object' && !Array.isArray(body)) {
+    const rawZones = body.zones || body.geographicZones || body.zoneList || body.topology?.zones || body.data?.zones;
+    if (Array.isArray(rawZones)) {
+      zones = rawZones.map((z: any, idx: number) => ({
+        id: String(z.id || `zone-${Date.now()}-${idx}`),
+        name: String(z.name || `Zone ${idx + 1}`),
+        type: (['piece', 'sous_repartiteur', 'baie', 'site', 'autre'].includes(z.type)) ? z.type : 'piece',
+        description: z.description ? String(z.description) : undefined,
+        color: z.color ? String(z.color) : '#0ea5e9'
+      }));
       saveZonesToFile();
       broadcastSse('zones_updated', zones);
       hasValidPayload = true;
     }
-    if (Array.isArray(body.types)) {
-      deviceTypes = body.types;
+
+    // 3. Types extraction
+    const rawTypes = body.types || body.deviceTypes || body.typeList || body.topology?.types || body.data?.types;
+    if (Array.isArray(rawTypes)) {
+      deviceTypes = rawTypes.map((t: any, idx: number) => ({
+        id: String(t.id || `custom-type-${Date.now()}-${idx}`),
+        name: String(t.name || `Type ${idx + 1}`),
+        color: String(t.color || '#3b82f6'),
+        icon: t.icon ? String(t.icon) : 'Server',
+        description: t.description ? String(t.description) : undefined,
+        isBuiltin: Boolean(t.isBuiltin)
+      }));
       saveTypesToFile();
       broadcastSse('types_updated', deviceTypes);
       hasValidPayload = true;
     }
-    if (Array.isArray(body.subTypes)) {
-      deviceSubTypes = body.subTypes;
+
+    // 4. Sub-types extraction
+    const rawSubTypes = body.subTypes || body.deviceSubTypes || body.roles || body.subTypeList || body.topology?.subTypes || body.data?.subTypes;
+    if (Array.isArray(rawSubTypes)) {
+      deviceSubTypes = rawSubTypes.map((s: any, idx: number) => ({
+        id: String(s.id || `custom-sub-${Date.now()}-${idx}`),
+        name: String(s.name || `Sous-type ${idx + 1}`),
+        typeId: s.typeId ? String(s.typeId) : 'all',
+        role: s.role ? String(s.role) : undefined,
+        icon: s.icon ? String(s.icon) : undefined,
+        description: s.description ? String(s.description) : undefined,
+        deviceId: s.deviceId ? String(s.deviceId) : undefined,
+        isBuiltin: Boolean(s.isBuiltin)
+      }));
       saveSubTypesToFile();
       broadcastSse('subtypes_updated', deviceSubTypes);
       hasValidPayload = true;
@@ -2488,6 +2546,30 @@ app.post('/api/import', (req, res) => {
     types: deviceTypes,
     subTypes: deviceSubTypes
   });
+});
+
+// Asynchronous background export synchronization endpoint
+app.post('/api/export-sync', (req, res) => {
+  const body = req.body;
+  if (body && typeof body === 'object') {
+    if (Array.isArray(body.devices)) {
+      devices = body.devices;
+      saveDevicesToFile();
+    }
+    if (Array.isArray(body.zones)) {
+      zones = body.zones;
+      saveZonesToFile();
+    }
+    if (Array.isArray(body.types)) {
+      deviceTypes = body.types;
+      saveTypesToFile();
+    }
+    if (Array.isArray(body.subTypes)) {
+      deviceSubTypes = body.subTypes;
+      saveSubTypesToFile();
+    }
+  }
+  res.json({ success: true });
 });
 
 // Logo PNG direct download endpoint

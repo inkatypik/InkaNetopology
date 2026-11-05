@@ -1,1 +1,8 @@
-[]
+[
+  {
+    "id": "z1",
+    "name": "Baie 1",
+    "type": "baie",
+    "color": "#0ea5e9"
+  }
+]

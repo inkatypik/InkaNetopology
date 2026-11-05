@@ -218,6 +218,11 @@ export default function App() {
         setZones((prev) => prev.filter((z) => z.id !== id));
       });
 
+      evtSource.addEventListener('zones_updated', (e) => {
+        const list: GeographicZone[] = JSON.parse(e.data);
+        setZones(list);
+      });
+
       evtSource.addEventListener('type_added', (e) => {
         const addedType: DeviceTypeDefinition = JSON.parse(e.data);
         setDeviceTypes((prev) => [...prev.filter((t) => t.id !== addedType.id), addedType]);
@@ -674,7 +679,7 @@ export default function App() {
     }
   };
 
-  // Import JSON topology with robust parsing & validation
+  // Import JSON topology with robust parsing & multi-version schema compatibility
   const handleImportTopology = async (file: File) => {
     showToast('Importation du fichier JSON en cours...');
     try {
@@ -689,44 +694,106 @@ export default function App() {
         return;
       }
 
-      const parsed = JSON.parse(text);
+      let parsed: any;
+      try {
+        parsed = JSON.parse(text);
+      } catch (jsonErr: any) {
+        console.error('Erreur parsing JSON:', jsonErr);
+        showToast(`Syntaxe JSON invalide : ${jsonErr.message || 'erreur'}`);
+        return;
+      }
+
       if (!parsed || (typeof parsed !== 'object' && !Array.isArray(parsed))) {
         showToast('Format JSON non reconnu.');
         return;
       }
 
-      const res = await fetch('/api/import', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(parsed)
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        if (Array.isArray(data.devices)) setDevices(data.devices);
-        if (Array.isArray(data.zones)) setZones(data.zones);
-        if (Array.isArray(data.types)) setDeviceTypes(data.types);
-        if (Array.isArray(data.subTypes)) setDeviceSubTypes(data.subTypes);
-        const importedDevs = data.deviceCount ?? data.devicesCount ?? (Array.isArray(parsed) ? parsed.length : parsed.devices?.length ?? 0);
-        const importedZones = data.zoneCount ?? data.zonesCount ?? (parsed.zones?.length ?? 0);
-        showToast(`Topologie importée avec succès (${importedDevs} équipements, ${importedZones} zones).`);
-      } else {
-        // Fallback: apply parsed content directly to client state if server returned an error
-        if (Array.isArray(parsed)) {
-          setDevices(parsed);
-          showToast(`Topologie importée (${parsed.length} équipements).`);
-        } else if (typeof parsed === 'object') {
-          if (Array.isArray(parsed.devices)) setDevices(parsed.devices);
-          if (Array.isArray(parsed.zones)) setZones(parsed.zones);
-          if (Array.isArray(parsed.types)) setDeviceTypes(parsed.types);
-          if (Array.isArray(parsed.subTypes)) setDeviceSubTypes(parsed.subTypes);
-          showToast(`Topologie importée (${parsed.devices?.length || 0} équipements, ${parsed.zones?.length || 0} zones).`);
-        } else {
-          showToast(data?.error || 'Erreur lors de l\'importation.');
-        }
+      // 1. Extract devices (support v1, v2, direct arrays, or nested data)
+      let importedDevices: Device[] = [];
+      let importedZones: GeographicZone[] = [];
+      let importedTypes: DeviceTypeDefinition[] = [];
+      let importedSubTypes: DeviceSubTypeDefinition[] = [];
+
+      if (Array.isArray(parsed)) {
+        importedDevices = parsed;
+      } else if (typeof parsed === 'object') {
+        const rawDevs = parsed.devices || parsed.deviceList || parsed.nodes || parsed.elements || parsed.topology?.devices || parsed.data?.devices;
+        if (Array.isArray(rawDevs)) importedDevices = rawDevs;
+
+        const rawZones = parsed.zones || parsed.geographicZones || parsed.zoneList || parsed.topology?.zones || parsed.data?.zones;
+        if (Array.isArray(rawZones)) importedZones = rawZones;
+
+        const rawTypes = parsed.types || parsed.deviceTypes || parsed.typeList || parsed.topology?.types || parsed.data?.types;
+        if (Array.isArray(rawTypes)) importedTypes = rawTypes;
+
+        const rawSubTypes = parsed.subTypes || parsed.deviceSubTypes || parsed.roles || parsed.subTypeList || parsed.topology?.subTypes || parsed.data?.subTypes;
+        if (Array.isArray(rawSubTypes)) importedSubTypes = rawSubTypes;
       }
-    } catch (err) {
+
+      // Sanitize every imported device so all required properties exist
+      importedDevices = importedDevices.map((d: any, idx: number) => ({
+        id: String(d.id || `imported-dev-${Date.now()}-${idx}`),
+        name: String(d.name || d.hostname || d.ip || `Équipement ${idx + 1}`),
+        ip: String(d.ip || ''),
+        mac: String(d.mac || ''),
+        vendor: String(d.vendor || 'Inconnu'),
+        deviceType: String(d.deviceType || d.type || 'physical'),
+        subType: String(d.subType || d.role || 'server'),
+        role: d.role ? String(d.role) : undefined,
+        status: (d.status === 'offline' || d.status === 'warning') ? d.status : 'online',
+        zoneId: d.zoneId ? String(d.zoneId) : undefined,
+        parentHostId: d.parentHostId ? String(d.parentHostId) : undefined,
+        connectedToSwitchId: d.connectedToSwitchId ? String(d.connectedToSwitchId) : undefined,
+        portOrInterface: d.portOrInterface ? String(d.portOrInterface) : undefined,
+        vlan: typeof d.vlan === 'number' ? d.vlan : (d.vlan ? Number(d.vlan) : undefined),
+        isCore: Boolean(d.isCore),
+        os: d.os ? String(d.os) : undefined,
+        openPorts: Array.isArray(d.openPorts) ? d.openPorts : [],
+        location: d.location ? String(d.location) : undefined,
+        customImage: d.customImage ? String(d.customImage) : undefined,
+        tags: Array.isArray(d.tags) ? d.tags : [],
+        metadata: typeof d.metadata === 'object' && d.metadata !== null ? d.metadata : {},
+        lastSeen: d.lastSeen ? String(d.lastSeen) : new Date().toISOString(),
+        latencyMs: typeof d.latencyMs === 'number' ? d.latencyMs : undefined,
+        position: (d.position && typeof d.position.x === 'number' && typeof d.position.y === 'number')
+          ? d.position
+          : { x: 200 + (idx % 4) * 300, y: 180 + Math.floor(idx / 4) * 220 }
+      }));
+
+      // Apply to React state immediately so user sees results instantly
+      setDevices(importedDevices);
+      if (importedZones.length > 0) setZones(importedZones);
+      if (importedTypes.length > 0) setDeviceTypes(importedTypes);
+      if (importedSubTypes.length > 0) setDeviceSubTypes(importedSubTypes);
+
+      // Persist to server backend
+      try {
+        const res = await fetch('/api/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            devices: importedDevices,
+            zones: importedZones,
+            types: importedTypes,
+            subTypes: importedSubTypes
+          })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.devices)) setDevices(data.devices);
+          if (Array.isArray(data.zones)) setZones(data.zones);
+          if (Array.isArray(data.types)) setDeviceTypes(data.types);
+          if (Array.isArray(data.subTypes)) setDeviceSubTypes(data.subTypes);
+        }
+      } catch (srvErr) {
+        console.warn('Persistance serveur différée:', srvErr);
+      }
+
+      showToast(`Topologie importée avec succès (${importedDevices.length} équipements, ${importedZones.length} zones).`);
+    } catch (err: any) {
       console.error('Erreur import JSON:', err);
-      showToast('Fichier JSON invalide ou corrompu.');
+      showToast(`Fichier JSON invalide: ${err?.message || 'erreur'}`);
     }
   };
 
@@ -878,32 +945,25 @@ export default function App() {
   const handleExportTopology = async () => {
     try {
       showToast('Préparation de l\'export JSON...');
-      let exportData: any = null;
-      try {
-        const res = await fetch('/api/export');
-        if (res.ok) {
-          exportData = await res.json();
-        }
-      } catch (err) {
-        console.warn('Endpoint /api/export inaccessible, utilisation de l\'état client:', err);
-      }
 
-      if (!exportData || typeof exportData !== 'object') {
-        exportData = {
-          exportedAt: new Date().toISOString(),
-          subnet,
-          devices,
-          zones,
-          types: deviceTypes,
-          subTypes: deviceSubTypes
-        };
-      }
+      // Live state is the primary source of truth (always holds user edits, node positions, newly created zones/types)
+      const exportData = {
+        app: 'InkaNetopology',
+        version: '2.0',
+        exportedAt: new Date().toISOString(),
+        subnet,
+        devices,
+        zones,
+        types: deviceTypes,
+        subTypes: deviceSubTypes
+      };
 
-      // Ensure all current items are present
-      if (!exportData.devices) exportData.devices = devices;
-      if (!exportData.zones) exportData.zones = zones;
-      if (!exportData.types) exportData.types = deviceTypes;
-      if (!exportData.subTypes) exportData.subTypes = deviceSubTypes;
+      // Asynchronously sync snapshot with server persistence
+      fetch('/api/export-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(exportData)
+      }).catch(() => {});
 
       const jsonStr = JSON.stringify(exportData, null, 2);
       const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
@@ -916,31 +976,10 @@ export default function App() {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
 
-      const devCount = exportData.devices?.length || 0;
-      const zCount = exportData.zones?.length || 0;
-      showToast(`Fichier JSON exporté avec succès (${devCount} équipements, ${zCount} zones).`);
+      showToast(`Fichier JSON exporté avec succès (${devices.length} équipements, ${zones.length} zones).`);
     } catch (err) {
       console.error('Erreur export JSON:', err);
-      // Safe fallback from local state
-      const fallbackData = {
-        exportedAt: new Date().toISOString(),
-        subnet,
-        devices,
-        zones,
-        types: deviceTypes,
-        subTypes: deviceSubTypes
-      };
-      const jsonStr = JSON.stringify(fallbackData, null, 2);
-      const blob = new Blob([jsonStr], { type: 'application/json;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `inkanetopology-export-${new Date().toISOString().slice(0, 10)}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      showToast('Export JSON généré depuis l\'état local.');
+      showToast('Échec de la génération du fichier JSON.');
     }
   };
 
