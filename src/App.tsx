@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import type { Device, DeviceType, NetworkLog, ScanStatus, GeographicZone, DeviceTypeDefinition, DeviceSubTypeDefinition } from './types/network';
+import type { Device, DeviceType, NetworkLog, ScanStatus, GeographicZone, DeviceTypeDefinition, DeviceSubTypeDefinition, AppSettings } from './types/network';
 import { Navbar, type ActiveTab } from './components/Navbar';
 import { Toolbar } from './components/Toolbar';
 import { TopologyCanvas } from './components/TopologyCanvas';
@@ -12,6 +12,7 @@ import { DockerDeployModal } from './components/DockerDeployModal';
 import { ClearInventoryModal } from './components/ClearInventoryModal';
 import { ZoneManagerModal } from './components/ZoneManagerModal';
 import { TypeManagerModal } from './components/TypeManagerModal';
+import { SettingsModal } from './components/SettingsModal';
 import { autoLayoutTopology, autoLayoutByZones } from './utils/topologyLayout';
 import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
@@ -54,6 +55,15 @@ export default function App() {
   const [isClearModalOpen, setIsClearModalOpen] = useState<boolean>(false);
   const [isZoneManagerOpen, setIsZoneManagerOpen] = useState<boolean>(false);
   const [isTypeManagerOpen, setIsTypeManagerOpen] = useState<boolean>(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [settings, setSettings] = useState<AppSettings>({
+    presenceCheckEnabled: true,
+    presenceCheckIntervalMinutes: 5,
+    autoPruneEnabled: true,
+    maxInactiveAgeHours: 24,
+    protectCoreDevices: true,
+    defaultSubnet: '192.168.1.0/24'
+  });
   const [addModalPresetParentId, setAddModalPresetParentId] = useState<string | undefined>();
   const [addModalPresetType, setAddModalPresetType] = useState<DeviceType | undefined>();
 
@@ -118,6 +128,18 @@ export default function App() {
       .then((info) => {
         if (info.defaultSubnet) {
           setSubnet(info.defaultSubnet);
+        }
+      })
+      .catch(() => {});
+
+    fetch('/api/settings')
+      .then((res) => res.json())
+      .then((cfg: AppSettings) => {
+        if (cfg && typeof cfg === 'object') {
+          setSettings(cfg);
+          if (cfg.defaultSubnet) {
+            setSubnet(cfg.defaultSubnet);
+          }
         }
       })
       .catch(() => {});
@@ -261,6 +283,22 @@ export default function App() {
       evtSource.addEventListener('subtypes_updated', (e) => {
         const list: DeviceSubTypeDefinition[] = JSON.parse(e.data);
         setDeviceSubTypes(list);
+      });
+
+      evtSource.addEventListener('settings_updated', (e) => {
+        try {
+          const updatedSettings: AppSettings = JSON.parse(e.data);
+          setSettings(updatedSettings);
+        } catch {}
+      });
+
+      evtSource.addEventListener('inventory_pruned', (e) => {
+        try {
+          const payload = JSON.parse(e.data);
+          if (payload.count > 0) {
+            showToast(`${payload.count} équipement(s) inactif(s) purgé(s) de l'inventaire.`);
+          }
+        } catch {}
       });
 
       evtSource.addEventListener('logs_cleared', () => {
@@ -797,7 +835,7 @@ export default function App() {
     }
   };
 
-  // Export PNG image with multi-pass fallback
+  // Export PNG image covering 100% of the entire topology diagram
   const handleExportPng = async () => {
     if (activeTab !== 'topology') {
       setActiveTab('topology');
@@ -806,6 +844,7 @@ export default function App() {
     }
 
     const container = document.getElementById('topology-canvas-container');
+    const viewport = document.getElementById('topology-canvas-viewport');
     if (!container) {
       showToast('Erreur: zone de dessin introuvable.');
       return;
@@ -816,17 +855,64 @@ export default function App() {
       return;
     }
 
-    showToast('Génération de l\'image PNG en cours...');
-    try {
-      let dataUrl: string;
-      const exportWidth = container.clientWidth || 1280;
-      const exportHeight = container.clientHeight || 800;
+    showToast('Génération de l\'image PNG complète du réseau...');
 
+    // Save initial container & viewport styles
+    const origContainerWidth = container.style.width;
+    const origContainerHeight = container.style.height;
+    const origContainerOverflow = container.style.overflow;
+    const origContainerMaxWidth = container.style.maxWidth;
+    const origContainerMaxHeight = container.style.maxHeight;
+    const origViewportTransform = viewport ? viewport.style.transform : '';
+    const origViewportTransition = viewport ? viewport.style.transition : '';
+
+    try {
+      // Calculate global bounding box of all equipment
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+
+      devices.forEach((d) => {
+        const x = d.position?.x ?? 200;
+        const y = d.position?.y ?? 180;
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x + 300);
+        maxY = Math.max(maxY, y + 200);
+      });
+
+      if (!isFinite(minX)) { minX = 100; maxX = 1200; }
+      if (!isFinite(minY)) { minY = 100; maxY = 800; }
+
+      // Generous padding around the entire topology
+      const paddingX = 140;
+      const paddingY = 140;
+      const startX = minX - paddingX;
+      const startY = minY - paddingY;
+      const fullWidth = Math.max(1280, Math.ceil(maxX - minX + paddingX * 2));
+      const fullHeight = Math.max(800, Math.ceil(maxY - minY + paddingY * 2));
+
+      // Temporarily transform viewport and expand container to fit all content
+      if (viewport) {
+        viewport.style.transition = 'none';
+        viewport.style.transform = `translate(${-startX}px, ${-startY}px) scale(1)`;
+      }
+      container.style.width = `${fullWidth}px`;
+      container.style.height = `${fullHeight}px`;
+      container.style.maxWidth = 'none';
+      container.style.maxHeight = 'none';
+      container.style.overflow = 'visible';
+
+      // Wait brief frame for layout and render
+      await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 80)));
+
+      let dataUrl: string;
       try {
         dataUrl = await toPng(container, {
           backgroundColor: '#020617',
-          width: exportWidth,
-          height: exportHeight,
+          width: fullWidth,
+          height: fullHeight,
           filter: (node) => !(node as HTMLElement)?.classList?.contains('export-exclude'),
           pixelRatio: 2,
           skipFonts: true,
@@ -838,8 +924,8 @@ export default function App() {
         console.warn('Pass 1 export PNG (pixelRatio 2) échouée, essai pass 2:', firstErr);
         dataUrl = await toPng(container, {
           backgroundColor: '#020617',
-          width: exportWidth,
-          height: exportHeight,
+          width: fullWidth,
+          height: fullHeight,
           filter: (node) => !(node as HTMLElement)?.classList?.contains('export-exclude'),
           pixelRatio: 1,
           skipFonts: true,
@@ -854,14 +940,25 @@ export default function App() {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      showToast('Image PNG exportée avec succès !');
+      showToast('Image PNG complète exportée avec succès !');
     } catch (err) {
       console.error('Erreur export PNG:', err);
       showToast('Échec de la capture PNG.');
+    } finally {
+      // Restore original container & viewport styles
+      container.style.width = origContainerWidth;
+      container.style.height = origContainerHeight;
+      container.style.overflow = origContainerOverflow;
+      container.style.maxWidth = origContainerMaxWidth;
+      container.style.maxHeight = origContainerMaxHeight;
+      if (viewport) {
+        viewport.style.transform = origViewportTransform;
+        viewport.style.transition = origViewportTransition;
+      }
     }
   };
 
-  // Export PDF document with landscape fit
+  // Export PDF document covering 100% of the entire topology diagram
   const handleExportPdf = async () => {
     if (activeTab !== 'topology') {
       setActiveTab('topology');
@@ -870,6 +967,7 @@ export default function App() {
     }
 
     const container = document.getElementById('topology-canvas-container');
+    const viewport = document.getElementById('topology-canvas-viewport');
     if (!container) {
       showToast('Erreur: zone de dessin introuvable.');
       return;
@@ -880,17 +978,64 @@ export default function App() {
       return;
     }
 
-    showToast('Génération du document PDF en cours...');
-    try {
-      let dataUrl: string;
-      const exportWidth = container.clientWidth || 1280;
-      const exportHeight = container.clientHeight || 800;
+    showToast('Génération du document PDF complet...');
 
+    // Save initial container & viewport styles
+    const origContainerWidth = container.style.width;
+    const origContainerHeight = container.style.height;
+    const origContainerOverflow = container.style.overflow;
+    const origContainerMaxWidth = container.style.maxWidth;
+    const origContainerMaxHeight = container.style.maxHeight;
+    const origViewportTransform = viewport ? viewport.style.transform : '';
+    const origViewportTransition = viewport ? viewport.style.transition : '';
+
+    try {
+      // Calculate global bounding box of all equipment
+      let minX = Infinity;
+      let minY = Infinity;
+      let maxX = -Infinity;
+      let maxY = -Infinity;
+
+      devices.forEach((d) => {
+        const x = d.position?.x ?? 200;
+        const y = d.position?.y ?? 180;
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x + 300);
+        maxY = Math.max(maxY, y + 200);
+      });
+
+      if (!isFinite(minX)) { minX = 100; maxX = 1200; }
+      if (!isFinite(minY)) { minY = 100; maxY = 800; }
+
+      // Generous padding around the entire topology
+      const paddingX = 140;
+      const paddingY = 140;
+      const startX = minX - paddingX;
+      const startY = minY - paddingY;
+      const fullWidth = Math.max(1280, Math.ceil(maxX - minX + paddingX * 2));
+      const fullHeight = Math.max(800, Math.ceil(maxY - minY + paddingY * 2));
+
+      // Temporarily transform viewport and expand container to fit all content
+      if (viewport) {
+        viewport.style.transition = 'none';
+        viewport.style.transform = `translate(${-startX}px, ${-startY}px) scale(1)`;
+      }
+      container.style.width = `${fullWidth}px`;
+      container.style.height = `${fullHeight}px`;
+      container.style.maxWidth = 'none';
+      container.style.maxHeight = 'none';
+      container.style.overflow = 'visible';
+
+      // Wait brief frame for layout and render
+      await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 80)));
+
+      let dataUrl: string;
       try {
         dataUrl = await toPng(container, {
           backgroundColor: '#020617',
-          width: exportWidth,
-          height: exportHeight,
+          width: fullWidth,
+          height: fullHeight,
           filter: (node) => !(node as HTMLElement)?.classList?.contains('export-exclude'),
           pixelRatio: 2,
           skipFonts: true,
@@ -902,8 +1047,8 @@ export default function App() {
         console.warn('Pass 1 export PDF (pixelRatio 2) échouée, essai pass 2:', firstErr);
         dataUrl = await toPng(container, {
           backgroundColor: '#020617',
-          width: exportWidth,
-          height: exportHeight,
+          width: fullWidth,
+          height: fullHeight,
           filter: (node) => !(node as HTMLElement)?.classList?.contains('export-exclude'),
           pixelRatio: 1,
           skipFonts: true,
@@ -913,7 +1058,7 @@ export default function App() {
       }
 
       const pdf = new jsPDF({
-        orientation: 'landscape',
+        orientation: fullWidth > fullHeight ? 'landscape' : 'portrait',
         unit: 'mm',
         format: 'a4'
       });
@@ -934,10 +1079,82 @@ export default function App() {
       pdf.rect(0, 0, pageWidth, pageHeight, 'F');
       pdf.addImage(dataUrl, 'PNG', posX, posY, renderW, renderH);
       pdf.save(`topologie-reseau-${new Date().toISOString().slice(0, 10)}.pdf`);
-      showToast('Document PDF exporté avec succès !');
+      showToast('Document PDF complet exporté avec succès !');
     } catch (err) {
       console.error('Erreur export PDF:', err);
       showToast('Échec de la génération PDF.');
+    } finally {
+      // Restore original container & viewport styles
+      container.style.width = origContainerWidth;
+      container.style.height = origContainerHeight;
+      container.style.overflow = origContainerOverflow;
+      container.style.maxWidth = origContainerMaxWidth;
+      container.style.maxHeight = origContainerMaxHeight;
+      if (viewport) {
+        viewport.style.transform = origViewportTransform;
+        viewport.style.transition = origViewportTransition;
+      }
+    }
+  };
+
+  // Settings configuration handlers
+  const handleSaveSettings = async (newSettings: Partial<AppSettings>): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newSettings)
+      });
+      if (!res.ok) throw new Error('Échec mise à jour paramètres');
+      const data = await res.json();
+      if (data.settings) setSettings(data.settings);
+      showToast('Paramètres système mis à jour.');
+      return true;
+    } catch (err) {
+      console.error('Erreur sauvegarde paramètres:', err);
+      showToast('Erreur lors de la sauvegarde des paramètres.');
+      return false;
+    }
+  };
+
+  const handleManualPresenceCheck = async () => {
+    try {
+      const res = await fetch('/api/presence/check', { method: 'POST' });
+      if (!res.ok) throw new Error('Échec du test de présence');
+      const data = await res.json();
+      if (data.settings) setSettings(data.settings);
+      showToast(`Test de présence : ${data.onlineCount} actif(s), ${data.offlineCount} hors-ligne sur ${data.checkedCount}.`);
+      return {
+        checkedCount: data.checkedCount || 0,
+        onlineCount: data.onlineCount || 0,
+        offlineCount: data.offlineCount || 0
+      };
+    } catch (err) {
+      console.error('Erreur test de présence:', err);
+      showToast('Erreur lors du test de présence.');
+      return null;
+    }
+  };
+
+  const handleManualPrune = async () => {
+    try {
+      const res = await fetch('/api/inventory/prune', { method: 'POST' });
+      if (!res.ok) throw new Error('Échec de la purge d\'inventaire');
+      const data = await res.json();
+      if (data.settings) setSettings(data.settings);
+      if (data.prunedCount > 0) {
+        showToast(`${data.prunedCount} équipement(s) inactif(s) supprimé(s) de l'inventaire.`);
+      } else {
+        showToast('Aucun équipement inactif ne dépasse le délai de rétention.');
+      }
+      return {
+        prunedCount: data.prunedCount || 0,
+        prunedDevices: data.prunedDevices || []
+      };
+    } catch (err) {
+      console.error('Erreur purge inventaire:', err);
+      showToast('Erreur lors du nettoyage de l\'inventaire.');
+      return null;
     }
   };
 
@@ -1072,6 +1289,7 @@ export default function App() {
         onCancelScan={handleCancelScan}
         isDark={isDark}
         onToggleTheme={() => setIsDark(!isDark)}
+        onOpenSettings={() => setIsSettingsOpen(true)}
         onlineCount={onlineCount}
         totalCount={devices.length}
       />
@@ -1146,6 +1364,7 @@ export default function App() {
         onImportTopology={handleImportTopology}
         onExportPng={handleExportPng}
         onExportPdf={handleExportPdf}
+        onOpenSettings={() => setIsSettingsOpen(true)}
       />
 
       {/* Main View Area by Tab */}
@@ -1277,6 +1496,17 @@ export default function App() {
         onClose={() => setIsClearModalOpen(false)}
         onConfirmClear={handleClearInventory}
         deviceCount={devices.length}
+      />
+
+      {/* Settings Modal (Presence Check & Inactive Inventory Auto-Prune) */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        settings={settings}
+        onSaveSettings={handleSaveSettings}
+        onTriggerPresenceCheck={handleManualPresenceCheck}
+        onTriggerPrune={handleManualPrune}
+        devices={devices}
       />
 
       {/* Toast Notification */}

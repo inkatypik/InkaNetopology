@@ -394,8 +394,9 @@
       <li><a class="toc-link" href="#types-roles">8. Types & Rôles Métier</a></li>
       <li><a class="toc-link" href="#icones">9. Icônes & Import Local</a></li>
       <li><a class="toc-link" href="#imports-exports">10. Exports & Imports (JSON, PNG, PDF)</a></li>
-      <li><a class="toc-link" href="#proxy">11. Reverse Proxy HTTPS</a></li>
-      <li><a class="toc-link" href="#faq">12. Dépannage & FAQ</a></li>
+      <li><a class="toc-link" href="#presence-retention">11. Test de Présence (Keepalive) & Rétention</a></li>
+      <li><a class="toc-link" href="#proxy">12. Reverse Proxy HTTPS</a></li>
+      <li><a class="toc-link" href="#faq">13. Dépannage & FAQ</a></li>
     </ul>
 
     <div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--surface-border);">
@@ -663,23 +664,63 @@ docker compose up -d</pre>
           </tr>
           <tr>
             <td><strong>Export JSON</strong></td>
-            <td>Sauvegarde complète de la configuration et de l'état de l'application dans un fichier JSON portable.</td>
+            <td>Sauvegarde complète de la configuration et de l'état de l'application dans un fichier JSON portable avec synchronisation automatique.</td>
           </tr>
           <tr>
-            <td><strong>Export PNG</strong></td>
-            <td>Génération d'une image haute résolution de la topologie réseau, exempte des boutons de zoom et contrôles d'interface.</td>
+            <td><strong>Export PNG Intégral</strong></td>
+            <td>Capture d'une image haute résolution couvrant <strong>100% de la totalité du schéma topologique</strong> (tous les équipements, liaisons et zones) sans aucun tronquage à la taille de la fenêtre écran, et exempte des boutons de zoom ou contrôles d'interface.</td>
           </tr>
           <tr>
-            <td><strong>Export PDF</strong></td>
-            <td>Création instantanée d'un document PDF vectoriel au format A4 paysage avec fond sombre soigné, idéal pour la documentation technique et les audits.</td>
+            <td><strong>Export PDF Vectoriel</strong></td>
+            <td>Création instantanée d'un document PDF au format A4 paysage ajusté automatiquement à la taille globale de la topologie avec fond sombre soigné (#020617).</td>
           </tr>
         </tbody>
       </table>
     </section>
 
-    <!-- 11. Reverse Proxy HTTPS -->
+    <!-- 11. Test de Présence (Keepalive) & Rétention -->
+    <section id="presence-retention">
+      <h2>11. Test de Présence Régulier (Keepalive) & Rétention d'Inventaire</h2>
+      <p>
+        InkaNetopology intègre un système automatisé de surveillance active et de nettoyage de l'inventaire matériel, entièrement configurable depuis la modale des <strong>Paramètres</strong> :
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Module</th>
+            <th>Description & Fonctionnement</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Test de Présence Régulier (Keepalive)</strong></td>
+            <td>
+              Exécute en arrière-plan des tests ICMP (ping) et des sondages de ports TCP sur chaque équipement inventorié.<br>
+              <strong>Fréquence réglable :</strong> 1 min, 2 min, 5 min (recommandé), 10 min, 15 min, 30 min ou 60 min.<br>
+              Met à jour en temps réel le statut (<em>En ligne</em> / <em>Hors ligne</em>), la latence RTT en millisecondes et la date de dernière activité (<code>lastSeen</code>).
+            </td>
+          </tr>
+          <tr>
+            <td><strong>Nettoyage Automatique d'Inventaire (Auto-Prune)</strong></td>
+            <td>
+              Supprime automatiquement de l'inventaire et de la topologie le matériel qui n'a pas été vu actif depuis plus d'une durée paramétrable.<br>
+              <strong>Durées au choix :</strong> 1h (test rapide), 6h, 12h, 24h (1 jour), 48h, 72h, 1 semaine, 2 semaines ou 1 mois.<br>
+              <strong>Protection du Cœur de réseau :</strong> Empêche la suppression des commutateurs et routeurs vitaux même en cas d'inactivité temporaire.
+            </td>
+          </tr>
+          <tr>
+            <td><strong>Actions Manuelles Immédiates</strong></td>
+            <td>
+              Boutons dédiés pour déclencher un test de présence global instantané (« Tester maintenant ») ou purger immédiatement les équipements inactifs dépassant le seuil (« Purger maintenant »).
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 12. Reverse Proxy HTTPS -->
     <section id="proxy">
-      <h2>11. Intégration Reverse Proxy HTTPS (Nginx)</h2>
+      <h2>12. Intégration Reverse Proxy HTTPS (Nginx)</h2>
       <div class="code-container">
         <div class="code-header">
           <span>/etc/nginx/sites-available/inkanetopology.conf</span>
@@ -718,9 +759,9 @@ server {
       </div>
     </section>
 
-    <!-- 12. FAQ -->
+    <!-- 13. FAQ -->
     <section id="faq">
-      <h2>12. Dépannage & FAQ</h2>
+      <h2>13. Dépannage & FAQ</h2>
       <div class="card">
         <h3>Q1. Pourquoi aucun équipement n'est découvert lors d'un scan ?</h3>
         <p>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Radar, Moon, Sun, RefreshCw, Terminal, Layers, Network, Table, Square } from 'lucide-react';
+import { Radar, Moon, Sun, RefreshCw, Terminal, Layers, Network, Table, Square, Settings } from 'lucide-react';
 
 export type ActiveTab = 'topology' | 'hosts' | 'inventory' | 'logs' | 'docker';
 
@@ -12,6 +12,7 @@ interface NavbarProps {
   onCancelScan?: () => void;
   isDark: boolean;
   onToggleTheme: () => void;
+  onOpenSettings?: () => void;
   onlineCount: number;
   totalCount: number;
 }
@@ -25,6 +26,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onCancelScan,
   isDark,
   onToggleTheme,
+  onOpenSettings,
   onlineCount,
   totalCount
 }) => {
@@ -113,15 +115,25 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         </nav>
 
-        {/* Zone 3: 1 Primary CTA + Theme toggle */}
-        <div className="flex items-center gap-3 shrink-0">
+        {/* Zone 3: 1 Primary CTA + Theme toggle + Settings */}
+        <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={onToggleTheme}
             aria-label="Basculer thème"
-            className="p-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/80 transition-colors"
+            className="p-2 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/80 transition-colors cursor-pointer"
           >
             {isDark ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-300" />}
           </button>
+
+          {onOpenSettings && (
+            <button
+              onClick={onOpenSettings}
+              title="Paramètres de test de présence et de rétention d'inventaire"
+              className="p-2 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-slate-800/80 transition-colors cursor-pointer"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+          )}
 
           {isScanning ? (
             <div className="flex items-center gap-2">

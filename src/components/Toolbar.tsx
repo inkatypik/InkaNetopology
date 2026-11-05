@@ -15,7 +15,8 @@ import {
   Layers,
   Star,
   FileImage,
-  FileText
+  FileText,
+  Settings
 } from 'lucide-react';
 import type { DeviceType, DeviceTypeDefinition } from '../types/network';
 
@@ -41,6 +42,7 @@ interface ToolbarProps {
   onExport: () => void;
   onResetTopology: () => void;
   onClearInventory?: () => void;
+  onOpenSettings?: () => void;
 
   // Types & Subtypes / Roles management
   types?: DeviceTypeDefinition[];
@@ -96,7 +98,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onStarTopologyLayout,
   onImportTopology,
   onExportPng,
-  onExportPdf
+  onExportPdf,
+  onOpenSettings
 }) => {
   const jsonFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -245,6 +248,17 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           >
             <RotateCcw className="w-4 h-4" />
           </button>
+
+          {onOpenSettings && (
+            <button
+              onClick={onOpenSettings}
+              title="Ouvrir les paramètres système (test de présence régulier, nettoyage automatique d'inventaire)"
+              className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-300 bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 hover:border-cyan-500/60 rounded-lg transition-colors cursor-pointer"
+            >
+              <Settings className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Paramètres</span>
+            </button>
+          )}
         </div>
       </div>
 

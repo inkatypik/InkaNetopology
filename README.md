@@ -98,12 +98,21 @@ Ouvrez ensuite votre navigateur sur `http://<IP-DU-SERVEUR>:3000`.
   - Possibilité de charger une icône ou image personnalisée depuis son ordinateur local via l'explorateur de fichiers.
 - **Imports & Exports Multi-Formats Haute Qualité** :
   - **Export & Import JSON** : sauvegarde et restauration intégrale de la topologie (équipements, zones, types, sous-types).
-  - **Export PNG** : capture d'image haute fidélité sans limite de dimension canvas.
-  - **Export PDF** : génération d'un rapport topologique au format A4 paysage.
+  - **Export PNG Intégral** : capture d'image haute fidélité couvrant **100% de la totalité du schéma topologique** (toutes les zones, grappes et équipements) sans aucun tronquage à l'écran.
+  - **Export PDF Vectoriel Paysage** : génération d'un document PDF A4 paysage calibré automatiquement sur la boîte englobante de l'infrastructure réseau.
+- **Test de Présence Régulier (Keepalive)** :
+  - Vérification périodique continue de la connectivité réelle des équipements par ping ICMP et sondage TCP (fréquence réglable dans les paramètres : 1, 2, 5, 10, 15, 30 ou 60 minutes).
+  - Actualisation en temps réel de l'état (*En ligne* / *Hors ligne*), de la latence RTT et de la date de dernière activité (`lastSeen`).
+  - Déclenchement manuel instantané possible en un clic avec résumé des résultats.
+- **Nettoyage Automatique & Rétention de l'Inventaire** :
+  - Purge automatique ou manuelle des équipements inactifs qui n'ont pas été vus sur le réseau depuis plus d'une durée paramétrable (1h, 6h, 12h, 24h, 48h, 72h, 1 semaine, 2 semaines, 1 mois).
+  - Protection automatique des équipements cœur de réseau (`isCore: true`) pour prévenir toute suppression inopinée de routeurs ou commutateurs critiques.
+- **Panneau de Paramètres Avancés** :
+  - Modale de configuration centralisée accessible via l'icône de réglages dans la barre de navigation et la barre d'outils.
 - **Légende Interactive Déplaçable** :
-  - Légende de la topologie repositionnable à la souris et réductible pour maximiser l'espace d'affichage.
+  - Légende de la topologie repositionnable à la souris et réductible pour maximiser l'espace d'affichage, listant zones, types et rôles.
 - **Inventaire Vierge par Défaut** :
-  - L'application démarre désormais avec un inventaire vide (aucun faux équipement imposé) ; possibilité de recharger une topologie de démonstration en un clic si nécessaire.
+  - L'application démarre avec un inventaire propre (aucun faux équipement imposé) ; possibilité de recharger une topologie de démonstration en un clic si nécessaire.
 - **Journalisation en Temps Réel** :
   - Flux d'événements continus via Server-Sent Events (SSE) avec filtrage par criticité et catégorie.
 
@@ -114,6 +123,7 @@ Ouvrez ensuite votre navigateur sur `http://<IP-DU-SERVEUR>:3000`.
 - **Frontend** : React 19, TypeScript, Tailwind CSS, Lucide Icons, Canvas SVG dynamique, `html-to-image`, `jspdf`.
 - **Backend** : Node.js, Express, Server-Sent Events (SSE), commandes réseau sécurisées (`arp`, `ping`, inspection ports TCP).
 - **Persistance des données** (dossier `/app/data` monté en volume) :
+  - `data/settings.json` : paramètres système (fréquence keepalive, durée de rétention, seuils, sous-réseau).
   - `data/devices.json` : base des équipements réseau et liaisons.
   - `data/zones.json` : zones géographiques (pièces, baies, sites).
   - `data/device-types.json` : types d'équipements dynamiques et couleurs.

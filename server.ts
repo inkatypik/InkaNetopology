@@ -10,7 +10,7 @@ import dns from 'dns';
 import { execFile, exec } from 'child_process';
 import { promisify } from 'util';
 import { fileURLToPath } from 'url';
-import type { Device, DeviceType, DeviceSubType, DeviceTypeDefinition, DeviceSubTypeDefinition, NetworkLog, ScanStatus, GeographicZone, ZoneType } from './src/types/network.js';
+import type { Device, DeviceType, DeviceSubType, DeviceTypeDefinition, DeviceSubTypeDefinition, NetworkLog, ScanStatus, GeographicZone, ZoneType, AppSettings } from './src/types/network.js';
 
 const execPromise = promisify(exec);
 const execFilePromise = promisify(execFile);
@@ -31,6 +31,20 @@ const DEVICES_FILE = path.join(DATA_DIR, 'devices.json');
 const ZONES_FILE = path.join(DATA_DIR, 'zones.json');
 const TYPES_FILE = path.join(DATA_DIR, 'device-types.json');
 const SUBTYPES_FILE = path.join(DATA_DIR, 'device-subtypes.json');
+const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
+
+const defaultSettings: AppSettings = {
+  presenceCheckEnabled: true,
+  presenceCheckIntervalMinutes: 5,
+  lastPresenceCheckTime: undefined,
+  autoPruneEnabled: true,
+  maxInactiveAgeHours: 24,
+  protectCoreDevices: true,
+  lastPruneTime: undefined,
+  defaultSubnet: '192.168.1.0/24'
+};
+
+let appSettings: AppSettings = { ...defaultSettings };
 
 // Default Device Types
 const defaultDeviceTypes: DeviceTypeDefinition[] = [
@@ -580,11 +594,41 @@ function loadSubTypesFromFile() {
   saveSubTypesToFile();
 }
 
-// Initial load for types, sub-types, zones and devices
+function saveSettingsToFile() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(appSettings, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('Erreur sauvegarde settings.json:', err);
+  }
+}
+
+function loadSettingsFromFile() {
+  try {
+    if (fs.existsSync(SETTINGS_FILE)) {
+      const content = fs.readFileSync(SETTINGS_FILE, 'utf-8');
+      const parsed = JSON.parse(content);
+      if (parsed && typeof parsed === 'object') {
+        appSettings = { ...defaultSettings, ...parsed };
+        console.log(`[InkaNetopology] Paramètres système chargés depuis ${SETTINGS_FILE}`);
+        return;
+      }
+    }
+  } catch (err) {
+    console.error('Erreur lecture settings.json:', err);
+  }
+  appSettings = { ...defaultSettings };
+  saveSettingsToFile();
+}
+
+// Initial load for types, sub-types, zones, devices and settings
 loadTypesFromFile();
 loadSubTypesFromFile();
 loadZonesFromFile();
 loadDevicesFromFile();
+loadSettingsFromFile();
 
 // Global scan cancellation flag
 let isScanCancelled = false;
@@ -993,6 +1037,153 @@ async function pingIp(ip: string): Promise<{ alive: boolean; rtt: number }> {
     return { alive: false, rtt: 0 };
   }
 }
+
+// ---------------- REGULAR NETWORK PRESENCE CHECK & INACTIVE INVENTORY PRUNING ----------------
+let isCheckingPresence = false;
+
+async function executePresenceCheck(manual = false): Promise<{ checkedCount: number; onlineCount: number; offlineCount: number }> {
+  if (isCheckingPresence) {
+    return { checkedCount: 0, onlineCount: 0, offlineCount: 0 };
+  }
+  isCheckingPresence = true;
+  appSettings.lastPresenceCheckTime = new Date().toISOString();
+  saveSettingsToFile();
+
+  let onlineCount = 0;
+  let offlineCount = 0;
+  const now = new Date().toISOString();
+
+  try {
+    const ipDevices = devices.filter((d) => d.ip && d.ip.trim().length > 0);
+    const BATCH_SIZE = 10;
+
+    for (let i = 0; i < ipDevices.length; i += BATCH_SIZE) {
+      const chunk = ipDevices.slice(i, i + BATCH_SIZE);
+      await Promise.all(
+        chunk.map(async (dev) => {
+          let alive = false;
+          let rtt = 1.0;
+
+          // 1. Try ICMP ping
+          const pingRes = await pingIp(dev.ip);
+          if (pingRes.alive) {
+            alive = true;
+            rtt = pingRes.rtt;
+          } else {
+            // 2. Try port probe on openPorts or standard ports
+            const portsToTry = dev.openPorts && dev.openPorts.length > 0 ? dev.openPorts.slice(0, 3) : [80, 443, 22];
+            for (const port of portsToTry) {
+              const probe = await probePort(dev.ip, port, 300);
+              if (probe.open) {
+                alive = true;
+                rtt = probe.rtt;
+                break;
+              }
+            }
+          }
+
+          if (alive) {
+            dev.status = 'online';
+            dev.lastSeen = now;
+            dev.latencyMs = rtt;
+            onlineCount++;
+          } else {
+            // Equipment is offline/unreachable: do not update lastSeen so inactivity accumulates
+            dev.status = 'offline';
+            offlineCount++;
+          }
+        })
+      );
+    }
+
+    saveDevicesToFile();
+    broadcastSse('topology_updated', devices);
+    broadcastSse('settings_updated', appSettings);
+
+    addLog({
+      level: 'INFO',
+      category: 'SYSTEM',
+      message: `Test de présence réseau ${manual ? 'manuel' : 'automatique'} : ${ipDevices.length} vérifié(s) (${onlineCount} actif(s), ${offlineCount} hors-ligne).`
+    });
+  } catch (err) {
+    console.error('Erreur during presence check:', err);
+  } finally {
+    isCheckingPresence = false;
+  }
+
+  return { checkedCount: devices.length, onlineCount, offlineCount };
+}
+
+let isPruning = false;
+
+function executeInventoryPrune(manual = false): { prunedCount: number; prunedDevices: string[] } {
+  if (isPruning) return { prunedCount: 0, prunedDevices: [] };
+  isPruning = true;
+  appSettings.lastPruneTime = new Date().toISOString();
+  saveSettingsToFile();
+
+  const nowMs = Date.now();
+  const maxAgeMs = appSettings.maxInactiveAgeHours * 60 * 60 * 1000;
+  const prunedNames: string[] = [];
+  const keptDevices: Device[] = [];
+
+  for (const dev of devices) {
+    // If protecting core devices (routers, central switches), skip pruning
+    if (appSettings.protectCoreDevices && dev.isCore) {
+      keptDevices.push(dev);
+      continue;
+    }
+
+    const lastSeenTime = dev.lastSeen ? new Date(dev.lastSeen).getTime() : 0;
+    const isInactiveTooLong = (nowMs - lastSeenTime) > maxAgeMs;
+
+    if (isInactiveTooLong) {
+      prunedNames.push(`${dev.name} (${dev.ip || 'sans IP'})`);
+    } else {
+      keptDevices.push(dev);
+    }
+  }
+
+  if (prunedNames.length > 0) {
+    devices = keptDevices;
+    saveDevicesToFile();
+    broadcastSse('topology_updated', devices);
+    broadcastSse('inventory_pruned', { count: prunedNames.length, names: prunedNames });
+
+    addLog({
+      level: 'WARN',
+      category: 'SYSTEM',
+      message: `Nettoyage d'inventaire ${manual ? 'manuel' : 'automatique'} : ${prunedNames.length} équipement(s) inactif(s) depuis plus de ${appSettings.maxInactiveAgeHours}h supprimé(s) (${prunedNames.slice(0, 5).join(', ')}${prunedNames.length > 5 ? '...' : ''}).`
+    });
+  }
+
+  isPruning = false;
+  return { prunedCount: prunedNames.length, prunedDevices: prunedNames };
+}
+
+// Background scheduler for periodic keepalive presence checks and auto-pruning
+setInterval(() => {
+  const now = Date.now();
+
+  // 1. Periodic keepalive presence check
+  if (appSettings.presenceCheckEnabled && appSettings.presenceCheckIntervalMinutes > 0 && devices.length > 0) {
+    const lastCheck = appSettings.lastPresenceCheckTime ? new Date(appSettings.lastPresenceCheckTime).getTime() : 0;
+    const intervalMs = appSettings.presenceCheckIntervalMinutes * 60 * 1000;
+    if (now - lastCheck >= intervalMs) {
+      executePresenceCheck(false).catch((err) => console.error('Erreur keepalive auto:', err));
+    }
+  }
+
+  // 2. Periodic inventory cleanup (pruning)
+  if (appSettings.autoPruneEnabled && appSettings.maxInactiveAgeHours > 0 && devices.length > 0) {
+    const lastPrune = appSettings.lastPruneTime ? new Date(appSettings.lastPruneTime).getTime() : 0;
+    // Check every 2 minutes
+    const pruneCheckIntervalMs = 2 * 60 * 1000;
+    if (now - lastPrune >= pruneCheckIntervalMs) {
+      executeInventoryPrune(false);
+    }
+  }
+}, 10000);
 
 // Fetch HTTP web title (if port 80/443/8080/8006/5000 is open) with strict timeout
 function fetchWebTitle(ip: string, port: number, timeoutMs = 300): Promise<string | null> {
@@ -2570,6 +2761,51 @@ app.post('/api/export-sync', (req, res) => {
     }
   }
   res.json({ success: true });
+});
+
+// Settings configuration endpoints
+app.get('/api/settings', (req, res) => {
+  res.json(appSettings);
+});
+
+app.put('/api/settings', (req, res) => {
+  const body = req.body;
+  if (!body || typeof body !== 'object') {
+    return res.status(400).json({ error: 'Données de configuration invalides.' });
+  }
+
+  appSettings = {
+    ...appSettings,
+    presenceCheckEnabled: typeof body.presenceCheckEnabled === 'boolean' ? body.presenceCheckEnabled : appSettings.presenceCheckEnabled,
+    presenceCheckIntervalMinutes: typeof body.presenceCheckIntervalMinutes === 'number' && body.presenceCheckIntervalMinutes > 0 ? body.presenceCheckIntervalMinutes : appSettings.presenceCheckIntervalMinutes,
+    autoPruneEnabled: typeof body.autoPruneEnabled === 'boolean' ? body.autoPruneEnabled : appSettings.autoPruneEnabled,
+    maxInactiveAgeHours: typeof body.maxInactiveAgeHours === 'number' && body.maxInactiveAgeHours > 0 ? body.maxInactiveAgeHours : appSettings.maxInactiveAgeHours,
+    protectCoreDevices: typeof body.protectCoreDevices === 'boolean' ? body.protectCoreDevices : appSettings.protectCoreDevices,
+    defaultSubnet: typeof body.defaultSubnet === 'string' && body.defaultSubnet.trim().length > 0 ? body.defaultSubnet.trim() : appSettings.defaultSubnet
+  };
+
+  saveSettingsToFile();
+  broadcastSse('settings_updated', appSettings);
+
+  addLog({
+    level: 'INFO',
+    category: 'SYSTEM',
+    message: `Paramètres mis à jour : test présence ${appSettings.presenceCheckEnabled ? `actif (${appSettings.presenceCheckIntervalMinutes} min)` : 'désactivé'}, nettoyage auto ${appSettings.autoPruneEnabled ? `actif (inactif > ${appSettings.maxInactiveAgeHours}h)` : 'désactivé'}.`
+  });
+
+  res.json({ success: true, settings: appSettings });
+});
+
+// Immediate manual presence check
+app.post('/api/presence/check', async (req, res) => {
+  const result = await executePresenceCheck(true);
+  res.json({ success: true, ...result, settings: appSettings });
+});
+
+// Immediate manual inventory prune
+app.post('/api/inventory/prune', (req, res) => {
+  const result = executeInventoryPrune(true);
+  res.json({ success: true, ...result, settings: appSettings });
 });
 
 // Logo PNG direct download endpoint

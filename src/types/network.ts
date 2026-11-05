@@ -101,3 +101,19 @@ export interface ScanStatus {
   startedAt?: string;
   scanMode: 'fast' | 'deep' | 'iot';
 }
+
+export interface AppSettings {
+  // Presence check (periodic network keepalive ping)
+  presenceCheckEnabled: boolean;
+  presenceCheckIntervalMinutes: number; // e.g. 0.5 (30s), 1, 2, 5, 10, 15, 30, 60
+  lastPresenceCheckTime?: string;
+
+  // Auto-prune / cleanup inactive equipment
+  autoPruneEnabled: boolean;
+  maxInactiveAgeHours: number; // e.g. 1, 6, 12, 24, 72, 168, 336, 720
+  protectCoreDevices: boolean; // Protect core network equipment from deletion
+  lastPruneTime?: string;
+
+  // Default subnet
+  defaultSubnet: string;
+}

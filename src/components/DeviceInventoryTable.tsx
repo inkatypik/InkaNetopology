@@ -211,6 +211,23 @@ export const DeviceInventoryTable: React.FC<DeviceInventoryTableProps> = ({
                         {device.latencyMs !== undefined && (
                           <div className="text-[11px] text-slate-400">{device.latencyMs} ms</div>
                         )}
+                        {device.lastSeen && (
+                          <div
+                            className="text-[10px] text-slate-500 font-sans"
+                            title={`Dernière détection: ${new Date(device.lastSeen).toLocaleString()}`}
+                          >
+                            {(() => {
+                              const diffSec = Math.max(0, Math.round((Date.now() - new Date(device.lastSeen).getTime()) / 1000));
+                              if (diffSec < 60) return 'Vu à l\'instant';
+                              const diffMin = Math.round(diffSec / 60);
+                              if (diffMin < 60) return `Vu il y a ${diffMin} min`;
+                              const diffH = Math.round(diffMin / 60);
+                              if (diffH < 24) return `Vu il y a ${diffH}h`;
+                              const diffD = Math.round(diffH / 24);
+                              return `Vu il y a ${diffD}j`;
+                            })()}
+                          </div>
+                        )}
                       </td>
 
                       {/* Actions */}
