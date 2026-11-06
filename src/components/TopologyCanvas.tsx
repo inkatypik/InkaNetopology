@@ -198,21 +198,89 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
     });
   };
 
-  const handleSetScalePreset = (targetScale: number) => {
+  // Maps for fast lookups
+  const deviceMap = useMemo(() => {
+    const map = new Map<string, Device>();
+    devices.forEach((d) => map.set(d.id, d));
+    return map;
+  }, [devices]);
+
+  const zoneMap = useMemo(() => {
+    const map = new Map<string, GeographicZone>();
+    zones.forEach((z) => map.set(z.id, z));
+    return map;
+  }, [zones]);
+
+  // Identify Core Network Node(s)
+  const coreNodes = useMemo(() => {
+    const manuals = devices.filter((d) => d.isCore === true);
+    if (manuals.length > 0) return manuals;
+    const defaultCore =
+      devices.find(
+        (d) =>
+          d.subType === 'router' ||
+          d.tags?.some((t) => t.toLowerCase().includes('passerelle') || t.toLowerCase().includes('cœur')) ||
+          d.name.toLowerCase().includes('cœur') ||
+          d.name.toLowerCase().includes('coeur') ||
+          d.name.toLowerCase().includes('udm') ||
+          d.ip.endsWith('.1') ||
+          d.ip.endsWith('.254')
+      ) ||
+      devices.find((d) => d.subType === 'switch') ||
+      devices[0];
+    return defaultCore ? [defaultCore] : [];
+  }, [devices]);
+
+  const coreNode = coreNodes[0];
+
+  // Center viewport on the network core node or all devices
+  const centerViewOnCore = useCallback((targetScale?: number) => {
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
-    const centerX = rect.width / 2;
-    const centerY = rect.height / 2;
+    const currentScale = targetScale ?? scale;
 
-    setScale((prevScale) => {
-      setOffset((prevOffset) => {
-        const nextOffsetX = centerX - (centerX - prevOffset.x) * (targetScale / prevScale);
-        const nextOffsetY = centerY - (centerY - prevOffset.y) * (targetScale / prevScale);
-        return { x: Math.round(nextOffsetX), y: Math.round(nextOffsetY) };
+    // Find the center point of the core network node (or average center of all devices)
+    const targetCore = coreNode;
+    let targetX = 1400;
+    let targetY = 1200;
+
+    if (targetCore?.position) {
+      targetX = targetCore.position.x + 130;
+      targetY = targetCore.position.y + 80;
+    } else if (devices.length > 0) {
+      let sumX = 0;
+      let sumY = 0;
+      let count = 0;
+      devices.forEach((d) => {
+        if (d.position) {
+          sumX += d.position.x + 130;
+          sumY += d.position.y + 80;
+          count++;
+        }
       });
-      return targetScale;
-    });
-  };
+      if (count > 0) {
+        targetX = sumX / count;
+        targetY = sumY / count;
+      }
+    }
+
+    const nextOffsetX = Math.round(rect.width / 2 - targetX * currentScale);
+    const nextOffsetY = Math.round(rect.height / 2 - targetY * currentScale);
+    setOffset({ x: nextOffsetX, y: nextOffsetY });
+  }, [coreNode, devices, scale]);
+
+  // Center automatically on first mount or when devices first arrive
+  const hasInitiallyCenteredRef = useRef(false);
+  useEffect(() => {
+    if (!hasInitiallyCenteredRef.current && devices.length > 0) {
+      hasInitiallyCenteredRef.current = true;
+      // Slight delay to allow container layout
+      const timer = setTimeout(() => {
+        centerViewOnCore();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [devices.length, centerViewOnCore]);
 
   // Pan handlers
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -237,8 +305,8 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
       const deltaY = Math.round((e.clientY - multiDragStartRef.current.clientY) / scale);
       multiDragInitialPositionsRef.current.forEach((initialPos, id) => {
         onUpdateDevicePosition(id, {
-          x: Math.max(10, initialPos.x + deltaX),
-          y: Math.max(10, initialPos.y + deltaY)
+          x: initialPos.x + deltaX,
+          y: initialPos.y + deltaY
         });
       });
       return;
@@ -255,7 +323,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
         const rect = containerRef.current.getBoundingClientRect();
         const newX = Math.round((e.clientX - rect.left - offset.x) / scale - dragOffset.x);
         const newY = Math.round((e.clientY - rect.top - offset.y) / scale - dragOffset.y);
-        onUpdateDevicePosition(draggedNodeId, { x: Math.max(10, newX), y: Math.max(10, newY) });
+        onUpdateDevicePosition(draggedNodeId, { x: newX, y: newY });
       }
     }
   };
@@ -323,41 +391,6 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
       onSelectDevice(dev);
     }
   };
-
-  // Maps for fast lookups
-  const deviceMap = useMemo(() => {
-    const map = new Map<string, Device>();
-    devices.forEach((d) => map.set(d.id, d));
-    return map;
-  }, [devices]);
-
-  const zoneMap = useMemo(() => {
-    const map = new Map<string, GeographicZone>();
-    zones.forEach((z) => map.set(z.id, z));
-    return map;
-  }, [zones]);
-
-  // Identify Core Network Node(s)
-  const coreNodes = useMemo(() => {
-    const manuals = devices.filter((d) => d.isCore === true);
-    if (manuals.length > 0) return manuals;
-    const defaultCore =
-      devices.find(
-        (d) =>
-          d.subType === 'router' ||
-          d.tags?.some((t) => t.toLowerCase().includes('passerelle') || t.toLowerCase().includes('cœur')) ||
-          d.name.toLowerCase().includes('cœur') ||
-          d.name.toLowerCase().includes('coeur') ||
-          d.name.toLowerCase().includes('udm') ||
-          d.ip.endsWith('.1') ||
-          d.ip.endsWith('.254')
-      ) ||
-      devices.find((d) => d.subType === 'switch') ||
-      devices[0];
-    return defaultCore ? [defaultCore] : [];
-  }, [devices]);
-
-  const coreNode = coreNodes[0];
 
   // Compute children counts per host
   const childrenCountMap = useMemo(() => {
@@ -803,7 +836,19 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
           </button>
 
           <button
-            onClick={() => handleSetScalePreset(1.0)}
+            onClick={() => centerViewOnCore()}
+            title="Centrer la vue sur le cœur de réseau"
+            className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-cyan-300 hover:text-white hover:bg-slate-800 rounded-md transition-colors cursor-pointer"
+          >
+            <Compass className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Cœur</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setScale(1.0);
+              centerViewOnCore(1.0);
+            }}
             title="Échelle réelle 100%"
             className="px-2 py-1 text-[11px] font-mono tabular-nums text-slate-300 hover:text-white hover:bg-slate-800 rounded-md transition-colors cursor-pointer"
           >

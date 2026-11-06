@@ -153,11 +153,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           {onAutoLayout && (
             <button
               onClick={onAutoLayout}
-              title="Organiser et générer automatiquement le schéma hiérarchique"
+              title="Organiser la topologie avec le cœur de réseau au centre et les zones en étoile sans chevauchement ni superposition"
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-cyan-700/90 hover:bg-cyan-600 border border-cyan-500/40 rounded-lg transition-all active:scale-95 whitespace-nowrap shadow-xs cursor-pointer"
             >
               <LayoutGrid className="w-3.5 h-3.5" />
-              <span>Générer schéma</span>
+              <span>Générer le schéma</span>
             </button>
           )}
 
