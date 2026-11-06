@@ -20,9 +20,11 @@ export const HostsDependencyView: React.FC<HostsDependencyViewProps> = ({
 }) => {
   const [selectedChildForMove, setSelectedChildForMove] = useState<Device | null>(null);
 
-  // Identify physical hosts (servers, workstations, or physical machines capable of hosting)
+  // Identify hosts capable of running VMs or Docker containers (physical servers/workstations/NAS or VMs running Docker)
   const physicalHosts = devices.filter(
-    (d) => d.deviceType === 'physical' && (d.subType === 'server' || d.subType === 'workstation' || d.subType === 'nas')
+    (d) =>
+      (d.deviceType === 'physical' && (d.subType === 'server' || d.subType === 'workstation' || d.subType === 'nas')) ||
+      (d.deviceType === 'vm')
   );
 
   // Group VMs and Containers by parentHostId

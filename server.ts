@@ -109,76 +109,81 @@ function findBestHostForContainer(
     }
   }
 
-  // 2. Exact IP match with a physical server / host machine (Docker bridge/host port forwarding)
-  if (container.ip) {
-    const hostWithSameIp = devList.find(
-      (d) =>
-        d.id !== container.id &&
-        d.ip === container.ip &&
-        d.deviceType === 'physical' &&
-        d.subType !== 'switch' &&
-        d.subType !== 'router' &&
-        d.subType !== 'access_point'
-    );
+  // Helper: check if a candidate device is a valid host (physical machine, server, NAS, or VM hypervisor/guest)
+  const isCandidateHost = (d: Device) =>
+    d.id !== container.id &&
+    d.subType !== 'switch' &&
+    d.subType !== 'router' &&
+    d.subType !== 'access_point' &&
+    d.deviceType !== 'docker' &&
+    (d.deviceType === 'physical' || d.deviceType === 'vm' || d.subType === 'server' || d.subType === 'nas');
+
+  // 2. Exact IP match with a host machine or VM (e.g. Docker host network mode or container exposed on host IP)
+  if (container.ip && container.ip !== '127.0.0.1' && !container.ip.startsWith('172.17.') && !container.ip.startsWith('172.18.')) {
+    const hostWithSameIp = devList.find((d) => isCandidateHost(d) && d.ip === container.ip);
     if (hostWithSameIp) return hostWithSameIp;
   }
 
-  // 3. Name or location reference match (e.g. location "Conteneur sur HP ProDesk" -> matches server "HP ProDesk")
+  // 3. If this is a local Docker daemon inspection or container running on the local host machine:
+  // Match with a device representing the local host IP or hostname
+  const netInfo = getNetworkInterfaces();
+  const localIps = netInfo.interfaces.map((i) => i.address).filter(Boolean);
+  const localHostname = (os.hostname() || '').toLowerCase();
+  
+  if (container.metadata?.['Hôte'] === 'Local Docker Daemon' || container.name?.includes('Docker Engine Daemon') || container.location?.includes('Docker')) {
+    const localMatch = devList.find(
+      (d) =>
+        isCandidateHost(d) &&
+        (localIps.includes(d.ip) || (localHostname && d.name.toLowerCase().includes(localHostname)))
+    );
+    if (localMatch) return localMatch;
+  }
+
+  // 4. Name or location reference match (e.g. location "Conteneur sur Proxmox-01" -> matches VM or Server "Proxmox-01")
   const locOrName = `${container.location || ''} ${container.name || ''}`.toLowerCase();
   const hostByRef = devList.find(
     (d) =>
-      d.id !== container.id &&
-      (d.deviceType === 'physical' || d.subType === 'server') &&
-      d.subType !== 'switch' &&
-      d.subType !== 'router' &&
+      isCandidateHost(d) &&
       (locOrName.includes(d.name.toLowerCase()) ||
         (d.metadata && Object.values(d.metadata).some((v) => typeof v === 'string' && locOrName.includes(v.toLowerCase()))))
   );
   if (hostByRef) return hostByRef;
 
-  // 4. Server explicitly tagged with 'docker' or named 'docker'
+  // 5. Host or VM explicitly tagged with 'docker' or named 'docker' / 'portainer'
   const byDockerTag = devList.find(
     (d) =>
-      d.id !== container.id &&
-      d.deviceType === 'physical' &&
+      isCandidateHost(d) &&
       (d.name.toLowerCase().includes('docker') ||
-        d.tags?.some((t) => t.toLowerCase().includes('docker')))
+        d.name.toLowerCase().includes('portainer') ||
+        d.tags?.some((t) => t.toLowerCase().includes('docker') || t.toLowerCase().includes('portainer')))
   );
   if (byDockerTag) return byDockerTag;
 
-  // 5. Host with docker/portainer open ports (2375, 2376, 9000, 9443)
+  // 6. Host with docker/portainer open ports (2375, 2376, 9000, 9443)
   const byPort = devList.find(
     (d) =>
-      d.id !== container.id &&
-      d.deviceType === 'physical' &&
+      isCandidateHost(d) &&
       d.openPorts &&
       d.openPorts.some((p) => [2375, 2376, 9000, 9443].includes(p))
   );
   if (byPort) return byPort;
 
-  // 6. Any dedicated physical server or NAS
-  const byServer = devList.find(
-    (d) =>
-      d.id !== container.id &&
-      d.deviceType === 'physical' &&
-      (d.subType === 'server' || d.subType === 'nas')
+  // 7. If there is a single dedicated server in the inventory, bind to it.
+  // BUT if there are multiple distinct servers/VMs, do NOT arbitrarily assign all containers to the first one!
+  const candidateServers = devList.filter(
+    (d) => isCandidateHost(d) && (d.subType === 'server' || d.subType === 'nas')
   );
-  if (byServer) return byServer;
+  if (candidateServers.length === 1) {
+    return candidateServers[0];
+  }
 
-  // 7. General physical host fallback
-  const byPhysical = devList.find(
-    (d) =>
-      d.id !== container.id &&
-      d.deviceType === 'physical' &&
-      d.subType !== 'switch' &&
-      d.subType !== 'router' &&
-      d.subType !== 'access_point'
-  );
-  if (byPhysical) return byPhysical;
+  // 8. If all devices in devList are non-servers and there is only 1 physical host:
+  const physicalCandidates = devList.filter((d) => isCandidateHost(d));
+  if (physicalCandidates.length === 1) {
+    return physicalCandidates[0];
+  }
 
-  // 8. If no physical server exists in inventory (e.g. fresh scan from empty),
-  // represent the local host machine running Docker Engine
-  const netInfo = getNetworkInterfaces();
+  // 9. If devList is empty or no host found, create local host device for Docker Engine
   const primaryIf = netInfo.interfaces[0];
   const hostIp = primaryIf ? primaryIf.address : '192.168.1.15';
   const hostMac = primaryIf && primaryIf.mac && primaryIf.mac !== '00:00:00:00:00:00' ? primaryIf.mac : '18:66:da:44:22:90';
@@ -2116,25 +2121,22 @@ app.post('/api/scan', async (req, res) => {
         }
       >();
 
-      // 2. Initial ARP & Neighbor table check
+      // 2. Initial ARP & Neighbor table check (for MAC mapping cache only, NOT automatically declared alive)
       const initialArp = readLinuxArpTable();
       const initialNeighbors = await readIpNeighbors();
       const allInitial = [...initialArp, ...initialNeighbors];
+      const arpMacByIp = new Map<string, string>();
       for (const entry of allInitial) {
-        if (entry.ip.startsWith(baseIp) && entry.mac && entry.mac !== '00:00:00:00:00:00') {
-          aliveHosts.set(entry.ip, {
-            mac: entry.mac,
-            rtt: 1.0,
-            openPorts: []
-          });
+        if (entry.ip && entry.mac && entry.mac !== '00:00:00:00:00:00') {
+          arpMacByIp.set(entry.ip, entry.mac);
         }
       }
 
-      if (aliveHosts.size > 0) {
+      if (arpMacByIp.size > 0) {
         addLog({
           level: 'INFO',
           category: 'ARP',
-          message: `Table ARP initiale inspectée: ${aliveHosts.size} équipements physiques déjà présents en cache.`
+          message: `Table ARP initiale inspectée: ${arpMacByIp.size} entrées MAC détectées en cache.`
         });
       }
 
@@ -2169,8 +2171,9 @@ app.post('/api/scan', async (req, res) => {
 
             if (isAlive) {
               const existing = aliveHosts.get(targetIp);
+              const macFromArp = arpMacByIp.get(targetIp) || existing?.mac;
               aliveHosts.set(targetIp, {
-                mac: existing?.mac,
+                mac: macFromArp,
                 rtt: bestRtt || 1.5,
                 openPorts: Array.from(new Set([...(existing?.openPorts || []), ...openPortsFound]))
               });
@@ -2199,13 +2202,13 @@ app.post('/api/scan', async (req, res) => {
       const postSweepNeighbors = await readIpNeighbors();
       const allPost = [...postSweepArp, ...postSweepNeighbors];
       for (const entry of allPost) {
-        if (entry.ip.startsWith(baseIp) && entry.mac && entry.mac !== '00:00:00:00:00:00') {
+        if (entry.ip && entry.mac && entry.mac !== '00:00:00:00:00:00') {
+          arpMacByIp.set(entry.ip, entry.mac);
+          // Only update MAC for hosts that were verified alive!
           const current = aliveHosts.get(entry.ip);
-          aliveHosts.set(entry.ip, {
-            mac: entry.mac,
-            rtt: current?.rtt || 1.0,
-            openPorts: current?.openPorts || []
-          });
+          if (current) {
+            current.mac = entry.mac;
+          }
         }
       }
 
@@ -2285,6 +2288,15 @@ app.post('/api/scan', async (req, res) => {
       let newlyAddedCount = 0;
       let updatedCount = 0;
 
+      // Count occurrences of each MAC across alive hosts to detect shared router/gateway proxy-ARP MACs
+      const macCounts = new Map<string, number>();
+      for (const [, hostInfo] of aliveHosts) {
+        if (hostInfo.mac && hostInfo.mac !== '00:00:00:00:00:00') {
+          const normMac = hostInfo.mac.toLowerCase();
+          macCounts.set(normMac, (macCounts.get(normMac) || 0) + 1);
+        }
+      }
+
       // Find primary switch or router ID to connect new physical devices
       const mainSwitch =
         devices.find((d) => d.subType === 'switch') ||
@@ -2293,24 +2305,31 @@ app.post('/api/scan', async (req, res) => {
 
       // A) Process Network discovered hosts
       for (const [ip, hostInfo] of aliveHosts.entries()) {
-        const mac = hostInfo.mac || '02:00:00:' + ip.split('.').map((p) => (+p).toString(16).padStart(2, '0')).slice(1).join(':');
+        const rawMac = hostInfo.mac;
+        const mac = rawMac || '02:00:00:' + ip.split('.').map((p) => (+p).toString(16).padStart(2, '0')).slice(1).join(':');
         const vendor = lookupVendor(mac);
 
-        // Check if device already exists in inventory by MAC or physical host IP
-        const existingIndex = devices.findIndex(
-          (d) =>
-            (d.mac && d.mac !== '00:00:00:00:00:00' && d.mac.toLowerCase() === mac.toLowerCase()) ||
-            (d.ip === ip && d.deviceType === 'physical') ||
-            (d.ip === ip && !devices.some((other) => other.ip === ip && other.deviceType === 'physical'))
-        );
+        // Check if MAC is unique (appears only once in the scan) or shared (proxy-ARP/gateway MAC)
+        const isMacUnique = rawMac && (macCounts.get(rawMac.toLowerCase()) || 0) <= 1;
+
+        // Check if device already exists in inventory
+        // If MAC is unique, match by MAC or IP. If MAC is shared/proxy-ARP, match ONLY by IP to prevent merging distinct devices!
+        const existingIndex = devices.findIndex((d) => {
+          if (d.ip === ip) return true;
+          if (isMacUnique && d.mac && d.mac.toLowerCase() === rawMac!.toLowerCase() && !d.mac.startsWith('02:00:00')) {
+            return true;
+          }
+          return false;
+        });
 
         if (existingIndex !== -1) {
-          // Device exists -> Update status, latency, openPorts, lastSeen
+          // Device exists -> Update status, latency, openPorts, lastSeen AND update IP in case device moved
           const existing = devices[existingIndex];
           const mergedPorts = Array.from(new Set([...(existing.openPorts || []), ...hostInfo.openPorts]));
 
           devices[existingIndex] = {
             ...existing,
+            ip, // Always keep the scanned IP up-to-date!
             status: 'online',
             lastSeen: new Date().toISOString(),
             latencyMs: +(hostInfo.rtt || existing.latencyMs || 1.0).toFixed(1),
@@ -2408,7 +2427,8 @@ app.post('/api/scan', async (req, res) => {
       const dockerHost = findBestHostForContainer(
         {
           name: 'Docker Engine Daemon',
-          location: 'Serveur Dédié Docker'
+          location: 'Serveur Dédié Docker',
+          metadata: { 'Hôte': 'Local Docker Daemon' }
         },
         devices
       );
@@ -2424,10 +2444,26 @@ app.post('/api/scan', async (req, res) => {
           .map((p: any) => p.PublicPort || p.PrivatePort)
           .filter(Boolean);
 
+        // Find actual container IP from its networks (avoid defaulting to host IP)
+        let ctIp = '127.0.0.1';
+        if (ct.NetworkSettings?.Networks) {
+          for (const netName of Object.keys(ct.NetworkSettings.Networks)) {
+            const netIp = ct.NetworkSettings.Networks[netName]?.IPAddress;
+            if (netIp && netIp.trim()) {
+              ctIp = netIp.trim();
+              break;
+            }
+          }
+        }
+        if (ctIp === '127.0.0.1' && dockerHost?.ip) {
+          ctIp = dockerHost.ip;
+        }
+
         if (existingCt) {
           existingCt.status = ct.State === 'running' ? 'online' : 'offline';
           existingCt.lastSeen = new Date().toISOString();
           existingCt.openPorts = openPorts;
+          if (ctIp !== '127.0.0.1') existingCt.ip = ctIp;
           if (!existingCt.parentHostId || existingCt.parentHostId === mainSwitch?.id) {
             existingCt.parentHostId = dockerHost ? dockerHost.id : undefined;
           }
@@ -2439,7 +2475,7 @@ app.post('/api/scan', async (req, res) => {
           const newContainer: Device = {
             id: `docker-${ctId}`,
             name: ctName,
-            ip: ct.NetworkSettings?.Networks?.bridge?.IPAddress || (dockerHost ? dockerHost.ip : '127.0.0.1'),
+            ip: ctIp,
             mac: '02:42:ac:11:' + ctId.slice(0, 4).match(/../g)?.join(':') || '02:42:ac:11:00:99',
             vendor: 'Docker Inc.',
             deviceType: 'docker',

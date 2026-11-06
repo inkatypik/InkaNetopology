@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import type { Device, GeographicZone } from '../types/network';
 import { getDeviceDefaultIcon, getDeviceTypeColor } from '../utils/hardwareIcons';
-import { Activity, Edit3, Trash2, Link2, ExternalLink, MapPin } from 'lucide-react';
+import { Activity, Edit3, Trash2, Link2, ExternalLink, MapPin, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 
 interface DeviceInventoryTableProps {
   devices: Device[];
@@ -12,6 +12,20 @@ interface DeviceInventoryTableProps {
   onDeleteDevice: (id: string) => void;
 }
 
+type SortColumn = 'name' | 'ip' | 'vendor' | 'parent' | 'ports' | 'location' | 'status';
+type SortDirection = 'asc' | 'desc';
+
+// Helper to convert IPv4 string to numerical integer for accurate ordering (e.g. 192.168.1.2 before 192.168.1.10)
+function ipToNumber(ip: string): number {
+  if (!ip) return 0;
+  const parts = ip.trim().split('.');
+  if (parts.length !== 4) return 0;
+  return parts.reduce((acc, octet) => {
+    const num = parseInt(octet, 10);
+    return isNaN(num) ? 0 : (acc << 8) + num;
+  }, 0) >>> 0;
+}
+
 export const DeviceInventoryTable: React.FC<DeviceInventoryTableProps> = ({
   devices,
   zones = [],
@@ -20,11 +34,122 @@ export const DeviceInventoryTable: React.FC<DeviceInventoryTableProps> = ({
   onPingDevice,
   onDeleteDevice
 }) => {
-  const deviceMap = new Map<string, Device>();
-  devices.forEach((d) => deviceMap.set(d.id, d));
+  const [sortColumn, setSortColumn] = useState<SortColumn>('ip');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
-  const zoneMap = new Map<string, GeographicZone>();
-  zones.forEach((z) => zoneMap.set(z.id, z));
+  const deviceMap = useMemo(() => {
+    const map = new Map<string, Device>();
+    devices.forEach((d) => map.set(d.id, d));
+    return map;
+  }, [devices]);
+
+  const zoneMap = useMemo(() => {
+    const map = new Map<string, GeographicZone>();
+    zones.forEach((z) => map.set(z.id, z));
+    return map;
+  }, [zones]);
+
+  const handleSort = (column: SortColumn) => {
+    if (sortColumn === column) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  };
+
+  const sortedDevices = useMemo(() => {
+    const list = [...devices];
+    return list.sort((a, b) => {
+      let comparison = 0;
+
+      switch (sortColumn) {
+        case 'name':
+          comparison = a.name.localeCompare(b.name, 'fr', { numeric: true, sensitivity: 'base' });
+          if (comparison === 0) {
+            comparison = a.deviceType.localeCompare(b.deviceType);
+          }
+          break;
+
+        case 'ip': {
+          const numA = ipToNumber(a.ip);
+          const numB = ipToNumber(b.ip);
+          if (numA !== 0 && numB !== 0) {
+            comparison = numA - numB;
+          } else if (numA !== 0) {
+            comparison = -1;
+          } else if (numB !== 0) {
+            comparison = 1;
+          } else {
+            comparison = (a.ip || '').localeCompare(b.ip || '');
+          }
+          break;
+        }
+
+        case 'vendor': {
+          const vA = a.vendor || '';
+          const vB = b.vendor || '';
+          comparison = vA.localeCompare(vB, 'fr', { sensitivity: 'base' });
+          if (comparison === 0) {
+            comparison = (a.os || '').localeCompare(b.os || '');
+          }
+          break;
+        }
+
+        case 'parent': {
+          const parentA = a.parentHostId ? deviceMap.get(a.parentHostId)?.name || '' : (a.connectedToSwitchId ? deviceMap.get(a.connectedToSwitchId)?.name || '' : '');
+          const parentB = b.parentHostId ? deviceMap.get(b.parentHostId)?.name || '' : (b.connectedToSwitchId ? deviceMap.get(b.connectedToSwitchId)?.name || '' : '');
+          comparison = parentA.localeCompare(parentB, 'fr', { sensitivity: 'base' });
+          break;
+        }
+
+        case 'ports': {
+          const countA = a.openPorts?.length || 0;
+          const countB = b.openPorts?.length || 0;
+          comparison = countA - countB;
+          break;
+        }
+
+        case 'location': {
+          const locA = a.zoneId ? zoneMap.get(a.zoneId)?.name || a.location || '' : a.location || '';
+          const locB = b.zoneId ? zoneMap.get(b.zoneId)?.name || b.location || '' : b.location || '';
+          comparison = locA.localeCompare(locB, 'fr', { sensitivity: 'base' });
+          break;
+        }
+
+        case 'status': {
+          // 'online' first, then RTT
+          const statusOrder: Record<string, number> = { online: 0, warning: 1, offline: 2 };
+          const sA = statusOrder[a.status] ?? 3;
+          const sB = statusOrder[b.status] ?? 3;
+          if (sA !== sB) {
+            comparison = sA - sB;
+          } else {
+            const rttA = a.latencyMs ?? 9999;
+            const rttB = b.latencyMs ?? 9999;
+            comparison = rttA - rttB;
+          }
+          break;
+        }
+
+        default:
+          comparison = 0;
+      }
+
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+  }, [devices, sortColumn, sortDirection, deviceMap, zoneMap]);
+
+  const renderSortIcon = (column: SortColumn) => {
+    if (sortColumn !== column) {
+      return <ArrowUpDown className="w-3 h-3 text-slate-500 opacity-60 group-hover:opacity-100 transition-opacity" />;
+    }
+    return sortDirection === 'asc' ? (
+      <ArrowUp className="w-3 h-3 text-cyan-400" />
+    ) : (
+      <ArrowDown className="w-3 h-3 text-cyan-400" />
+    );
+  };
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -32,19 +157,89 @@ export const DeviceInventoryTable: React.FC<DeviceInventoryTableProps> = ({
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="border-b border-slate-800 bg-slate-950/60 text-[11px] font-semibold text-slate-400">
-                <th className="py-3 px-4">Équipement & Type</th>
-                <th className="py-3 px-4">Adresse IP & MAC</th>
-                <th className="py-3 px-4">Fabricant / Modèle</th>
-                <th className="py-3 px-4">Rattachement</th>
-                <th className="py-3 px-4">Ports & Services</th>
-                <th className="py-3 px-4">Emplacement & Tags</th>
-                <th className="py-3 px-4 text-right">Statut & RTT</th>
+              <tr className="border-b border-slate-800 bg-slate-950/60 text-[11px] font-semibold text-slate-400 select-none">
+                <th className="py-3 px-4">
+                  <button
+                    type="button"
+                    onClick={() => handleSort('name')}
+                    className="group flex items-center gap-1.5 hover:text-cyan-400 transition-colors cursor-pointer text-left font-semibold"
+                    title="Trier par Nom et Type d'équipement"
+                  >
+                    <span>Équipement & Type</span>
+                    {renderSortIcon('name')}
+                  </button>
+                </th>
+                <th className="py-3 px-4">
+                  <button
+                    type="button"
+                    onClick={() => handleSort('ip')}
+                    className="group flex items-center gap-1.5 hover:text-cyan-400 transition-colors cursor-pointer text-left font-semibold"
+                    title="Trier par Adresse IP numérique"
+                  >
+                    <span>Adresse IP & MAC</span>
+                    {renderSortIcon('ip')}
+                  </button>
+                </th>
+                <th className="py-3 px-4">
+                  <button
+                    type="button"
+                    onClick={() => handleSort('vendor')}
+                    className="group flex items-center gap-1.5 hover:text-cyan-400 transition-colors cursor-pointer text-left font-semibold"
+                    title="Trier par Fabricant et Modèle"
+                  >
+                    <span>Fabricant / Modèle</span>
+                    {renderSortIcon('vendor')}
+                  </button>
+                </th>
+                <th className="py-3 px-4">
+                  <button
+                    type="button"
+                    onClick={() => handleSort('parent')}
+                    className="group flex items-center gap-1.5 hover:text-cyan-400 transition-colors cursor-pointer text-left font-semibold"
+                    title="Trier par Hôte parent ou Switch"
+                  >
+                    <span>Rattachement</span>
+                    {renderSortIcon('parent')}
+                  </button>
+                </th>
+                <th className="py-3 px-4">
+                  <button
+                    type="button"
+                    onClick={() => handleSort('ports')}
+                    className="group flex items-center gap-1.5 hover:text-cyan-400 transition-colors cursor-pointer text-left font-semibold"
+                    title="Trier par Nombre de ports ouverts"
+                  >
+                    <span>Ports & Services</span>
+                    {renderSortIcon('ports')}
+                  </button>
+                </th>
+                <th className="py-3 px-4">
+                  <button
+                    type="button"
+                    onClick={() => handleSort('location')}
+                    className="group flex items-center gap-1.5 hover:text-cyan-400 transition-colors cursor-pointer text-left font-semibold"
+                    title="Trier par Zone géographique et Emplacement"
+                  >
+                    <span>Emplacement & Tags</span>
+                    {renderSortIcon('location')}
+                  </button>
+                </th>
+                <th className="py-3 px-4 text-right">
+                  <button
+                    type="button"
+                    onClick={() => handleSort('status')}
+                    className="group inline-flex items-center gap-1.5 hover:text-cyan-400 transition-colors cursor-pointer font-semibold ml-auto"
+                    title="Trier par Statut (En ligne / Hors ligne) et RTT"
+                  >
+                    <span>Statut & RTT</span>
+                    {renderSortIcon('status')}
+                  </button>
+                </th>
                 <th className="py-3 px-4 text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 text-xs">
-              {devices.length === 0 ? (
+              {sortedDevices.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-12 text-center">
                     <div className="flex flex-col items-center justify-center max-w-sm mx-auto space-y-2">
@@ -61,7 +256,7 @@ export const DeviceInventoryTable: React.FC<DeviceInventoryTableProps> = ({
                   </td>
                 </tr>
               ) : (
-                devices.map((device) => {
+                sortedDevices.map((device) => {
                   const typeStyle = getDeviceTypeColor(device.deviceType);
                   const parentHost = device.parentHostId
                     ? deviceMap.get(device.parentHostId)

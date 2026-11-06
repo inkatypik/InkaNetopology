@@ -50,7 +50,11 @@ export const AddDeviceModal: React.FC<AddDeviceModalProps> = ({
     }
   }, [presetType, presetParentId]);
 
-  const candidateHosts = allDevices.filter((d) => d.deviceType === 'physical');
+  const candidateHosts = allDevices.filter(
+    (d) =>
+      (d.deviceType === 'physical' || d.subType === 'server' || d.subType === 'nas' || d.subType === 'vm') &&
+      d.deviceType !== 'docker'
+  );
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
