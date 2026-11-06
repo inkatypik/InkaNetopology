@@ -13,7 +13,6 @@ import {
   MapPin,
   Edit2,
   Layers,
-  Star,
   FileImage,
   FileText,
   Settings
@@ -56,7 +55,6 @@ interface ToolbarProps {
   allCollapsed?: boolean;
   onToggleAllCollapse?: () => void;
   hasCollapsibleGroups?: boolean;
-  onStarTopologyLayout?: () => void;
 
   // Import / Export additions:
   onImportTopology?: (file: File) => void;
@@ -95,7 +93,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   allCollapsed = false,
   onToggleAllCollapse,
   hasCollapsibleGroups = false,
-  onStarTopologyLayout,
   onImportTopology,
   onExportPng,
   onExportPdf,
@@ -443,18 +440,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             >
               <Layers className="w-3.5 h-3.5 text-cyan-400" />
               <span>{allCollapsed ? 'Tout déplier' : 'Tout replier'}</span>
-            </button>
-          )}
-
-          {/* Topologie en étoile */}
-          {onStarTopologyLayout && (
-            <button
-              onClick={onStarTopologyLayout}
-              title="Réorganiser automatiquement le schéma en topologie en étoile avec le cœur de réseau au centre"
-              className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold bg-cyan-600/90 hover:bg-cyan-500 text-white border border-cyan-400/50 rounded-lg transition-all active:scale-95 whitespace-nowrap cursor-pointer shadow-xs"
-            >
-              <Star className="w-3.5 h-3.5 fill-cyan-200 text-cyan-200" />
-              <span>Topologie en étoile</span>
             </button>
           )}
         </div>

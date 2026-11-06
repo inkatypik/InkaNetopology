@@ -223,24 +223,56 @@ function resolveDockerHost(devList: Device[], container?: Partial<Device>): Devi
   return devList[0];
 }
 
-// TOPOLOGIE EN ÉTOILE (Star Topology Layout):
-// The network core ("cœur de réseau" / router / gateway) sits directly at the CENTER of the star.
-// Radial branches radiate outwards in concentric rings and sectors:
-function autoLayoutTopology(devList: Device[]): Device[] {
+// Visual dimensions for card calculations and non-overlapping margins
+const NODE_WIDTH = 260;
+const NODE_HEIGHT = 160;
+const NODE_GAP_X = 50;
+const NODE_GAP_Y = 40;
+
+const HOST_HEADER_HEIGHT = 44;
+const HOST_PAD_X = 28;
+const HOST_PAD_Y = 24;
+
+const ZONE_HEADER_HEIGHT = 52;
+const ZONE_PAD_X = 36;
+const ZONE_PAD_Y = 32;
+
+interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+function rectsOverlap(r1: Rect, r2: Rect, minSpacing = 40): boolean {
+  return !(
+    r1.x + r1.width + minSpacing <= r2.x ||
+    r2.x + r2.width + minSpacing <= r1.x ||
+    r1.y + r1.height + minSpacing <= r2.y ||
+    r2.y + r2.height + minSpacing <= r1.y
+  );
+}
+
+// TOPOLOGIE EN ÉTOILE (Clean Non-Overlapping Star Topology Layout):
+// 1. Network Core (Passerelle / Routeur cœur) sits at the CENTER.
+// 2. Devices belong to their Geographic Zone.
+// 3. Hosts enclose their VMs & Docker containers in their block without overlap.
+// 4. Zones are placed radially around the Core with zero overlap.
+function autoLayoutTopology(devList: Device[], zoneList: GeographicZone[] = zones): Device[] {
   if (!devList || devList.length === 0) return [];
 
-  const list: Device[] = devList.map((d) => ({ ...d }));
+  const devices: Device[] = devList.map((d) => ({ ...d }));
   const devMap = new Map<string, Device>();
-  list.forEach((d) => devMap.set(d.id, d));
+  devices.forEach((d) => devMap.set(d.id, d));
 
-  // 1. Identify Root Cœur(s) de Réseau (Gateway / Core Router / Manual isCore flag)
-  const manualCoreNodes = list.filter((d) => d.isCore === true);
+  // 1. Identify Network Core(s)
+  const manualCoreNodes = devices.filter((d) => d.isCore === true);
   let coreNodes: Device[] = [];
 
   if (manualCoreNodes.length > 0) {
     coreNodes = manualCoreNodes;
   } else {
-    let defaultCore = list.find(
+    let defaultCore = devices.find(
       (d) =>
         d.subType === 'router' ||
         d.ip.endsWith('.1') ||
@@ -255,230 +287,298 @@ function autoLayoutTopology(devList: Device[]): Device[] {
 
     if (!defaultCore) {
       defaultCore =
-        list.find((d) => d.subType === 'switch') ||
-        list.find((d) => d.deviceType === 'physical') ||
-        list[0];
+        devices.find((d) => d.subType === 'switch') ||
+        devices.find((d) => d.deviceType === 'physical') ||
+        devices[0];
     }
     if (defaultCore) coreNodes = [defaultCore];
   }
 
-  const coreNode = coreNodes[0];
   const coreNodeIds = new Set(coreNodes.map((c) => c.id));
 
-  // 2. Identify Switches & Access points
-  const switches = list.filter(
-    (d) => !coreNodeIds.has(d.id) && (d.subType === 'switch' || d.subType === 'access_point')
-  );
-  const primarySwitch = switches[0] || coreNode;
-
-  // 3. Identify Physical Servers, Hypervisors, NAS
-  const servers = list.filter(
-    (d) =>
-      !coreNodeIds.has(d.id) &&
-      !switches.some((s) => s.id === d.id) &&
-      d.deviceType === 'physical' &&
-      (d.subType === 'server' || d.subType === 'nas')
-  );
-
-  // 4. Identify Virtual Machines & Docker Containers
-  const vms = list.filter((d) => d.deviceType === 'vm');
-  const dockers = list.filter((d) => d.deviceType === 'docker');
-
-  // Accurately assign parent hosts for containers and VMs if missing or invalid
-  dockers.forEach((ct) => {
-    const bestHost = findBestHostForContainer(ct, list);
-    if (!ct.parentHostId || !devMap.has(ct.parentHostId)) {
-      if (bestHost) ct.parentHostId = bestHost.id;
-    } else {
-      const currentParent = devMap.get(ct.parentHostId);
-      if (currentParent && (currentParent.subType === 'switch' || currentParent.subType === 'router')) {
-        if (bestHost) ct.parentHostId = bestHost.id;
+  // 2. Resolve guest containers/VMs to their parent host if unassigned
+  devices.forEach((d) => {
+    if (d.deviceType === 'docker') {
+      const best = findBestHostForContainer(d, devices);
+      if (!d.parentHostId || !devMap.has(d.parentHostId)) {
+        if (best) d.parentHostId = best.id;
+      }
+    } else if (d.deviceType === 'vm') {
+      if (!d.parentHostId || !devMap.has(d.parentHostId)) {
+        const pve = devices.find(
+          (s) =>
+            !coreNodeIds.has(s.id) &&
+            (s.deviceType === 'physical' || s.subType === 'server') &&
+            (s.name.toLowerCase().includes('proxmox') || s.tags?.some((t) => t.toLowerCase().includes('hyperviseur')))
+        );
+        if (pve) d.parentHostId = pve.id;
       }
     }
   });
 
-  vms.forEach((vm) => {
-    if (!vm.parentHostId || !devMap.has(vm.parentHostId)) {
-      const pve = servers.find((s) => s.name.toLowerCase().includes('proxmox') || s.tags?.includes('Hyperviseur')) || servers[0];
-      if (pve) vm.parentHostId = pve.id;
+  // Ensure guests inherit their host's zone if missing
+  devices.forEach((d) => {
+    if (d.parentHostId && devMap.has(d.parentHostId)) {
+      const parent = devMap.get(d.parentHostId)!;
+      if (parent.zoneId && !d.zoneId) {
+        d.zoneId = parent.zoneId;
+      }
     }
   });
 
-  // Ensure switch connections exist
-  switches.forEach((sw) => {
-    if (!sw.connectedToSwitchId && coreNode && sw.id !== coreNode.id) {
-      sw.connectedToSwitchId = coreNode.id;
-    }
-  });
+  // 3. Separate Core Nodes from Satellite Devices
+  const coreDevices = devices.filter((d) => coreNodeIds.has(d.id));
+  const satelliteDevices = devices.filter((d) => !coreNodeIds.has(d.id));
 
-  servers.forEach((srv) => {
-    if (!srv.connectedToSwitchId && primarySwitch && srv.id !== primarySwitch.id) {
-      srv.connectedToSwitchId = primarySwitch.id;
-    }
-  });
+  const CENTER_X = 1400;
+  const CENTER_Y = 1200;
 
-  // 5. Workstations, IoT, Printers
-  const workstations = list.filter(
-    (d) =>
-      !coreNodeIds.has(d.id) &&
-      !switches.some((s) => s.id === d.id) &&
-      !servers.some((s) => s.id === d.id) &&
-      d.deviceType === 'physical' &&
-      (d.subType === 'workstation' || d.subType === 'printer')
-  );
-
-  const iotAndOthers = list.filter(
-    (d) =>
-      !coreNodeIds.has(d.id) &&
-      !switches.some((s) => s.id === d.id) &&
-      !servers.some((s) => s.id === d.id) &&
-      !vms.some((v) => v.id === d.id) &&
-      !dockers.some((c) => c.id === d.id) &&
-      !workstations.some((w) => w.id === d.id)
-  );
-
-  workstations.forEach((ws) => {
-    if (!ws.connectedToSwitchId && primarySwitch && ws.id !== primarySwitch.id) {
-      ws.connectedToSwitchId = primarySwitch.id;
-    }
-  });
-
-  iotAndOthers.forEach((iot) => {
-    if (!iot.connectedToSwitchId && primarySwitch && iot.id !== primarySwitch.id) {
-      iot.connectedToSwitchId = primarySwitch.id;
-    }
-  });
-
-  // ---------------- STAR GEOMETRY ----------------
-  const centerX = 1350;
-  const centerY = 1200;
-  const halfNodeW = 128;
-  const halfNodeH = 85;
-
-  const R_RING1 = 440;
-  const R_RING2 = 850;
-  const R_RING3 = 1240;
-
-  // 1. PLACE ALL CORE NETWORK NODES AT THE EXACT CENTER (Symmetrically spaced if multiple)
-  if (coreNodes.length === 1) {
-    coreNodes[0].position = {
-      x: Math.round(centerX - halfNodeW),
-      y: Math.round(centerY - halfNodeH)
+  // Place Core Nodes at the center
+  const CORE_SPACING = NODE_WIDTH + 60;
+  const totalCoreW = (coreDevices.length - 1) * CORE_SPACING;
+  const startCoreX = CENTER_X - totalCoreW / 2;
+  coreDevices.forEach((cn, idx) => {
+    cn.position = {
+      x: Math.round(startCoreX + idx * CORE_SPACING - NODE_WIDTH / 2),
+      y: Math.round(CENTER_Y - NODE_HEIGHT / 2)
     };
-  } else if (coreNodes.length > 1) {
-    const spacing = 320;
-    const totalW = (coreNodes.length - 1) * spacing;
-    const startX = centerX - totalW / 2;
-    coreNodes.forEach((cn, idx) => {
-      cn.position = {
-        x: Math.round(startX + idx * spacing - halfNodeW),
-        y: Math.round(centerY - halfNodeH)
-      };
+  });
+
+  const coreBoundingRect: Rect = {
+    x: Math.round(startCoreX - NODE_WIDTH / 2 - 40),
+    y: Math.round(CENTER_Y - NODE_HEIGHT / 2 - 40),
+    width: Math.max(NODE_WIDTH + 80, totalCoreW + NODE_WIDTH + 80),
+    height: NODE_HEIGHT + 80
+  };
+
+  if (satelliteDevices.length === 0) {
+    return devices;
+  }
+
+  // 4. Group Satellite Devices by Geographic Zone
+  const zoneMap = new Map<string, GeographicZone>();
+  zoneList.forEach((z) => zoneMap.set(z.id, z));
+
+  const devicesByZone = new Map<string, Device[]>();
+  satelliteDevices.forEach((d) => {
+    const zId = d.zoneId || 'unassigned';
+    const list = devicesByZone.get(zId) || [];
+    list.push(d);
+    devicesByZone.set(zId, list);
+  });
+
+  interface ZoneUnit {
+    type: 'standalone' | 'host_cluster';
+    host: Device;
+    guests: Device[];
+    width: number;
+    height: number;
+    relX?: number;
+    relY?: number;
+  }
+
+  interface PlannedZone {
+    zoneId: string;
+    zoneName: string;
+    width: number;
+    height: number;
+    units: ZoneUnit[];
+  }
+
+  const plannedZones: PlannedZone[] = [];
+
+  devicesByZone.forEach((devs, zId) => {
+    const zoneObj = zoneMap.get(zId);
+    const zoneName = zoneObj?.name || (zId === 'unassigned' ? 'Équipements non assignés' : 'Zone');
+
+    const hostsWithChildren = new Map<string, { host: Device; guests: Device[] }>();
+    const standaloneDevs: Device[] = [];
+
+    devs.forEach((d) => {
+      if (d.parentHostId) return;
+
+      const children = devs.filter((child) => child.parentHostId === d.id);
+      if (children.length > 0) {
+        hostsWithChildren.set(d.id, { host: d, guests: children });
+      } else {
+        standaloneDevs.push(d);
+      }
     });
-  }
 
-  // 2. BUILD MAIN STAR RAYS (Branches)
-  interface StarBranch {
-    head: Device;
-    children: Device[];
-  }
+    devs.forEach((d) => {
+      if (d.parentHostId && !devs.some((h) => h.id === d.parentHostId)) {
+        standaloneDevs.push(d);
+      }
+    });
 
-  const starBranches: StarBranch[] = [];
+    const units: ZoneUnit[] = [];
 
-  // Branch A: Primary Switches
-  switches.forEach((sw) => {
-    const attachedEndpoints = [...workstations, ...iotAndOthers].filter(
-      (e) => e.connectedToSwitchId === sw.id
+    hostsWithChildren.forEach(({ host, guests }) => {
+      const guestsPerRow = Math.min(3, Math.max(1, guests.length));
+      const guestRows = Math.ceil(guests.length / guestsPerRow);
+
+      const clusterW = Math.max(
+        NODE_WIDTH + HOST_PAD_X * 2,
+        guestsPerRow * NODE_WIDTH + (guestsPerRow - 1) * NODE_GAP_X + HOST_PAD_X * 2
+      );
+      const clusterH =
+        HOST_HEADER_HEIGHT +
+        NODE_HEIGHT +
+        NODE_GAP_Y +
+        guestRows * NODE_HEIGHT +
+        (guestRows - 1) * NODE_GAP_Y +
+        HOST_PAD_Y * 2;
+
+      units.push({
+        type: 'host_cluster',
+        host,
+        guests,
+        width: clusterW,
+        height: clusterH
+      });
+    });
+
+    standaloneDevs.forEach((dev) => {
+      units.push({
+        type: 'standalone',
+        host: dev,
+        guests: [],
+        width: NODE_WIDTH,
+        height: NODE_HEIGHT
+      });
+    });
+
+    const totalUnits = units.length;
+    let cols = 1;
+    if (totalUnits >= 6) cols = 3;
+    else if (totalUnits >= 2) cols = 2;
+
+    const rows: ZoneUnit[][] = [];
+    for (let i = 0; i < units.length; i += cols) {
+      rows.push(units.slice(i, i + cols));
+    }
+
+    let currentY = ZONE_PAD_Y + ZONE_HEADER_HEIGHT;
+    rows.forEach((row) => {
+      let maxHeightInRow = 0;
+      row.forEach((u) => {
+        if (u.height > maxHeightInRow) maxHeightInRow = u.height;
+      });
+
+      let currentX = ZONE_PAD_X;
+      row.forEach((u) => {
+        u.relX = currentX;
+        u.relY = currentY;
+        currentX += u.width + NODE_GAP_X;
+      });
+
+      currentY += maxHeightInRow + NODE_GAP_Y;
+    });
+
+    let maxRowW = 0;
+    rows.forEach((row) => {
+      const rowW = row.reduce((sum, u) => sum + u.width, 0) + (row.length - 1) * NODE_GAP_X;
+      if (rowW > maxRowW) maxRowW = rowW;
+    });
+
+    const zoneW = Math.max(360, maxRowW + ZONE_PAD_X * 2);
+    const zoneH = Math.max(240, currentY + ZONE_PAD_Y - NODE_GAP_Y);
+
+    plannedZones.push({
+      zoneId: zId,
+      zoneName,
+      width: zoneW,
+      height: zoneH,
+      units
+    });
+  });
+
+  // 5. RADIAL STAR PLACEMENT OF ZONES AROUND CORE NETWORK
+  const numZones = plannedZones.length;
+  const angleStep = (2 * Math.PI) / numZones;
+  const placedZoneRects: Rect[] = [coreBoundingRect];
+
+  plannedZones.forEach((pz, idx) => {
+    const angle = -Math.PI / 2 + idx * angleStep;
+
+    const halfZW = pz.width / 2;
+    const halfZH = pz.height / 2;
+    const minZoneRadius = Math.max(
+      600,
+      Math.sqrt(halfZW * halfZW + halfZH * halfZH) + Math.max(coreBoundingRect.width, coreBoundingRect.height) / 2 + 100
     );
-    starBranches.push({
-      head: sw,
-      children: attachedEndpoints
-    });
-  });
 
-  // Branch B: Physical Servers with child VMs / Containers
-  servers.forEach((srv) => {
-    const srvChildren = [...vms, ...dockers].filter((c) => c.parentHostId === srv.id);
-    starBranches.push({
-      head: srv,
-      children: srvChildren
-    });
-  });
+    let radius = minZoneRadius;
+    let zoneX = Math.round(CENTER_X + radius * Math.cos(angle) - halfZW);
+    let zoneY = Math.round(CENTER_Y + radius * Math.sin(angle) - halfZH);
 
-  // Branch C: Direct core endpoints
-  const directCoreEndpoints = [...workstations, ...iotAndOthers].filter(
-    (e) => !starBranches.some((b) => b.children.some((c) => c.id === e.id))
-  );
-
-  if (directCoreEndpoints.length > 0) {
-    const chunkSize = Math.ceil(directCoreEndpoints.length / 2);
-    for (let i = 0; i < directCoreEndpoints.length; i += chunkSize) {
-      const slice = directCoreEndpoints.slice(i, i + chunkSize);
-      const head = slice[0];
-      starBranches.push({
-        head,
-        children: slice.slice(1)
-      });
-    }
-  }
-
-  const placedIds = new Set<string>();
-  coreNodes.forEach((cn) => placedIds.add(cn.id));
-  starBranches.forEach((b) => {
-    placedIds.add(b.head.id);
-    b.children.forEach((c) => placedIds.add(c.id));
-  });
-
-  const unassigned = list.filter((d) => !placedIds.has(d.id));
-  if (unassigned.length > 0) {
-    unassigned.forEach((u) => {
-      starBranches.push({
-        head: u,
-        children: []
-      });
-    });
-  }
-
-  // 3. RADIAL DISTRIBUTION
-  const branchCount = Math.max(1, starBranches.length);
-  const angleStep = (2 * Math.PI) / branchCount;
-
-  starBranches.forEach((branch, bIdx) => {
-    const baseAngle = -Math.PI / 2 + bIdx * angleStep;
-
-    const headX = centerX + R_RING1 * Math.cos(baseAngle) - halfNodeW;
-    const headY = centerY + R_RING1 * Math.sin(baseAngle) - halfNodeH;
-    branch.head.position = {
-      x: Math.round(headX),
-      y: Math.round(headY)
+    let candidateRect: Rect = {
+      x: zoneX,
+      y: zoneY,
+      width: pz.width,
+      height: pz.height
     };
 
-    const childCount = branch.children.length;
-    if (childCount === 0) return;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 50;
+    while (attempts < MAX_ATTEMPTS) {
+      const overlaps = placedZoneRects.some((other) => rectsOverlap(candidateRect, other, 70));
+      if (!overlaps) break;
 
-    const maxSpan = Math.min(angleStep * 0.85, 0.35 * childCount);
-    const halfSpan = maxSpan / 2;
-
-    branch.children.forEach((child, cIdx) => {
-      let childAngle = baseAngle;
-      if (childCount > 1) {
-        childAngle = baseAngle - halfSpan + (cIdx / (childCount - 1)) * maxSpan;
-      }
-
-      const useRing3 = cIdx >= 4;
-      const radius = useRing3 ? R_RING3 : R_RING2;
-
-      const cX = centerX + radius * Math.cos(childAngle) - halfNodeW;
-      const cY = centerY + radius * Math.sin(childAngle) - halfNodeH;
-
-      child.position = {
-        x: Math.round(cX),
-        y: Math.round(cY)
+      radius += 80;
+      zoneX = Math.round(CENTER_X + radius * Math.cos(angle) - halfZW);
+      zoneY = Math.round(CENTER_Y + radius * Math.sin(angle) - halfZH);
+      candidateRect = {
+        x: zoneX,
+        y: zoneY,
+        width: pz.width,
+        height: pz.height
       };
+      attempts++;
+    }
+
+    placedZoneRects.push(candidateRect);
+
+    // 6. POSITION INDIVIDUAL DEVICES
+    pz.units.forEach((u) => {
+      const unitAbsX = zoneX + (u.relX || 0);
+      const unitAbsY = zoneY + (u.relY || 0);
+
+      if (u.type === 'standalone') {
+        u.host.position = {
+          x: unitAbsX,
+          y: unitAbsY
+        };
+      } else if (u.type === 'host_cluster') {
+        const hostX = Math.round(unitAbsX + (u.width - NODE_WIDTH) / 2);
+        const hostY = Math.round(unitAbsY + HOST_PAD_Y + HOST_HEADER_HEIGHT);
+
+        u.host.position = {
+          x: hostX,
+          y: hostY
+        };
+
+        const guestsPerRow = Math.min(3, Math.max(1, u.guests.length));
+        const guestRowStartY = hostY + NODE_HEIGHT + NODE_GAP_Y;
+
+        u.guests.forEach((guest, gIdx) => {
+          const gCol = gIdx % guestsPerRow;
+          const gRow = Math.floor(gIdx / guestsPerRow);
+
+          const itemsInThisRow = Math.min(guestsPerRow, u.guests.length - gRow * guestsPerRow);
+          const rowW = itemsInThisRow * NODE_WIDTH + (itemsInThisRow - 1) * NODE_GAP_X;
+          const rowStartX = Math.round(unitAbsX + (u.width - rowW) / 2);
+
+          guest.position = {
+            x: rowStartX + gCol * (NODE_WIDTH + NODE_GAP_X),
+            y: guestRowStartY + gRow * (NODE_HEIGHT + NODE_GAP_Y)
+          };
+        });
+      }
     });
   });
 
-  return list;
+  return devices;
 }
 
 function saveDevicesToFile() {

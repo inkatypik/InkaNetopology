@@ -577,12 +577,12 @@ export default function App() {
       if (data.devices) {
         setDevices(data.devices);
       }
-      showToast('Topologie en étoile réorganisée avec le cœur de réseau au centre.');
+      showToast('Schéma réorganisé en étoile par zones sans aucun chevauchement.');
     } catch {
       // Fallback client-side auto-layout
-      const arranged = autoLayoutTopology(devices);
+      const arranged = autoLayoutTopology(devices, zones);
       setDevices(arranged);
-      showToast('Topologie en étoile réorganisée.');
+      showToast('Schéma réorganisé en étoile par zones sans chevauchement.');
     }
   };
 
@@ -1360,7 +1360,6 @@ export default function App() {
         allCollapsed={allCollapsed}
         onToggleAllCollapse={handleToggleAllCollapse}
         hasCollapsibleGroups={hasCollapsibleGroups}
-        onStarTopologyLayout={handleStarTopologyLayout}
         onImportTopology={handleImportTopology}
         onExportPng={handleExportPng}
         onExportPdf={handleExportPdf}
