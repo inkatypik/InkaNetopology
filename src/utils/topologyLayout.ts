@@ -90,18 +90,20 @@ export function findBestDockerHost(devList: Device[]): Device | undefined {
 }
 
 // Visual dimensions for card calculations and non-overlapping margins
-export const NODE_WIDTH = 260;
-export const NODE_HEIGHT = 160;
-export const NODE_GAP_X = 50;
-export const NODE_GAP_Y = 40;
+// Real card rendered size: w-64 (256px) + borders/ring/padding = ~268px
+// Real card rendered height: Header + Name + IP + Status + Vendor + Link + Role + Tags = 190-230px
+export const NODE_WIDTH = 280;
+export const NODE_HEIGHT = 220;
+export const NODE_GAP_X = 60;
+export const NODE_GAP_Y = 50;
 
-export const HOST_HEADER_HEIGHT = 44;
-export const HOST_PAD_X = 28;
-export const HOST_PAD_Y = 24;
+export const HOST_HEADER_HEIGHT = 48;
+export const HOST_PAD_X = 36;
+export const HOST_PAD_Y = 32;
 
 export const ZONE_HEADER_HEIGHT = 52;
-export const ZONE_PAD_X = 36;
-export const ZONE_PAD_Y = 32;
+export const ZONE_PAD_X = 40;
+export const ZONE_PAD_Y = 36;
 
 export interface Rect {
   x: number;
@@ -110,7 +112,7 @@ export interface Rect {
   height: number;
 }
 
-export function rectsOverlap(r1: Rect, r2: Rect, minSpacing = 40): boolean {
+export function rectsOverlap(r1: Rect, r2: Rect, minSpacing = 50): boolean {
   return !(
     r1.x + r1.width + minSpacing <= r2.x ||
     r2.x + r2.width + minSpacing <= r1.x ||
@@ -119,22 +121,41 @@ export function rectsOverlap(r1: Rect, r2: Rect, minSpacing = 40): boolean {
   );
 }
 
+// Unit representing either a standalone equipment, or a host with all its guests (VMs and containers)
+interface GuestTreeItem {
+  guest: Device;
+  subContainers: Device[];
+  width: number;
+  height: number;
+  relX?: number;
+  relY?: number;
+}
+
+interface LayoutUnit {
+  type: 'standalone' | 'host_cluster';
+  host: Device;
+  guestItems: GuestTreeItem[];
+  width: number;
+  height: number;
+  relX?: number;
+  relY?: number;
+}
+
 /**
  * Clean Non-Overlapping Star Topology Layout.
  * 
  * Rules:
- * 1. Network Core (Passerelle / Routeur cœur) is placed at the exact center (0,0 offset).
- * 2. Every device belongs to its assigned Geographic Zone (or default unassigned zone).
- * 3. Within each Zone, devices are organized cleanly:
- *    - Standalone equipment arranged in a grid without overlap.
- *    - Host servers (physical or VM) enclose their attached guests (Docker containers / VMs) in a dedicated block.
- *    - The host sits at the top of the block, and its guests are placed neatly side-by-side or in rows below it.
- * 4. Zones are placed radially in a Star pattern around the Network Core with guaranteed zero-overlap.
+ * 1. Network Core (Passerelle / Routeur cœur) is placed at the exact 2D center (CENTER_X, CENTER_Y).
+ * 2. Surrounding entities radiate symmetrically in all 4 quadrants (top, bottom, left, right).
+ * 3. Every host cleanly encloses all its VMs and containers with guaranteed zero overlap.
+ *    - If a VM has Docker containers, those containers are placed neatly beneath that VM.
+ *    - All rows and columns have generous clearance so cards never touch or superimpose.
+ * 4. Folding/unfolding preserves pre-allocated spatial reservations so expanding never collides.
  */
 export function autoLayoutTopology(devList: Device[], zoneList: GeographicZone[] = []): Device[] {
   if (!devList || devList.length === 0) return [];
 
-  // Clone devices to avoid mutating original state
+  // Clone devices to avoid mutating original state directly
   const devices: Device[] = devList.map((d) => ({ ...d }));
   const devMap = new Map<string, Device>();
   devices.forEach((d) => devMap.set(d.id, d));
@@ -190,12 +211,22 @@ export function autoLayoutTopology(devList: Device[], zoneList: GeographicZone[]
     }
   });
 
-  // Ensure guests inherit their host's zone if missing or mismatch
+  // Ensure guests inherit their host's zone recursively so the whole virtualization family stays together
+  const resolveZoneId = (dev: Device, visited = new Set<string>()): string | undefined => {
+    if (visited.has(dev.id)) return dev.zoneId;
+    visited.add(dev.id);
+    if (dev.parentHostId && devMap.has(dev.parentHostId)) {
+      const parent = devMap.get(dev.parentHostId)!;
+      return resolveZoneId(parent, visited) || dev.zoneId;
+    }
+    return dev.zoneId;
+  };
+
   devices.forEach((d) => {
     if (d.parentHostId && devMap.has(d.parentHostId)) {
-      const parent = devMap.get(d.parentHostId)!;
-      if (parent.zoneId && !d.zoneId) {
-        d.zoneId = parent.zoneId;
+      const parentZone = resolveZoneId(d);
+      if (parentZone) {
+        d.zoneId = parentZone;
       }
     }
   });
@@ -204,12 +235,12 @@ export function autoLayoutTopology(devList: Device[], zoneList: GeographicZone[]
   const coreDevices = devices.filter((d) => coreNodeIds.has(d.id));
   const satelliteDevices = devices.filter((d) => !coreNodeIds.has(d.id));
 
-  // Center coordinate of the entire diagram canvas
-  const CENTER_X = 1400;
-  const CENTER_Y = 1200;
+  // Geometric center of the topology canvas
+  const CENTER_X = 1800;
+  const CENTER_Y = 1400;
 
-  // Place Core Nodes at the center
-  const CORE_SPACING = NODE_WIDTH + 60;
+  // Place Core Nodes side-by-side at the exact center
+  const CORE_SPACING = NODE_WIDTH + 80;
   const totalCoreW = (coreDevices.length - 1) * CORE_SPACING;
   const startCoreX = CENTER_X - totalCoreW / 2;
   coreDevices.forEach((cn, idx) => {
@@ -220,22 +251,190 @@ export function autoLayoutTopology(devList: Device[], zoneList: GeographicZone[]
   });
 
   const coreBoundingRect: Rect = {
-    x: Math.round(startCoreX - NODE_WIDTH / 2 - 40),
-    y: Math.round(CENTER_Y - NODE_HEIGHT / 2 - 40),
-    width: Math.max(NODE_WIDTH + 80, totalCoreW + NODE_WIDTH + 80),
-    height: NODE_HEIGHT + 80
+    x: Math.round(startCoreX - NODE_WIDTH / 2 - 50),
+    y: Math.round(CENTER_Y - NODE_HEIGHT / 2 - 50),
+    width: Math.max(NODE_WIDTH + 100, totalCoreW + NODE_WIDTH + 100),
+    height: NODE_HEIGHT + 100
   };
 
   if (satelliteDevices.length === 0) {
     return devices;
   }
 
-  // 4. Group Satellite Devices by Geographic Zone
-  // Build a complete map of zones
+  // 4. Construct Layout Units for all Satellite Devices
+  // A layout unit is either:
+  // - A standalone equipment
+  // - A Host Cluster (Physical server or standalone host with all its VMs and Docker containers structured cleanly)
+  function buildLayoutUnits(devs: Device[]): LayoutUnit[] {
+    const units: LayoutUnit[] = [];
+    const handledDevIds = new Set<string>();
+
+    // Top-level hosts (devices that have children attached and are not guests of another host in devs)
+    const hostCandidates = devs.filter((d) => {
+      // Must not be a guest of another device in this devs set
+      if (d.parentHostId && devs.some((p) => p.id === d.parentHostId)) return false;
+      // Has children in devs
+      return devs.some((c) => c.parentHostId === d.id);
+    });
+
+    hostCandidates.forEach((host) => {
+      handledDevIds.add(host.id);
+
+      // Direct children of this host
+      const directChildren = devs.filter((c) => c.parentHostId === host.id);
+      const guestItems: GuestTreeItem[] = [];
+
+      directChildren.forEach((guest) => {
+        handledDevIds.add(guest.id);
+
+        // Does this guest (e.g. a VM) itself have Docker containers?
+        const subContainers = devs.filter((c) => c.parentHostId === guest.id);
+        subContainers.forEach((sc) => handledDevIds.add(sc.id));
+
+        if (subContainers.length === 0) {
+          // Plain standalone guest card
+          guestItems.push({
+            guest,
+            subContainers: [],
+            width: NODE_WIDTH,
+            height: NODE_HEIGHT
+          });
+        } else {
+          // Guest with sub-containers (e.g. VM hosting Docker microservices)
+          const scPerRow = Math.min(3, Math.max(1, subContainers.length));
+          const scRows = Math.ceil(subContainers.length / scPerRow);
+          const scW = Math.max(
+            NODE_WIDTH + 30,
+            scPerRow * NODE_WIDTH + (scPerRow - 1) * NODE_GAP_X + 40
+          );
+          const scH =
+            NODE_HEIGHT + // Guest (VM) card
+            55 + // Vertical space
+            scRows * NODE_HEIGHT +
+            (scRows - 1) * NODE_GAP_Y +
+            30;
+
+          guestItems.push({
+            guest,
+            subContainers,
+            width: scW,
+            height: scH
+          });
+        }
+      });
+
+      // Layout guest items in neat rows beneath the host
+      // Max items per row: 3 if small, 2 if wide
+      const maxCol = guestItems.some((gi) => gi.width > 400) ? 2 : Math.min(3, Math.max(1, guestItems.length));
+      const guestRows: GuestTreeItem[][] = [];
+      for (let i = 0; i < guestItems.length; i += maxCol) {
+        guestRows.push(guestItems.slice(i, i + maxCol));
+      }
+
+      // Compute row dimensions
+      let maxGuestsRowW = NODE_WIDTH;
+      let totalGuestsH = 0;
+
+      guestRows.forEach((row) => {
+        const rowW = row.reduce((sum, item) => sum + item.width, 0) + (row.length - 1) * NODE_GAP_X;
+        if (rowW > maxGuestsRowW) maxGuestsRowW = rowW;
+        const rowMaxH = Math.max(...row.map((item) => item.height));
+        totalGuestsH += rowMaxH + NODE_GAP_Y;
+      });
+
+      const clusterW = Math.max(NODE_WIDTH + HOST_PAD_X * 2, maxGuestsRowW + HOST_PAD_X * 2);
+      const clusterH =
+        HOST_HEADER_HEIGHT +
+        HOST_PAD_Y +
+        NODE_HEIGHT + // Host card
+        55 + // Gap below host
+        totalGuestsH +
+        HOST_PAD_Y;
+
+      // Position guest items relatively inside the cluster
+      let currentItemY = HOST_HEADER_HEIGHT + HOST_PAD_Y + NODE_HEIGHT + 55;
+      guestRows.forEach((row) => {
+        const rowW = row.reduce((sum, item) => sum + item.width, 0) + (row.length - 1) * NODE_GAP_X;
+        const rowMaxH = Math.max(...row.map((item) => item.height));
+        let currentItemX = Math.round((clusterW - rowW) / 2);
+
+        row.forEach((item) => {
+          item.relX = currentItemX;
+          item.relY = currentItemY;
+
+          // If this item has sub-containers, lay them out relatively inside the item block
+          if (item.subContainers.length > 0) {
+            const scPerRow = Math.min(3, Math.max(1, item.subContainers.length));
+            const scRows = Math.ceil(item.subContainers.length / scPerRow);
+            const scStartRowY = currentItemY + NODE_HEIGHT + 45;
+
+            item.subContainers.forEach((sc, scIdx) => {
+              const scCol = scIdx % scPerRow;
+              const scRow = Math.floor(scIdx / scPerRow);
+              const itemsInThisScRow = Math.min(scPerRow, item.subContainers.length - scRow * scPerRow);
+              const thisRowW = itemsInThisScRow * NODE_WIDTH + (itemsInThisScRow - 1) * NODE_GAP_X;
+              const scRowStartX = Math.round(currentItemX + (item.width - thisRowW) / 2);
+
+              sc.position = {
+                x: scRowStartX + scCol * (NODE_WIDTH + NODE_GAP_X),
+                y: scStartRowY + scRow * (NODE_HEIGHT + NODE_GAP_Y)
+              };
+            });
+          }
+
+          currentItemX += item.width + NODE_GAP_X;
+        });
+
+        currentItemY += rowMaxH + NODE_GAP_Y;
+      });
+
+      units.push({
+        type: 'host_cluster',
+        host,
+        guestItems,
+        width: clusterW,
+        height: clusterH
+      });
+    });
+
+    // Standalone equipment (and any remaining unhandled devices)
+    devs.forEach((d) => {
+      if (!handledDevIds.has(d.id)) {
+        units.push({
+          type: 'standalone',
+          host: d,
+          guestItems: [],
+          width: NODE_WIDTH,
+          height: NODE_HEIGHT
+        });
+      }
+    });
+
+    return units;
+  }
+
+  // 5. RADIAL QUADRANT ANGLE GENERATOR (Top, Bottom, Left, Right & Diagonals)
+  // Generates angles alternating evenly across all 4 quadrants
+  function getQuadrantAngles(count: number): number[] {
+    if (count <= 0) return [];
+    if (count === 1) return [0]; // Right (East)
+    if (count === 2) return [0, Math.PI]; // Right (East) & Left (West)
+    if (count === 3) return [-Math.PI / 2, Math.PI / 6, (5 * Math.PI) / 6]; // Top, Bottom-Right, Bottom-Left
+    if (count === 4) return [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2]; // East, South, West, North
+
+    // For N entities, space evenly around 360 degrees starting from 0 (East)
+    const angles: number[] = [];
+    const step = (2 * Math.PI) / count;
+    for (let i = 0; i < count; i++) {
+      angles.push(i * step);
+    }
+    return angles;
+  }
+
+  // 6. ZONE PACKING OR MULTI-DIRECTIONAL STAR DISTRIBUTION
   const zoneMap = new Map<string, GeographicZone>();
   zoneList.forEach((z) => zoneMap.set(z.id, z));
 
-  // Group devices by zone
   const devicesByZone = new Map<string, Device[]>();
   satelliteDevices.forEach((d) => {
     const zId = d.zoneId || 'unassigned';
@@ -244,244 +443,183 @@ export function autoLayoutTopology(devList: Device[], zoneList: GeographicZone[]
     devicesByZone.set(zId, list);
   });
 
-  // Zone structure descriptor
+  const distinctZoneKeys = Array.from(devicesByZone.keys());
+
+  // Helper to commit absolute positions to devices within a unit
+  function applyUnitPositions(unit: LayoutUnit, absX: number, absY: number) {
+    if (unit.type === 'standalone') {
+      unit.host.position = { x: absX, y: absY };
+    } else {
+      // Host card at top-center of cluster
+      const hostX = Math.round(absX + (unit.width - NODE_WIDTH) / 2);
+      const hostY = Math.round(absY + HOST_PAD_Y + HOST_HEADER_HEIGHT);
+      unit.host.position = { x: hostX, y: hostY };
+
+      // Each guest item
+      unit.guestItems.forEach((item) => {
+        const itemAbsX = absX + (item.relX ?? 0);
+        const itemAbsY = absY + (item.relY ?? 0);
+
+        // Guest card (e.g. VM) at top-center of item block
+        item.guest.position = {
+          x: Math.round(itemAbsX + (item.width - NODE_WIDTH) / 2),
+          y: itemAbsY
+        };
+
+        // Sub-containers already had relative calculations, apply unit offset
+        if (item.subContainers.length > 0) {
+          const scPerRow = Math.min(3, Math.max(1, item.subContainers.length));
+          const scStartRowY = itemAbsY + NODE_HEIGHT + 45;
+
+          item.subContainers.forEach((sc, scIdx) => {
+            const scCol = scIdx % scPerRow;
+            const scRow = Math.floor(scIdx / scPerRow);
+            const itemsInThisScRow = Math.min(scPerRow, item.subContainers.length - scRow * scPerRow);
+            const thisRowW = itemsInThisScRow * NODE_WIDTH + (itemsInThisScRow - 1) * NODE_GAP_X;
+            const scRowStartX = Math.round(itemAbsX + (item.width - thisRowW) / 2);
+
+            sc.position = {
+              x: scRowStartX + scCol * (NODE_WIDTH + NODE_GAP_X),
+              y: scStartRowY + scRow * (NODE_HEIGHT + NODE_GAP_Y)
+            };
+          });
+        }
+      });
+    }
+  }
+
+  // CASE A: Only 1 Zone or unassigned devices (All devices belong to 1 group)
+  // Distribute individual units in a balanced 4-quadrant star directly around the center core!
+  if (distinctZoneKeys.length <= 1) {
+    const singleZoneId = distinctZoneKeys[0] || 'unassigned';
+    const devsInZone = devicesByZone.get(singleZoneId) || satelliteDevices;
+    const units = buildLayoutUnits(devsInZone);
+
+    const placedRects: Rect[] = [coreBoundingRect];
+    const angles = getQuadrantAngles(units.length);
+
+    units.forEach((u, idx) => {
+      const angle = angles[idx];
+      const halfW = u.width / 2;
+      const halfH = u.height / 2;
+
+      let radius = Math.max(
+        620,
+        Math.sqrt(halfW * halfW + halfH * halfH) + Math.max(coreBoundingRect.width, coreBoundingRect.height) / 2 + 80
+      );
+
+      let unitX = Math.round(CENTER_X + radius * Math.cos(angle) - halfW);
+      let unitY = Math.round(CENTER_Y + radius * Math.sin(angle) - halfH);
+
+      let candidateRect: Rect = { x: unitX, y: unitY, width: u.width, height: u.height };
+      let attempts = 0;
+      while (attempts < 60) {
+        const overlaps = placedRects.some((other) => rectsOverlap(candidateRect, other, 60));
+        if (!overlaps) break;
+        radius += 70;
+        unitX = Math.round(CENTER_X + radius * Math.cos(angle) - halfW);
+        unitY = Math.round(CENTER_Y + radius * Math.sin(angle) - halfH);
+        candidateRect = { x: unitX, y: unitY, width: u.width, height: u.height };
+        attempts++;
+      }
+
+      placedRects.push(candidateRect);
+      applyUnitPositions(u, unitX, unitY);
+    });
+
+    return devices;
+  }
+
+  // CASE B: Multiple Geographic Zones (>= 2 Zones)
+  // Pre-calculate zone internal grid layouts, then place zones radially in all directions around the core
   interface PlannedZone {
     zoneId: string;
-    zoneName: string;
     width: number;
     height: number;
-    // Elements to layout inside
-    units: ZoneUnit[];
+    units: LayoutUnit[];
   }
 
-  interface ZoneUnit {
-    type: 'standalone' | 'host_cluster';
-    host: Device;
-    guests: Device[];
-    width: number;
-    height: number;
-    relX?: number;
-    relY?: number;
-  }
-
-  // Pre-calculate the internal layout for each zone
   const plannedZones: PlannedZone[] = [];
 
   devicesByZone.forEach((devs, zId) => {
-    const zoneObj = zoneMap.get(zId);
-    const zoneName = zoneObj?.name || (zId === 'unassigned' ? 'Équipements non assignés' : 'Zone');
-
-    // Inside this zone, find hosts that have children attached
-    const hostsWithChildren = new Map<string, { host: Device; guests: Device[] }>();
-    const standaloneDevs: Device[] = [];
-
-    // Find all hosts that belong to this zone
-    devs.forEach((d) => {
-      // Is d a guest whose parent is also in this zone or in satellite list?
-      if (d.parentHostId) {
-        // Child will be handled by its parent
-        return;
-      }
-
-      // Check if d has children
-      const children = devs.filter((child) => child.parentHostId === d.id);
-      if (children.length > 0) {
-        hostsWithChildren.set(d.id, { host: d, guests: children });
-      } else {
-        standaloneDevs.push(d);
-      }
-    });
-
-    // Also check for orphaned guests whose host is not in this zone
-    devs.forEach((d) => {
-      if (d.parentHostId && !devs.some((h) => h.id === d.parentHostId)) {
-        standaloneDevs.push(d);
-      }
-    });
-
-    const units: ZoneUnit[] = [];
-
-    // Construct host_cluster units
-    hostsWithChildren.forEach(({ host, guests }) => {
-      // Layout host card at top, guests side-by-side or in 2 columns below
-      const guestsPerRow = Math.min(3, Math.max(1, guests.length));
-      const guestRows = Math.ceil(guests.length / guestsPerRow);
-
-      const clusterW = Math.max(
-        NODE_WIDTH + HOST_PAD_X * 2,
-        guestsPerRow * NODE_WIDTH + (guestsPerRow - 1) * NODE_GAP_X + HOST_PAD_X * 2
-      );
-      const clusterH =
-        HOST_HEADER_HEIGHT +
-        NODE_HEIGHT + // Host card
-        NODE_GAP_Y +
-        guestRows * NODE_HEIGHT +
-        (guestRows - 1) * NODE_GAP_Y +
-        HOST_PAD_Y * 2;
-
-      units.push({
-        type: 'host_cluster',
-        host,
-        guests,
-        width: clusterW,
-        height: clusterH
-      });
-    });
-
-    // Construct standalone units
-    standaloneDevs.forEach((dev) => {
-      units.push({
-        type: 'standalone',
-        host: dev,
-        guests: [],
-        width: NODE_WIDTH,
-        height: NODE_HEIGHT
-      });
-    });
+    const units = buildLayoutUnits(devs);
 
     // Arrange units in a clean grid within the zone
-    // Aim for aspect ratio close to 4:3 or 16:9
     const totalUnits = units.length;
     let cols = 1;
     if (totalUnits >= 6) cols = 3;
     else if (totalUnits >= 2) cols = 2;
 
-    // Pack units into columns
-    const colWidths = new Array(cols).fill(0);
-    const colHeights = new Array(cols).fill(0);
-
-    // Group units into row chunks
-    const rows: ZoneUnit[][] = [];
+    const rows: LayoutUnit[][] = [];
     for (let i = 0; i < units.length; i += cols) {
       rows.push(units.slice(i, i + cols));
     }
 
     let currentY = ZONE_PAD_Y + ZONE_HEADER_HEIGHT;
     rows.forEach((row) => {
-      let maxHeightInRow = 0;
-      row.forEach((u) => {
-        if (u.height > maxHeightInRow) maxHeightInRow = u.height;
-      });
-
+      const maxHeightInRow = Math.max(...row.map((u) => u.height));
       let currentX = ZONE_PAD_X;
       row.forEach((u) => {
         u.relX = currentX;
         u.relY = currentY;
         currentX += u.width + NODE_GAP_X;
       });
-
       currentY += maxHeightInRow + NODE_GAP_Y;
     });
 
-    // Compute zone width & height
     let maxRowW = 0;
     rows.forEach((row) => {
       const rowW = row.reduce((sum, u) => sum + u.width, 0) + (row.length - 1) * NODE_GAP_X;
       if (rowW > maxRowW) maxRowW = rowW;
     });
 
-    const zoneW = Math.max(360, maxRowW + ZONE_PAD_X * 2);
-    const zoneH = Math.max(240, currentY + ZONE_PAD_Y - NODE_GAP_Y);
+    const zoneW = Math.max(380, maxRowW + ZONE_PAD_X * 2);
+    const zoneH = Math.max(260, currentY + ZONE_PAD_Y - NODE_GAP_Y);
 
     plannedZones.push({
       zoneId: zId,
-      zoneName,
       width: zoneW,
       height: zoneH,
       units
     });
   });
 
-  // 5. RADIAL STAR PLACEMENT OF ZONES AROUND CORE NETWORK
-  // Each zone is placed at an angle around the center with safe distance ensuring ZERO overlap.
-  const numZones = plannedZones.length;
-  const angleStep = (2 * Math.PI) / numZones;
-
-  // Track placed zone rectangles to guarantee zero overlap
+  // Distribute planned zones across all 4 quadrants symmetrically around the center core
+  const zoneAngles = getQuadrantAngles(plannedZones.length);
   const placedZoneRects: Rect[] = [coreBoundingRect];
 
   plannedZones.forEach((pz, idx) => {
-    const angle = -Math.PI / 2 + idx * angleStep; // Start from top
-
-    // Minimum radius based on core size and zone dimensions
+    const angle = zoneAngles[idx];
     const halfZW = pz.width / 2;
     const halfZH = pz.height / 2;
-    const minZoneRadius = Math.max(
-      600,
+
+    let radius = Math.max(
+      650,
       Math.sqrt(halfZW * halfZW + halfZH * halfZH) + Math.max(coreBoundingRect.width, coreBoundingRect.height) / 2 + 100
     );
 
-    let radius = minZoneRadius;
     let zoneX = Math.round(CENTER_X + radius * Math.cos(angle) - halfZW);
     let zoneY = Math.round(CENTER_Y + radius * Math.sin(angle) - halfZH);
 
-    let candidateRect: Rect = {
-      x: zoneX,
-      y: zoneY,
-      width: pz.width,
-      height: pz.height
-    };
-
-    // Push outward radially until it doesn't overlap with any previously placed zone or the core
+    let candidateRect: Rect = { x: zoneX, y: zoneY, width: pz.width, height: pz.height };
     let attempts = 0;
-    const MAX_ATTEMPTS = 50;
-    while (attempts < MAX_ATTEMPTS) {
-      const overlaps = placedZoneRects.some((other) => rectsOverlap(candidateRect, other, 70));
+    while (attempts < 60) {
+      const overlaps = placedZoneRects.some((other) => rectsOverlap(candidateRect, other, 80));
       if (!overlaps) break;
-
       radius += 80;
       zoneX = Math.round(CENTER_X + radius * Math.cos(angle) - halfZW);
       zoneY = Math.round(CENTER_Y + radius * Math.sin(angle) - halfZH);
-      candidateRect = {
-        x: zoneX,
-        y: zoneY,
-        width: pz.width,
-        height: pz.height
-      };
+      candidateRect = { x: zoneX, y: zoneY, width: pz.width, height: pz.height };
       attempts++;
     }
 
     placedZoneRects.push(candidateRect);
 
-    // 6. POSITION INDIVIDUAL DEVICES ACCORDING TO ZONE OFFSET
+    // Apply positions to all units inside this zone
     pz.units.forEach((u) => {
       const unitAbsX = zoneX + (u.relX || 0);
       const unitAbsY = zoneY + (u.relY || 0);
-
-      if (u.type === 'standalone') {
-        u.host.position = {
-          x: unitAbsX,
-          y: unitAbsY
-        };
-      } else if (u.type === 'host_cluster') {
-        // Place the host at the top center of its cluster block
-        const hostX = Math.round(unitAbsX + (u.width - NODE_WIDTH) / 2);
-        const hostY = Math.round(unitAbsY + HOST_PAD_Y + HOST_HEADER_HEIGHT);
-
-        u.host.position = {
-          x: hostX,
-          y: hostY
-        };
-
-        // Place its child guests (VMs and Docker containers) cleanly below
-        const guestsPerRow = Math.min(3, Math.max(1, u.guests.length));
-        const guestRowStartY = hostY + NODE_HEIGHT + NODE_GAP_Y;
-
-        u.guests.forEach((guest, gIdx) => {
-          const gCol = gIdx % guestsPerRow;
-          const gRow = Math.floor(gIdx / guestsPerRow);
-
-          // Calculate centered starting X for this row
-          const itemsInThisRow = Math.min(guestsPerRow, u.guests.length - gRow * guestsPerRow);
-          const rowW = itemsInThisRow * NODE_WIDTH + (itemsInThisRow - 1) * NODE_GAP_X;
-          const rowStartX = Math.round(unitAbsX + (u.width - rowW) / 2);
-
-          guest.position = {
-            x: rowStartX + gCol * (NODE_WIDTH + NODE_GAP_X),
-            y: guestRowStartY + gRow * (NODE_HEIGHT + NODE_GAP_Y)
-          };
-        });
-      }
+      applyUnitPositions(u, unitAbsX, unitAbsY);
     });
   });
 
@@ -489,7 +627,7 @@ export function autoLayoutTopology(devList: Device[], zoneList: GeographicZone[]
 }
 
 /**
- * Alternative auto-layout grouped by Geographic Zones.
+ * Backward-compatible alias.
  */
 export function autoLayoutByZones(devList: Device[], zones: GeographicZone[]): Device[] {
   return autoLayoutTopology(devList, zones);

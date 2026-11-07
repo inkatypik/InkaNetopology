@@ -55,6 +55,7 @@ interface TopologyCanvasProps {
   collapsedZoneIds?: Set<string>;
   onToggleCollapseZone?: (zoneId: string) => void;
   canvasViewportId?: string;
+  layoutTrigger?: number;
 }
 
 export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
@@ -81,7 +82,8 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   onToggleCollapseHost: propOnToggleCollapseHost,
   collapsedZoneIds: propCollapsedZoneIds,
   onToggleCollapseZone: propOnToggleCollapseZone,
-  canvasViewportId = 'topology-canvas-viewport'
+  canvasViewportId = 'topology-canvas-viewport',
+  layoutTrigger
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.72);
@@ -241,20 +243,20 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
 
     // Find the center point of the core network node (or average center of all devices)
     const targetCore = coreNode;
-    let targetX = 1400;
-    let targetY = 1200;
+    let targetX = 1800;
+    let targetY = 1400;
 
     if (targetCore?.position) {
-      targetX = targetCore.position.x + 130;
-      targetY = targetCore.position.y + 80;
+      targetX = targetCore.position.x + 140;
+      targetY = targetCore.position.y + 110;
     } else if (devices.length > 0) {
       let sumX = 0;
       let sumY = 0;
       let count = 0;
       devices.forEach((d) => {
         if (d.position) {
-          sumX += d.position.x + 130;
-          sumY += d.position.y + 80;
+          sumX += d.position.x + 140;
+          sumY += d.position.y + 110;
           count++;
         }
       });
@@ -281,6 +283,16 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
       return () => clearTimeout(timer);
     }
   }, [devices.length, centerViewOnCore]);
+
+  // Recenter automatically when user reorganizes schema (layoutTrigger changes)
+  useEffect(() => {
+    if (layoutTrigger && layoutTrigger > 0) {
+      const timer = setTimeout(() => {
+        centerViewOnCore();
+      }, 60);
+      return () => clearTimeout(timer);
+    }
+  }, [layoutTrigger, centerViewOnCore]);
 
   // Pan handlers
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -351,12 +363,25 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
     setDraggedZoneId(zoneId);
   };
 
-  // Host Cluster Drag Start (Drags host and all child VMs/containers together!)
+  // Host Cluster Drag Start (Drags host and all child VMs/containers together without leaving any nested children behind!)
   const handleClusterHeaderMouseDown = (e: React.MouseEvent, hostId: string) => {
     e.stopPropagation();
     const host = devices.find((d) => d.id === hostId);
-    const children = devices.filter((d) => d.parentHostId === hostId);
-    const clusterDevices = host ? [host, ...children] : children;
+
+    const getAllDescendants = (hId: string, visited = new Set<string>()): Device[] => {
+      if (visited.has(hId)) return [];
+      visited.add(hId);
+      const direct = devices.filter((d) => d.parentHostId === hId);
+      const res: Device[] = [];
+      for (const c of direct) {
+        res.push(c);
+        res.push(...getAllDescendants(c.id, visited));
+      }
+      return res;
+    };
+
+    const allDescendants = getAllDescendants(hostId);
+    const clusterDevices = host ? [host, ...allDescendants] : allDescendants;
     if (clusterDevices.length === 0) return;
 
     multiDragStartRef.current = { clientX: e.clientX, clientY: e.clientY };
@@ -408,18 +433,28 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
     return Array.from(childrenCountMap.keys()).filter((id) => (childrenCountMap.get(id) || 0) > 0);
   }, [childrenCountMap]);
 
-  // Filter visible devices based on collapsed host groups AND collapsed geographic zones
+  // Filter visible devices based on collapsed host groups (recursively for nested VMs/containers) AND collapsed geographic zones
   const visibleDevices = useMemo(() => {
     return devices.filter((d) => {
-      if (d.parentHostId && collapsedHostIds.has(d.parentHostId)) {
-        return false;
+      // Check if any ancestor host is collapsed
+      let current = d;
+      let depth = 0;
+      while (current.parentHostId && depth < 20) {
+        if (collapsedHostIds.has(current.parentHostId)) {
+          return false;
+        }
+        const parent = deviceMap.get(current.parentHostId);
+        if (!parent) break;
+        current = parent;
+        depth++;
       }
+
       if (d.zoneId && collapsedZoneIds.has(d.zoneId)) {
         return false;
       }
       return true;
     });
-  }, [devices, collapsedHostIds, collapsedZoneIds]);
+  }, [devices, deviceMap, collapsedHostIds, collapsedZoneIds]);
 
   const visibleDeviceIds = useMemo(() => new Set(visibleDevices.map((d) => d.id)), [visibleDevices]);
 
@@ -489,21 +524,35 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
       height: number;
     }> = [];
 
-    const childrenByHost = new Map<string, Device[]>();
-    devices.forEach((d) => {
-      if (d.parentHostId) {
-        const list = childrenByHost.get(d.parentHostId) || [];
-        list.push(d);
-        childrenByHost.set(d.parentHostId, list);
+    const getDescendants = (hId: string, visited = new Set<string>()): Device[] => {
+      if (visited.has(hId)) return [];
+      visited.add(hId);
+      const direct = devices.filter((d) => d.parentHostId === hId);
+      const res: Device[] = [];
+      for (const c of direct) {
+        res.push(c);
+        res.push(...getDescendants(c.id, visited));
       }
+      return res;
+    };
+
+    // Find hosts with children
+    const hostCandidates = devices.filter((d) => {
+      // Must have children
+      return devices.some((c) => c.parentHostId === d.id);
     });
 
-    childrenByHost.forEach((children, hostId) => {
-      const host = deviceMap.get(hostId);
-      if (!host || children.length === 0) return;
+    hostCandidates.forEach((host) => {
+      // Only draw cluster box for top-level hosts (not a child of another host in the diagram)
+      if (host.parentHostId && deviceMap.has(host.parentHostId)) {
+        return;
+      }
 
-      const isCollapsed = collapsedHostIds.has(hostId);
-      const allNodes = isCollapsed ? [host] : [host, ...children];
+      const allDescendants = getDescendants(host.id);
+      if (allDescendants.length === 0) return;
+
+      const isCollapsed = collapsedHostIds.has(host.id);
+      const allNodes = isCollapsed ? [host] : [host, ...allDescendants];
 
       let minX = Infinity;
       let maxX = -Infinity;
@@ -514,20 +563,20 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
         const x = node.position?.x ?? 100;
         const y = node.position?.y ?? 100;
         if (x < minX) minX = x;
-        if (x + 270 > maxX) maxX = x + 270;
+        if (x + 280 > maxX) maxX = x + 280;
         if (y < minY) minY = y;
-        if (y + 190 > maxY) maxY = y + 190;
+        if (y + 220 > maxY) maxY = y + 220;
       });
 
       const padX = 36;
       const padY = 32;
-      const isDocker = children.some((c) => c.deviceType === 'docker');
+      const isDocker = allDescendants.some((c) => c.deviceType === 'docker');
 
       clusters.push({
-        hostId,
+        hostId: host.id,
         hostName: host.name,
         isDocker,
-        childCount: children.length,
+        childCount: allDescendants.length,
         isCollapsed,
         x: Math.round(minX - padX),
         y: Math.round(minY - padY - 36),
@@ -577,9 +626,9 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
         const x = node.position?.x ?? 100;
         const y = node.position?.y ?? 100;
         if (x < minX) minX = x;
-        if (x + 270 > maxX) maxX = x + 270;
+        if (x + 280 > maxX) maxX = x + 280;
         if (y < minY) minY = y;
-        if (y + 190 > maxY) maxY = y + 190;
+        if (y + 220 > maxY) maxY = y + 220;
       });
 
       const padX = 40;

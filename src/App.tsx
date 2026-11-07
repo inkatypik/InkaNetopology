@@ -46,6 +46,7 @@ export default function App() {
   const [showZoneEnclosures, setShowZoneEnclosures] = useState<boolean>(true);
   const [collapsedHostIds, setCollapsedHostIds] = useState<Set<string>>(new Set());
   const [collapsedZoneIds, setCollapsedZoneIds] = useState<Set<string>>(new Set());
+  const [layoutTrigger, setLayoutTrigger] = useState<number>(0);
 
   // Modals & Selection
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
@@ -569,7 +570,7 @@ export default function App() {
     }
   };
 
-  // Reorganise & auto-layout topology into Star schema with core network at center
+  // Reorganise & auto-layout topology into Star schema with core network at 2D center
   const handleStarTopologyLayout = async () => {
     try {
       const res = await fetch('/api/topology/autolayout', { method: 'POST' });
@@ -577,12 +578,14 @@ export default function App() {
       if (data.devices) {
         setDevices(data.devices);
       }
-      showToast('Schéma réorganisé en étoile par zones sans aucun chevauchement.');
+      setLayoutTrigger((prev) => prev + 1);
+      showToast('Schéma réorganisé en étoile avec cœur au centre et zéro chevauchement.');
     } catch {
       // Fallback client-side auto-layout
       const arranged = autoLayoutTopology(devices, zones);
       setDevices(arranged);
-      showToast('Schéma réorganisé en étoile par zones sans chevauchement.');
+      setLayoutTrigger((prev) => prev + 1);
+      showToast('Schéma réorganisé en étoile avec cœur au centre et zéro chevauchement.');
     }
   };
 
@@ -1394,6 +1397,7 @@ export default function App() {
             collapsedZoneIds={collapsedZoneIds}
             onToggleCollapseZone={handleToggleCollapseZone}
             canvasViewportId="topology-canvas-viewport"
+            layoutTrigger={layoutTrigger}
           />
         )}
 
