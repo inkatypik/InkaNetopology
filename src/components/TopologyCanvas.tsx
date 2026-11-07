@@ -41,6 +41,7 @@ interface TopologyCanvasProps {
   onPingDevice: (device: Device) => void;
   onSaveDevice?: (device: Device) => void;
   onUpdateDevicePosition: (id: string, pos: { x: number; y: number }) => void;
+  onBatchUpdatePositions?: (updates: Array<{ id: string; pos: { x: number; y: number } }>) => void;
   onAutoLayout?: () => void;
   onTriggerScan?: () => void;
   onResetTopology?: () => void;
@@ -69,6 +70,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   onPingDevice,
   onSaveDevice,
   onUpdateDevicePosition,
+  onBatchUpdatePositions,
   onAutoLayout,
   onTriggerScan,
   onResetTopology,
@@ -235,8 +237,15 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
 
   const coreNode = coreNodes[0];
 
+  const isDraggingActive = Boolean(
+    draggedNodeId || draggedZoneId || draggedClusterHostId || isPanning || isDraggingLegend
+  );
+  const isDraggingActiveRef = useRef(false);
+  isDraggingActiveRef.current = isDraggingActive;
+
   // Center viewport on the network core node or all devices
   const centerViewOnCore = useCallback((targetScale?: number) => {
+    if (isDraggingActiveRef.current) return;
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
     const currentScale = targetScale ?? scale;
@@ -271,28 +280,36 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
     setOffset({ x: nextOffsetX, y: nextOffsetY });
   }, [coreNode, devices, scale]);
 
-  // Center automatically on first mount or when devices first arrive
+  const centerViewOnCoreRef = useRef(centerViewOnCore);
+  centerViewOnCoreRef.current = centerViewOnCore;
+
+  // Center automatically ONLY on initial load when devices first arrive
   const hasInitiallyCenteredRef = useRef(false);
   useEffect(() => {
     if (!hasInitiallyCenteredRef.current && devices.length > 0) {
       hasInitiallyCenteredRef.current = true;
-      // Slight delay to allow container layout
       const timer = setTimeout(() => {
-        centerViewOnCore();
+        if (!isDraggingActiveRef.current) {
+          centerViewOnCoreRef.current();
+        }
       }, 50);
       return () => clearTimeout(timer);
     }
-  }, [devices.length, centerViewOnCore]);
+  }, [devices.length]);
 
-  // Recenter automatically when user reorganizes schema (layoutTrigger changes)
+  // Recenter automatically ONLY when user explicitly triggers "Générer le schéma" (layoutTrigger increments)
+  const lastHandledLayoutTriggerRef = useRef(0);
   useEffect(() => {
-    if (layoutTrigger && layoutTrigger > 0) {
+    if (layoutTrigger && layoutTrigger > 0 && layoutTrigger !== lastHandledLayoutTriggerRef.current) {
+      lastHandledLayoutTriggerRef.current = layoutTrigger;
       const timer = setTimeout(() => {
-        centerViewOnCore();
+        if (!isDraggingActiveRef.current) {
+          centerViewOnCoreRef.current();
+        }
       }, 60);
       return () => clearTimeout(timer);
     }
-  }, [layoutTrigger, centerViewOnCore]);
+  }, [layoutTrigger]);
 
   // Pan handlers
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -315,12 +332,23 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
     if (draggedZoneId || draggedClusterHostId) {
       const deltaX = Math.round((e.clientX - multiDragStartRef.current.clientX) / scale);
       const deltaY = Math.round((e.clientY - multiDragStartRef.current.clientY) / scale);
-      multiDragInitialPositionsRef.current.forEach((initialPos, id) => {
-        onUpdateDevicePosition(id, {
-          x: initialPos.x + deltaX,
-          y: initialPos.y + deltaY
+      if (onBatchUpdatePositions) {
+        const updates: Array<{ id: string; pos: { x: number; y: number } }> = [];
+        multiDragInitialPositionsRef.current.forEach((initialPos, id) => {
+          updates.push({
+            id,
+            pos: { x: initialPos.x + deltaX, y: initialPos.y + deltaY }
+          });
         });
-      });
+        onBatchUpdatePositions(updates);
+      } else {
+        multiDragInitialPositionsRef.current.forEach((initialPos, id) => {
+          onUpdateDevicePosition(id, {
+            x: initialPos.x + deltaX,
+            y: initialPos.y + deltaY
+          });
+        });
+      }
       return;
     }
 

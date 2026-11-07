@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import type { Device, DeviceType, NetworkLog, ScanStatus, GeographicZone, DeviceTypeDefinition, DeviceSubTypeDefinition, AppSettings } from './types/network';
 import { Navbar, type ActiveTab } from './components/Navbar';
 import { Toolbar } from './components/Toolbar';
@@ -384,21 +384,72 @@ export default function App() {
     }
   };
 
+  // Debounced API position saves to prevent HTTP flooding during drag
+  const positionSaveTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
+
   // Update device position on topology canvas
-  const handleUpdatePosition = async (id: string, pos: { x: number; y: number }) => {
+  const handleUpdatePosition = useCallback((id: string, pos: { x: number; y: number }) => {
     setDevices((prev) =>
       prev.map((d) => (d.id === id ? { ...d, position: pos } : d))
     );
-    try {
-      await fetch(`/api/devices/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ position: pos })
-      });
-    } catch (err) {
-      console.error(err);
+
+    const existingTimer = positionSaveTimeoutsRef.current.get(id);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
     }
-  };
+
+    const timer = setTimeout(async () => {
+      positionSaveTimeoutsRef.current.delete(id);
+      try {
+        await fetch(`/api/devices/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ position: pos })
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    }, 250);
+
+    positionSaveTimeoutsRef.current.set(id, timer);
+  }, []);
+
+  // Batch update positions for zone or cluster multi-drag
+  const handleBatchUpdatePositions = useCallback((updates: Array<{ id: string; pos: { x: number; y: number } }>) => {
+    if (updates.length === 0) return;
+    const posMap = new Map<string, { x: number; y: number }>();
+    updates.forEach((u) => posMap.set(u.id, u.pos));
+
+    setDevices((prev) =>
+      prev.map((d) => {
+        const newPos = posMap.get(d.id);
+        if (newPos) {
+          return { ...d, position: newPos };
+        }
+        return d;
+      })
+    );
+
+    updates.forEach(({ id, pos }) => {
+      const existing = positionSaveTimeoutsRef.current.get(id);
+      if (existing) clearTimeout(existing);
+
+      const timer = setTimeout(async () => {
+        positionSaveTimeoutsRef.current.delete(id);
+        try {
+          await fetch(`/api/devices/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ position: pos })
+          });
+        } catch (err) {
+          console.error(err);
+        }
+      }, 250);
+
+      positionSaveTimeoutsRef.current.set(id, timer);
+    });
+  }, []);
 
   // Update parent host relationship (virtualization linking)
   const handleUpdateParent = async (deviceId: string, newParentId: string | undefined) => {
@@ -1383,6 +1434,7 @@ export default function App() {
             onPingDevice={handlePingDevice}
             onSaveDevice={handleSaveDevice}
             onUpdateDevicePosition={handleUpdatePosition}
+            onBatchUpdatePositions={handleBatchUpdatePositions}
             onAutoLayout={handleStarTopologyLayout}
             onTriggerScan={handleTriggerScan}
             onResetTopology={handleResetTopology}
