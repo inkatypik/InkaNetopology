@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import type { Device, GeographicZone } from '../types/network';
 import { getDeviceDefaultIcon, getDeviceTypeColor } from '../utils/hardwareIcons';
-import { Activity, Edit3, Trash2, Link2, ExternalLink, MapPin, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Activity, Edit3, Trash2, Link2, ExternalLink, MapPin, ArrowUpDown, ArrowUp, ArrowDown, GitMerge } from 'lucide-react';
 
 interface DeviceInventoryTableProps {
   devices: Device[];
@@ -10,6 +10,7 @@ interface DeviceInventoryTableProps {
   onEditDevice: (device: Device) => void;
   onPingDevice: (device: Device) => void;
   onDeleteDevice: (id: string) => void;
+  onMergeContainers?: () => void;
 }
 
 type SortColumn = 'name' | 'ip' | 'vendor' | 'parent' | 'ports' | 'location' | 'status';
@@ -32,7 +33,8 @@ export const DeviceInventoryTable: React.FC<DeviceInventoryTableProps> = ({
   onSelectDevice,
   onEditDevice,
   onPingDevice,
-  onDeleteDevice
+  onDeleteDevice,
+  onMergeContainers
 }) => {
   const [sortColumn, setSortColumn] = useState<SortColumn>('ip');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
@@ -151,9 +153,42 @@ export const DeviceInventoryTable: React.FC<DeviceInventoryTableProps> = ({
     );
   };
 
+  const mergedCount = useMemo(
+    () => devices.filter((d) => d.metadata?.['Statut fusion']).length,
+    [devices]
+  );
+
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
       <div className="bg-slate-900/80 border border-slate-800 rounded-xl overflow-hidden shadow-xl backdrop-blur-xs">
+        {/* Inventory Summary & Container Fusion Action Bar */}
+        <div className="px-4 py-3 border-b border-slate-800 bg-slate-950/50 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <span className="font-semibold text-slate-200">Inventaire Réseau</span>
+            <span className="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300 font-mono text-[11px]">
+              {devices.length} équipement{devices.length > 1 ? 's' : ''}
+            </span>
+            {mergedCount > 0 && (
+              <span className="px-2 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-700/60 text-cyan-300 font-medium text-[11px] flex items-center gap-1.5 shadow-xs">
+                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                <span>{mergedCount} conteneur{mergedCount > 1 ? 's' : ''} consolidé{mergedCount > 1 ? 's' : ''} (Hôte + Conteneur)</span>
+              </span>
+            )}
+          </div>
+
+          {onMergeContainers && (
+            <button
+              type="button"
+              onClick={onMergeContainers}
+              title="Fusionner les entités conteneurs ayant l'IP de l'hôte avec celles ayant l'IP conteneur"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-cyan-300 bg-cyan-950/70 hover:bg-cyan-900/80 border border-cyan-700/60 rounded-lg transition-all active:scale-95 cursor-pointer shadow-xs ml-auto"
+            >
+              <GitMerge className="w-3.5 h-3.5 text-cyan-400" />
+              <span>Fusionner conteneurs (Hôte + Conteneur)</span>
+            </button>
+          )}
+        </div>
+
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -299,16 +334,47 @@ export const DeviceInventoryTable: React.FC<DeviceInventoryTableProps> = ({
                               <span className="group-hover/name:underline underline-offset-2">{device.name}</span>
                               <Edit3 className="w-3 h-3 text-slate-500 opacity-60 group-hover/name:opacity-100 group-hover/name:text-cyan-400 transition-all shrink-0" />
                             </button>
-                            <div className="text-[10px] text-slate-400 capitalize">
-                              {device.deviceType} · {device.subType.replace('_', ' ')}
+                            <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                              <span className="text-[10px] text-slate-400 capitalize">
+                                {device.deviceType} · {device.subType.replace('_', ' ')}
+                              </span>
+                              {device.metadata?.['Statut fusion'] && (
+                                <span
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[9px] font-semibold bg-cyan-950/80 border border-cyan-600/60 text-cyan-300 shadow-xs"
+                                  title={device.metadata['Détail fusion'] || 'Conteneur consolidé (Hôte + Conteneur)'}
+                                >
+                                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                                  <span>Fusionné</span>
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
                       </td>
 
-                      {/* IP & MAC */}
+                      {/* IP & MAC (Displays both Container IP and Host IP clearly when consolidated) */}
                       <td className="py-3 px-4 font-mono tabular-nums">
-                        <div className="text-slate-200">{device.ip}</div>
+                        <div className="text-slate-200 flex items-center gap-1.5">
+                          <span>{device.ip}</span>
+                          {device.metadata?.['IP Conteneur'] && (
+                            <span className="text-[9px] px-1 py-0.2 rounded bg-indigo-950/80 text-indigo-300 border border-indigo-700/50">
+                              Conteneur
+                            </span>
+                          )}
+                        </div>
+
+                        {device.metadata?.['IP Hôte'] && device.metadata['IP Hôte'] !== device.ip && (
+                          <div
+                            className="text-[10px] text-cyan-300 font-medium flex items-center gap-1 mt-0.5"
+                            title="Adresse IP de la machine hôte"
+                          >
+                            <span className="text-slate-500 font-sans">Hôte:</span>
+                            <span className="text-cyan-300 underline decoration-cyan-500/30 underline-offset-2">
+                              {device.metadata['IP Hôte']}
+                            </span>
+                          </div>
+                        )}
+
                         <div className="text-[11px] text-slate-500">{device.mac}</div>
                         {device.vlan && (
                           <div className="text-[10px] text-slate-400">VLAN {device.vlan}</div>
@@ -364,6 +430,14 @@ export const DeviceInventoryTable: React.FC<DeviceInventoryTableProps> = ({
                           </div>
                         ) : (
                           <span className="text-slate-600">—</span>
+                        )}
+                        {device.metadata?.['Ports exposés'] && (
+                          <div
+                            className="text-[9px] text-cyan-400/80 mt-0.5 truncate max-w-[140px]"
+                            title={`Ports consolidés: ${device.metadata['Ports exposés']}`}
+                          >
+                            Exp: {device.metadata['Ports exposés']}
+                          </div>
                         )}
                       </td>
 

@@ -640,6 +640,27 @@ export default function App() {
     }
   };
 
+  // Merge duplicate Docker containers (consolidate host IP entity + container IP entity)
+  const handleMergeContainers = async () => {
+    try {
+      const res = await fetch('/api/containers/merge', { method: 'POST' });
+      const data = await res.json();
+      if (data.devices) {
+        setDevices(data.devices);
+      }
+      if (data.mergedCount > 0) {
+        showToast(
+          `${data.mergedCount} conteneur(s) fusionné(s) avec succès (adresses IP hôtes et conteneurs consolidées sans doublon).`
+        );
+      } else {
+        showToast('Aucun conteneur en double détecté. Tous les conteneurs sont déjà consolidés.');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Erreur lors de la fusion des conteneurs.');
+    }
+  };
+
   // Collapse / Fold helpers
   const hostIdsWithChildren = useMemo(() => {
     const parentIds = new Set<string>();
@@ -1402,6 +1423,7 @@ export default function App() {
           setIsAddModalOpen(true);
         }}
         onAutoLayout={handleStarTopologyLayout}
+        onMergeContainers={handleMergeContainers}
         onExport={handleExportTopology}
         onResetTopology={handleResetTopology}
         onClearInventory={() => setIsClearModalOpen(true)}
@@ -1475,6 +1497,7 @@ export default function App() {
             onEditDevice={(dev) => setEditingDevice(dev)}
             onPingDevice={handlePingDevice}
             onDeleteDevice={handleDeleteDevice}
+            onMergeContainers={handleMergeContainers}
           />
         )}
 

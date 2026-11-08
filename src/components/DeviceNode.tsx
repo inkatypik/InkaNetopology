@@ -106,6 +106,25 @@ export const DeviceNode: React.FC<DeviceNodeProps> = ({
               <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400 shadow-xs shadow-emerald-400/50' : 'bg-rose-500'}`} />
             </div>
 
+            {device.metadata?.['IP Hôte'] && device.metadata['IP Hôte'] !== device.ip && (
+              <div className="flex items-center gap-1 text-[10px] font-mono text-cyan-300 mt-0.5" title="IP de la machine hôte">
+                <span className="text-slate-500 font-sans text-[9px]">Hôte:</span>
+                <span>{device.metadata['IP Hôte']}</span>
+              </div>
+            )}
+
+            {device.metadata?.['Statut fusion'] && (
+              <div className="mt-1">
+                <span
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-cyan-950/80 border border-cyan-600/50 text-cyan-300 truncate max-w-[150px]"
+                  title={device.metadata['Détail fusion'] || 'Conteneur fusionné (IP hôte + IP conteneur consolidées)'}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0" />
+                  <span className="truncate">Fusionné</span>
+                </span>
+              </div>
+            )}
+
             {device.role && (
               <div className="mt-1">
                 <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium bg-indigo-950/80 border border-indigo-500/40 text-indigo-300 truncate max-w-[150px]">

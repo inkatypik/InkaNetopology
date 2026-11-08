@@ -89,6 +89,277 @@ export function findBestDockerHost(devList: Device[]): Device | undefined {
   return findBestHostForContainer({}, devList);
 }
 
+// ---------------- DOCKER CONTAINER DEDUPLICATION & FUSION ----------------
+export function normalizeServiceName(rawName: string): string {
+  if (!rawName) return '';
+  let str = rawName.toLowerCase().trim();
+  str = str.replace(/^(docker|conteneur|container|serveur|server|vm|service)\s*[-_: ]\s*/i, '');
+  str = str.replace(/^(docker|conteneur|container)\s+/i, '');
+  str = str.replace(/\([^)]*\)/g, '');
+  str = str.replace(/\[[^\]]*\]/g, '');
+  str = str.replace(/(:latest|:stable|:alpine|-ce\b|-community|_1|_app|_srv)\b/gi, '');
+  str = str.replace(/[^a-z0-9]/g, '');
+  return str;
+}
+
+export function isContainerInternalIp(ip?: string): boolean {
+  if (!ip) return false;
+  const trimmed = ip.trim();
+  if (trimmed === '127.0.0.1') return true;
+  if (/^172\.(1[7-9]|2[0-9]|3[0-1])\./.test(trimmed)) return true;
+  if (/^10\.(0|42|244)\./.test(trimmed)) return true;
+  return false;
+}
+
+export function isContainerCandidate(d: Device, devList: Device[]): boolean {
+  if (d.isCore) return false;
+  if (['router', 'switch', 'access_point'].includes(d.subType)) return false;
+
+  if (d.deviceType === 'physical' && (d.subType === 'server' || d.subType === 'nas')) {
+    const hasChildren = devList.some((c) => c.parentHostId === d.id);
+    if (hasChildren) return false;
+  }
+
+  if (d.deviceType === 'docker') return true;
+  if (['container', 'reverse_proxy', 'database', 'monitoring'].includes(d.subType)) return true;
+  if (d.id.startsWith('docker-')) return true;
+  if (d.tags?.some((t) => /docker|conteneur/i.test(t))) return true;
+  if (d.metadata?.['ContainerID'] || d.metadata?.['Image']) return true;
+  if (/^docker\s*[-_:]/i.test(d.name) || /^conteneur\s*[-_:]/i.test(d.name)) return true;
+
+  const hasAppPort = (d.openPorts || []).some((p) =>
+    [2375, 2376, 9000, 9443, 8080, 8123, 3000, 5000, 5432, 3306, 6379, 8086, 9090, 3100, 8000, 8008, 9001].includes(p)
+  );
+  if (hasAppPort && (d.metadata?.['Titre Web'] || d.subType === 'container' || d.subType === 'other')) {
+    return true;
+  }
+
+  return false;
+}
+
+export function shouldMergeContainers(
+  a: Device,
+  b: Device,
+  devList: Device[]
+): { match: boolean; reason: string } {
+  if (a.id === b.id) return { match: false, reason: '' };
+
+  const candA = isContainerCandidate(a, devList);
+  const candB = isContainerCandidate(b, devList);
+  if (!candA && !candB) return { match: false, reason: '' };
+
+  if (a.metadata?.['ContainerID'] && b.metadata?.['ContainerID']) {
+    if (a.metadata['ContainerID'] === b.metadata['ContainerID']) {
+      return { match: true, reason: `Identifiant conteneur identique (${a.metadata['ContainerID']})` };
+    }
+  }
+
+  const normA = normalizeServiceName(a.name);
+  const normB = normalizeServiceName(b.name);
+  const portsA = a.openPorts || [];
+  const portsB = b.openPorts || [];
+  const sharedPorts = portsA.filter((p) => portsB.includes(p));
+
+  const isIntA = isContainerInternalIp(a.ip);
+  const isIntB = isContainerInternalIp(b.ip);
+  const oneHostOneContainerIp = (isIntA && !isIntB) || (isIntB && !isIntA);
+
+  const namesMatch =
+    normA.length >= 3 &&
+    normB.length >= 3 &&
+    (normA === normB || normA.includes(normB) || normB.includes(normA));
+
+  const titleA = normalizeServiceName(a.metadata?.['Titre Web'] || '');
+  const titleB = normalizeServiceName(b.metadata?.['Titre Web'] || '');
+  const titleMatches =
+    (titleA.length >= 3 && (titleA === normB || normB.includes(titleA))) ||
+    (titleB.length >= 3 && (titleB === normA || normA.includes(titleB)));
+
+  const effectiveNameMatch = namesMatch || titleMatches;
+  const nonGenericSharedPorts = sharedPorts.filter((p) => ![80, 443].includes(p));
+  const hasAppPortMatch = nonGenericSharedPorts.length > 0;
+  const hasAnyPortMatch = sharedPorts.length > 0;
+
+  if (effectiveNameMatch && hasAnyPortMatch) {
+    return {
+      match: true,
+      reason: `Nom exposé correspondant ("${a.name}" & "${b.name}") et port partagé (${sharedPorts.join(', ')})`
+    };
+  }
+
+  if (effectiveNameMatch && (oneHostOneContainerIp || a.ip === b.ip)) {
+    return {
+      match: true,
+      reason: `Nom exposé correspondant ("${a.name}" & "${b.name}") entre l'hôte (${isIntA ? b.ip : a.ip}) et le conteneur (${isIntA ? a.ip : b.ip})`
+    };
+  }
+
+  if (effectiveNameMatch && candA && candB) {
+    return {
+      match: true,
+      reason: `Doublon de conteneur avec nom de service identique ("${a.name}" & "${b.name}")`
+    };
+  }
+
+  if (hasAppPortMatch && (oneHostOneContainerIp || a.parentHostId === b.id || b.parentHostId === a.id)) {
+    return {
+      match: true,
+      reason: `Port applicatif exposé identique (${nonGenericSharedPorts.join(', ')}) entre l'hôte et le conteneur`
+    };
+  }
+
+  return { match: false, reason: '' };
+}
+
+export function mergeContainerEntities(
+  target: Device,
+  source: Device,
+  reason: string,
+  devList: Device[]
+): Device {
+  const isTargetInt = isContainerInternalIp(target.ip);
+  const isSourceInt = isContainerInternalIp(source.ip);
+
+  let hostIp = '';
+  let containerIp = '';
+
+  if (isTargetInt && !isSourceInt) {
+    containerIp = target.ip;
+    hostIp = source.ip;
+  } else if (!isTargetInt && isSourceInt) {
+    containerIp = source.ip;
+    hostIp = target.ip;
+  } else {
+    containerIp = target.ip;
+    hostIp = source.ip || target.ip;
+  }
+
+  const mergedPorts = Array.from(
+    new Set([...(target.openPorts || []), ...(source.openPorts || [])])
+  ).sort((x, y) => x - y);
+
+  let cleanName = target.name;
+  if (!cleanName.startsWith('Docker - ') && source.name.startsWith('Docker - ')) {
+    cleanName = source.name;
+  } else if (!cleanName.startsWith('Docker - ')) {
+    cleanName = `Docker - ${cleanName.replace(/^(Docker|Conteneur)\s*[-:]?\s*/i, '').trim()}`;
+  }
+
+  const hostDevice = devList.find(
+    (d) =>
+      d.ip === hostIp &&
+      d.id !== target.id &&
+      d.id !== source.id &&
+      !['router', 'switch', 'access_point'].includes(d.subType)
+  );
+
+  const parentHostId = hostDevice?.id || target.parentHostId || source.parentHostId;
+  const zoneId = hostDevice?.zoneId || target.zoneId || source.zoneId;
+
+  const combinedMetadata: Record<string, string> = {
+    ...(source.metadata || {}),
+    ...(target.metadata || {}),
+    'IP Hôte': hostIp || target.ip,
+    'IP Conteneur': containerIp || target.ip,
+    'Ports exposés': mergedPorts.length > 0 ? mergedPorts.join(', ') : 'Aucun port exposé',
+    'Statut fusion': 'Fusionné (Hôte + Conteneur)',
+    'Détail fusion': reason,
+    'Dernière fusion': new Date().toLocaleString('fr-FR')
+  };
+
+  if (hostDevice) {
+    combinedMetadata['Hôte d\'exécution'] = hostDevice.name;
+  }
+
+  const mainPort = mergedPorts.length > 0 ? mergedPorts[0] : undefined;
+  const portOrInterface = mainPort
+    ? `Hôte: ${hostIp}:${mainPort} → Conteneur: ${containerIp}:${mainPort}`
+    : `Réseau Docker pont (Hôte: ${hostIp})`;
+
+  const mergedTags = Array.from(
+    new Set([
+      ...(target.tags || []),
+      ...(source.tags || []),
+      'Docker',
+      'Conteneur',
+      'Fusionné'
+    ])
+  );
+
+  const isOnline = target.status === 'online' || source.status === 'online';
+
+  return {
+    ...target,
+    name: cleanName,
+    ip: containerIp && containerIp !== '127.0.0.1' ? containerIp : (hostIp || target.ip),
+    mac: target.mac && !target.mac.startsWith('02:00:00') ? target.mac : source.mac,
+    deviceType: 'docker',
+    subType: (target.subType !== 'other' && target.subType !== 'server') ? target.subType : (source.subType !== 'other' ? source.subType : 'container'),
+    status: isOnline ? 'online' : 'offline',
+    zoneId,
+    parentHostId,
+    portOrInterface,
+    openPorts: mergedPorts,
+    location: hostDevice ? `Conteneur sur ${hostDevice.name}` : (target.location || `Conteneur sur hôte ${hostIp}`),
+    tags: mergedTags,
+    metadata: combinedMetadata,
+    lastSeen: new Date().toISOString(),
+    latencyMs: Math.min(target.latencyMs ?? 999, source.latencyMs ?? 999)
+  };
+}
+
+export function mergeDuplicateContainers(devList: Device[]): {
+  devices: Device[];
+  mergedCount: number;
+  mergedDetails: string[];
+} {
+  let list = devList.map((d) => ({ ...d }));
+  let mergedCount = 0;
+  const mergedDetails: string[] = [];
+  let foundMerge = true;
+
+  while (foundMerge) {
+    foundMerge = false;
+
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const a = list[i];
+        const b = list[j];
+
+        const check = shouldMergeContainers(a, b, list);
+        if (check.match) {
+          const preferBAsTarget =
+            (!a.id.startsWith('docker-') && b.id.startsWith('docker-')) ||
+            (!a.metadata?.['ContainerID'] && !!b.metadata?.['ContainerID']) ||
+            (isContainerInternalIp(b.ip) && !isContainerInternalIp(a.ip) && !a.id.startsWith('docker-'));
+
+          const target = preferBAsTarget ? b : a;
+          const source = preferBAsTarget ? a : b;
+
+          const mergedDevice = mergeContainerEntities(target, source, check.reason, list);
+
+          const targetIndex = list.findIndex((d) => d.id === target.id);
+          const sourceIndex = list.findIndex((d) => d.id === source.id);
+
+          if (targetIndex !== -1 && sourceIndex !== -1) {
+            list[targetIndex] = mergedDevice;
+            list.splice(sourceIndex, 1);
+            mergedCount++;
+            mergedDetails.push(
+              `Fusionné "${mergedDevice.name}" (Hôte: ${mergedDevice.metadata?.['IP Hôte']}, Conteneur: ${mergedDevice.ip}) - ${check.reason}`
+            );
+            foundMerge = true;
+            break;
+          }
+        }
+      }
+      if (foundMerge) break;
+    }
+  }
+
+  return { devices: list, mergedCount, mergedDetails };
+}
+
 // Visual dimensions for card calculations and non-overlapping margins
 // Real card rendered size: w-64 (256px) + borders/ring/padding = ~268px
 // Real card rendered height: Header + Name + IP + Status + Vendor + Link + Role + Tags = 190-230px
@@ -155,8 +426,9 @@ interface LayoutUnit {
 export function autoLayoutTopology(devList: Device[], zoneList: GeographicZone[] = []): Device[] {
   if (!devList || devList.length === 0) return [];
 
-  // Clone devices to avoid mutating original state directly
-  const devices: Device[] = devList.map((d) => ({ ...d }));
+  // Deduplicate and consolidate containers before calculating layout
+  const mergeRes = mergeDuplicateContainers(devList);
+  const devices: Device[] = mergeRes.devices.map((d) => ({ ...d }));
   const devMap = new Map<string, Device>();
   devices.forEach((d) => devMap.set(d.id, d));
 
