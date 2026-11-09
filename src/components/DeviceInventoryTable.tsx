@@ -10,6 +10,7 @@ interface DeviceInventoryTableProps {
   onEditDevice: (device: Device) => void;
   onPingDevice: (device: Device) => void;
   onDeleteDevice: (id: string) => void;
+  onMergeDuplicates?: () => void;
   onMergeContainers?: () => void;
 }
 
@@ -34,6 +35,7 @@ export const DeviceInventoryTable: React.FC<DeviceInventoryTableProps> = ({
   onEditDevice,
   onPingDevice,
   onDeleteDevice,
+  onMergeDuplicates,
   onMergeContainers
 }) => {
   const [sortColumn, setSortColumn] = useState<SortColumn>('ip');
@@ -171,20 +173,20 @@ export const DeviceInventoryTable: React.FC<DeviceInventoryTableProps> = ({
             {mergedCount > 0 && (
               <span className="px-2 py-0.5 rounded-full bg-cyan-950/80 border border-cyan-700/60 text-cyan-300 font-medium text-[11px] flex items-center gap-1.5 shadow-xs">
                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
-                <span>{mergedCount} conteneur{mergedCount > 1 ? 's' : ''} consolidé{mergedCount > 1 ? 's' : ''} (Hôte + Conteneur)</span>
+                <span>{mergedCount} équipement{mergedCount > 1 ? 's' : ''} fusionné{mergedCount > 1 ? 's' : ''} sans doublon</span>
               </span>
             )}
           </div>
 
-          {onMergeContainers && (
+          {(onMergeDuplicates || onMergeContainers) && (
             <button
               type="button"
-              onClick={onMergeContainers}
-              title="Fusionner les entités conteneurs ayant l'IP de l'hôte avec celles ayant l'IP conteneur"
+              onClick={onMergeDuplicates || onMergeContainers}
+              title="Détecter et fusionner intelligemment les doublons sur tous les équipements (adresses MAC, IP, noms d'hôtes, ports, services et conteneurs)"
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-cyan-300 bg-cyan-950/70 hover:bg-cyan-900/80 border border-cyan-700/60 rounded-lg transition-all active:scale-95 cursor-pointer shadow-xs ml-auto"
             >
               <GitMerge className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Fusionner conteneurs (Hôte + Conteneur)</span>
+              <span>Fusionner les doublons</span>
             </button>
           )}
         </div>
@@ -372,6 +374,16 @@ export const DeviceInventoryTable: React.FC<DeviceInventoryTableProps> = ({
                             <span className="text-cyan-300 underline decoration-cyan-500/30 underline-offset-2">
                               {device.metadata['IP Hôte']}
                             </span>
+                          </div>
+                        )}
+
+                        {device.metadata?.['Adresses IP associées'] && (
+                          <div
+                            className="text-[10px] text-amber-300/90 font-medium flex items-center gap-1 mt-0.5 truncate max-w-[150px]"
+                            title={`Historique / adresses IP associées : ${device.metadata['Adresses IP associées']}`}
+                          >
+                            <span className="text-slate-500 font-sans">IPs:</span>
+                            <span className="truncate">{device.metadata['Adresses IP associées']}</span>
                           </div>
                         )}
 

@@ -640,26 +640,28 @@ export default function App() {
     }
   };
 
-  // Merge duplicate Docker containers (consolidate host IP entity + container IP entity)
-  const handleMergeContainers = async () => {
+  // Universal deduplication and fusion (IPs, MACs, Hostnames, Ports, Services, Docker containers)
+  const handleMergeDuplicates = async () => {
     try {
-      const res = await fetch('/api/containers/merge', { method: 'POST' });
+      const res = await fetch('/api/inventory/merge-duplicates', { method: 'POST' });
       const data = await res.json();
       if (data.devices) {
         setDevices(data.devices);
       }
       if (data.mergedCount > 0) {
         showToast(
-          `${data.mergedCount} conteneur(s) fusionné(s) avec succès (adresses IP hôtes et conteneurs consolidées sans doublon).`
+          `${data.mergedCount} équipement(s) fusionné(s) avec succès (adresses IP, MAC, services, ports et conteneurs consolidés sans doublon).`
         );
       } else {
-        showToast('Aucun conteneur en double détecté. Tous les conteneurs sont déjà consolidés.');
+        showToast('Aucun doublon détecté. Tous les équipements et conteneurs sont déjà consolidés.');
       }
     } catch (err) {
       console.error(err);
-      showToast('Erreur lors de la fusion des conteneurs.');
+      showToast('Erreur lors de la fusion des doublons.');
     }
   };
+
+  const handleMergeContainers = handleMergeDuplicates;
 
   // Collapse / Fold helpers
   const hostIdsWithChildren = useMemo(() => {
@@ -1423,7 +1425,8 @@ export default function App() {
           setIsAddModalOpen(true);
         }}
         onAutoLayout={handleStarTopologyLayout}
-        onMergeContainers={handleMergeContainers}
+        onMergeDuplicates={handleMergeDuplicates}
+        onMergeContainers={handleMergeDuplicates}
         onExport={handleExportTopology}
         onResetTopology={handleResetTopology}
         onClearInventory={() => setIsClearModalOpen(true)}
@@ -1497,7 +1500,8 @@ export default function App() {
             onEditDevice={(dev) => setEditingDevice(dev)}
             onPingDevice={handlePingDevice}
             onDeleteDevice={handleDeleteDevice}
-            onMergeContainers={handleMergeContainers}
+            onMergeDuplicates={handleMergeDuplicates}
+            onMergeContainers={handleMergeDuplicates}
           />
         )}
 

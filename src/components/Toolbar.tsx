@@ -39,6 +39,7 @@ interface ToolbarProps {
   onScanModeChange: (mode: 'fast' | 'deep' | 'iot') => void;
   onOpenAddModal: () => void;
   onAutoLayout?: () => void;
+  onMergeDuplicates?: () => void;
   onMergeContainers?: () => void;
   onExport: () => void;
   onResetTopology: () => void;
@@ -83,6 +84,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onScanModeChange,
   onOpenAddModal,
   onAutoLayout,
+  onMergeDuplicates,
   onMergeContainers,
   onExport,
   onResetTopology,
@@ -164,14 +166,14 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             </button>
           )}
 
-          {onMergeContainers && (
+          {(onMergeDuplicates || onMergeContainers) && (
             <button
-              onClick={onMergeContainers}
-              title="Fusionner les entités conteneurs ayant l'IP de l'hôte avec celles ayant l'IP conteneur sans doublon"
+              onClick={onMergeDuplicates || onMergeContainers}
+              title="Détecter et fusionner les doublons sur tous les équipements (adresses MAC, IP, noms d'hôtes, ports, services et conteneurs)"
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-cyan-300 bg-cyan-950/60 hover:bg-cyan-900/70 border border-cyan-700/60 rounded-lg transition-all active:scale-95 whitespace-nowrap shadow-xs cursor-pointer"
             >
               <GitMerge className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Fusionner conteneurs</span>
+              <span>Fusionner les doublons</span>
             </button>
           )}
 

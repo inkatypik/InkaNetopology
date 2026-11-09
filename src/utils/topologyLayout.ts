@@ -178,6 +178,16 @@ export function isContainerInternalIp(ip?: string): boolean {
   return false;
 }
 
+// Check if an address is a valid non-synthetic hardware MAC address
+export function isRealHardwareMac(mac?: string): boolean {
+  if (!mac) return false;
+  const trimmed = mac.trim().toLowerCase();
+  if (trimmed === '00:00:00:00:00:00') return false;
+  if (trimmed.startsWith('02:00:00')) return false; // Synthetic ARP fallback
+  if (trimmed.length < 11) return false;
+  return true;
+}
+
 export function isContainerCandidate(d: Device, devList: Device[]): boolean {
   if (d.isCore) return false;
   // Core infrastructure, hypervisors, real physical servers, and VMs must NEVER be treated as container candidates to be merged away!
@@ -420,7 +430,255 @@ export function mergeContainerEntities(
   };
 }
 
-export function mergeDuplicateContainers(devList: Device[]): {
+// ---------------- UNIVERSAL MULTI-ID DEDUPLICATION & FUSION (ALL EQUIPMENT) ----------------
+export interface MergeCheckResult {
+  match: boolean;
+  reason: string;
+  confidence: 'high' | 'medium';
+  primaryId?: string;
+}
+
+export function shouldMergeDevices(
+  a: Device,
+  b: Device,
+  devList: Device[]
+): MergeCheckResult {
+  if (a.id === b.id) return { match: false, reason: '', confidence: 'medium' };
+
+  // --- HARD SEPARATION GUARDS (NEVER MERGE THESE COMBINATIONS) ---
+  // 1. Never merge a core router/gateway with ordinary client devices or containers
+  if ((a.isCore || a.subType === 'router') && (b.deviceType === 'docker' || b.deviceType === 'iot' || b.subType === 'printer' || b.subType === 'workstation')) {
+    return { match: false, reason: '', confidence: 'medium' };
+  }
+  if ((b.isCore || b.subType === 'router') && (a.deviceType === 'docker' || a.deviceType === 'iot' || a.subType === 'printer' || a.subType === 'workstation')) {
+    return { match: false, reason: '', confidence: 'medium' };
+  }
+
+  // 2. Never merge two distinct physical core routers/switches if they have different IPs and MACs
+  if ((a.isCore || a.subType === 'router' || a.subType === 'switch') &&
+      (b.isCore || b.subType === 'router' || b.subType === 'switch') &&
+      a.ip !== b.ip && a.mac !== b.mac) {
+    return { match: false, reason: '', confidence: 'medium' };
+  }
+
+  // 3. Never merge a parent host with its own guest VM or container (unless Docker host port consolidation)
+  if (a.parentHostId === b.id || b.parentHostId === a.id) {
+    if ((a.deviceType === 'physical' && b.deviceType !== 'physical') ||
+        (b.deviceType === 'physical' && a.deviceType !== 'physical')) {
+      return { match: false, reason: '', confidence: 'medium' };
+    }
+  }
+
+  // 4. Containers running on DIFFERENT hosts must NEVER merge
+  if (a.deviceType === 'docker' && b.deviceType === 'docker') {
+    if (a.parentHostId && b.parentHostId && a.parentHostId !== b.parentHostId) {
+      return { match: false, reason: '', confidence: 'medium' };
+    }
+    const hostIpA = a.metadata?.['IP Hôte'] || (!isContainerInternalIp(a.ip) ? a.ip : '');
+    const hostIpB = b.metadata?.['IP Hôte'] || (!isContainerInternalIp(b.ip) ? b.ip : '');
+    if (hostIpA && hostIpB && hostIpA !== hostIpB) {
+      return { match: false, reason: '', confidence: 'medium' };
+    }
+  }
+
+  // 5. Never merge a physical server/NAS with a VM or container
+  if ((a.deviceType === 'physical' && (a.subType === 'server' || a.subType === 'nas')) &&
+      (b.deviceType === 'docker' || b.deviceType === 'vm')) {
+    return { match: false, reason: '', confidence: 'medium' };
+  }
+  if ((b.deviceType === 'physical' && (b.subType === 'server' || b.subType === 'nas')) &&
+      (a.deviceType === 'docker' || a.deviceType === 'vm')) {
+    return { match: false, reason: '', confidence: 'medium' };
+  }
+
+  // --- STRONG IDENTIFIERS ---
+
+  // ID RULE 1: Exact Docker ContainerID match (absolute proof of identical container)
+  if (a.metadata?.['ContainerID'] && b.metadata?.['ContainerID']) {
+    if (a.metadata['ContainerID'] === b.metadata['ContainerID']) {
+      return {
+        match: true,
+        reason: `Identifiant conteneur Docker identique (${a.metadata['ContainerID']})`,
+        confidence: 'high'
+      };
+    }
+    return { match: false, reason: '', confidence: 'medium' };
+  }
+
+  // ID RULE 2: Real Hardware MAC address match
+  // (Applies to all physical devices, servers, workstations, printers, IoT, and VMs with identical virtual NIC MAC)
+  if (isRealHardwareMac(a.mac) && isRealHardwareMac(b.mac) && a.mac!.toLowerCase() === b.mac!.toLowerCase()) {
+    const normMac = a.mac!.toLowerCase();
+    const macOccurrences = devList.filter((d) => d.mac && d.mac.toLowerCase() === normMac).length;
+    if (macOccurrences <= 2) {
+      if (a.ip && b.ip && a.ip !== b.ip) {
+        return {
+          match: true,
+          reason: `Adresse MAC matérielle identique (${a.mac}) avec renouvellement d'adresse IP (${a.ip} → ${b.ip})`,
+          confidence: 'high',
+          primaryId: a.status === 'online' ? a.id : b.id
+        };
+      }
+      return {
+        match: true,
+        reason: `Adresse MAC matérielle identique (${a.mac})`,
+        confidence: 'high'
+      };
+    }
+  }
+
+  // ID RULE 3: Same IP Address match (for non-containers, or between same-family devices)
+  if (a.ip && b.ip && a.ip === b.ip && a.ip !== '127.0.0.1' && !isContainerInternalIp(a.ip)) {
+    const areCompatibleTypes =
+      (a.deviceType === b.deviceType) ||
+      (a.subType === 'other' || b.subType === 'other') ||
+      (a.deviceType === 'physical' && b.deviceType === 'iot') ||
+      (a.deviceType === 'iot' && b.deviceType === 'physical');
+
+    if (areCompatibleTypes && a.deviceType !== 'docker' && b.deviceType !== 'docker') {
+      return {
+        match: true,
+        reason: `Même adresse IP (${a.ip}) et profil d'équipement concordant`,
+        confidence: 'high'
+      };
+    }
+  }
+
+  // ID RULE 4: Hostname / NetBIOS / Reverse DNS match with shared ports or vendor
+  const normHostA = normalizeServiceName(a.metadata?.['Nom d\'hôte'] || a.name);
+  const normHostB = normalizeServiceName(b.metadata?.['Nom d\'hôte'] || b.name);
+  const isGenericName = (n: string) =>
+    n.length < 4 ||
+    /^(device|equipement|inconnu|unknown|machine|linux|server|serveur|host|hote|ip|lan)\b/i.test(n);
+
+  if (!isGenericName(normHostA) && !isGenericName(normHostB) && normHostA === normHostB) {
+    const portsA = a.openPorts || [];
+    const portsB = b.openPorts || [];
+    const sharedPorts = portsA.filter((p) => portsB.includes(p));
+    const sameVendor = a.vendor && b.vendor && a.vendor !== 'Générique / Inconnu' && a.vendor === b.vendor;
+
+    if (sharedPorts.length > 0 || sameVendor || a.ip === b.ip) {
+      return {
+        match: true,
+        reason: `Nom d'hôte concordant ("${a.name}") avec ${sharedPorts.length > 0 ? `ports partagés (${sharedPorts.slice(0, 3).join(', ')})` : 'constructeur identique'}`,
+        confidence: 'high'
+      };
+    }
+  }
+
+  // ID RULE 5: Web Title & Service signature match (Proxmox, Synology, TrueNAS, Home Assistant, etc.)
+  const titleA = (a.metadata?.['Titre Web'] || '').trim().toLowerCase();
+  const titleB = (b.metadata?.['Titre Web'] || '').trim().toLowerCase();
+  if (titleA.length >= 5 && titleB.length >= 5 && (titleA === titleB || titleA.includes(titleB) || titleB.includes(titleA))) {
+    const portsA = a.openPorts || [];
+    const portsB = b.openPorts || [];
+    const sharedPorts = portsA.filter((p) => portsB.includes(p));
+    if (sharedPorts.length > 0) {
+      return {
+        match: true,
+        reason: `Signature de service web identique ("${a.metadata!['Titre Web']}") sur port partagé`,
+        confidence: 'high'
+      };
+    }
+  }
+
+  // ID RULE 6: Container Deduplication (Internal Bridge IP vs Host IP exposed port)
+  const isDockerA = a.deviceType === 'docker' || a.id.startsWith('docker-');
+  const isDockerB = b.deviceType === 'docker' || b.id.startsWith('docker-');
+  if (isDockerA && isDockerB) {
+    const containerCheck = shouldMergeContainers(a, b, devList);
+    if (containerCheck.match) {
+      return {
+        match: true,
+        reason: containerCheck.reason,
+        confidence: 'high'
+      };
+    }
+  }
+
+  return { match: false, reason: '', confidence: 'medium' };
+}
+
+export function mergeTwoDevices(
+  target: Device,
+  source: Device,
+  reason: string,
+  devList: Device[]
+): Device {
+  if (target.deviceType === 'docker' && source.deviceType === 'docker') {
+    return mergeContainerEntities(target, source, reason, devList);
+  }
+
+  const isTargetRealMac = isRealHardwareMac(target.mac);
+  const isSourceRealMac = isRealHardwareMac(source.mac);
+  const chosenMac = isTargetRealMac ? target.mac : (isSourceRealMac ? source.mac : (target.mac || source.mac));
+
+  const isGenericName = (n: string) => /\(\d+\.\d+\.\d+\.\d+\)$/i.test(n) || /^Équipement\s+/i.test(n);
+  let chosenName = target.name;
+  if (isGenericName(target.name) && !isGenericName(source.name)) {
+    chosenName = source.name;
+  }
+
+  const chosenVendor = (target.vendor && target.vendor !== 'Générique / Inconnu') ? target.vendor : (source.vendor || target.vendor);
+  const chosenOs = target.os || source.os;
+
+  const mergedPorts = Array.from(
+    new Set([...(target.openPorts || []), ...(source.openPorts || [])])
+  ).sort((x, y) => x - y);
+
+  const mergedTags = Array.from(
+    new Set([
+      ...(target.tags || []),
+      ...(source.tags || []),
+      'Fusionné'
+    ])
+  );
+
+  const allIps = Array.from(
+    new Set([
+      target.ip,
+      source.ip,
+      ...(target.metadata?.['Adresses IP associées']?.split(', ') || []),
+      ...(source.metadata?.['Adresses IP associées']?.split(', ') || [])
+    ].filter(Boolean))
+  );
+
+  const isOnline = target.status === 'online' || source.status === 'online';
+  const chosenLatency = Math.min(target.latencyMs ?? 999, source.latencyMs ?? 999);
+
+  const chosenParentHostId = target.parentHostId || source.parentHostId;
+  const chosenSwitchId = target.connectedToSwitchId || source.connectedToSwitchId;
+  const chosenZoneId = target.zoneId || source.zoneId;
+
+  const combinedMetadata: Record<string, string> = {
+    ...(source.metadata || {}),
+    ...(target.metadata || {}),
+    'Statut fusion': 'Fusionné (Multi-identifiants)',
+    'Détail fusion': reason,
+    'Dernière fusion': new Date().toLocaleString('fr-FR'),
+    ...(allIps.length > 1 ? { 'Adresses IP associées': allIps.join(', ') } : {})
+  };
+
+  return {
+    ...target,
+    name: chosenName,
+    ip: target.status === 'online' ? target.ip : (source.status === 'online' ? source.ip : target.ip),
+    mac: chosenMac,
+    vendor: chosenVendor,
+    os: chosenOs,
+    status: isOnline ? 'online' : 'offline',
+    openPorts: mergedPorts,
+    tags: mergedTags,
+    zoneId: chosenZoneId,
+    parentHostId: chosenParentHostId,
+    connectedToSwitchId: chosenSwitchId,
+    metadata: combinedMetadata,
+    lastSeen: new Date().toISOString(),
+    latencyMs: chosenLatency === 999 ? undefined : chosenLatency
+  };
+}
+
+export function mergeDuplicateDevices(devList: Device[]): {
   devices: Device[];
   mergedCount: number;
   mergedDetails: string[];
@@ -438,27 +696,34 @@ export function mergeDuplicateContainers(devList: Device[]): {
         const a = list[i];
         const b = list[j];
 
-        const check = shouldMergeContainers(a, b, list);
+        const check = shouldMergeDevices(a, b, list);
         if (check.match) {
-          const preferBAsTarget =
-            (!a.id.startsWith('docker-') && b.id.startsWith('docker-')) ||
-            (!a.metadata?.['ContainerID'] && !!b.metadata?.['ContainerID']) ||
-            (isContainerInternalIp(b.ip) && !isContainerInternalIp(a.ip) && !a.id.startsWith('docker-'));
+          let target = a;
+          let source = b;
 
-          const target = preferBAsTarget ? b : a;
-          const source = preferBAsTarget ? a : b;
+          if (check.primaryId === b.id) {
+            target = b;
+            source = a;
+          } else if (
+            (!a.isCore && b.isCore) ||
+            (!a.parentHostId && b.parentHostId) ||
+            (a.name.includes('(') && !b.name.includes('(')) ||
+            (!isRealHardwareMac(a.mac) && isRealHardwareMac(b.mac))
+          ) {
+            target = b;
+            source = a;
+          }
 
-          const mergedDevice = mergeContainerEntities(target, source, check.reason, list);
-
+          const merged = mergeTwoDevices(target, source, check.reason, list);
           const targetIndex = list.findIndex((d) => d.id === target.id);
           const sourceIndex = list.findIndex((d) => d.id === source.id);
 
           if (targetIndex !== -1 && sourceIndex !== -1) {
-            list[targetIndex] = mergedDevice;
+            list[targetIndex] = merged;
             list.splice(sourceIndex, 1);
             mergedCount++;
             mergedDetails.push(
-              `Fusionné "${mergedDevice.name}" (Hôte: ${mergedDevice.metadata?.['IP Hôte']}, Conteneur: ${mergedDevice.ip}) - ${check.reason}`
+              `Fusionné "${merged.name}" (IP: ${merged.ip}, MAC: ${merged.mac || 'N/A'}) - ${check.reason}`
             );
             foundMerge = true;
             break;
@@ -470,6 +735,15 @@ export function mergeDuplicateContainers(devList: Device[]): {
   }
 
   return { devices: list, mergedCount, mergedDetails };
+}
+
+// Backward-compatible alias for existing calls
+export function mergeDuplicateContainers(devList: Device[]): {
+  devices: Device[];
+  mergedCount: number;
+  mergedDetails: string[];
+} {
+  return mergeDuplicateDevices(devList);
 }
 
 // Visual dimensions for card calculations and non-overlapping margins
