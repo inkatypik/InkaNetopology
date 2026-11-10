@@ -1,9 +1,21 @@
 import type { Device, GeographicZone } from '../types/network';
 
 /**
+ * Check if an IP address is a local Docker bridge, overlay, or loopback IP
+ */
+export function isContainerInternalIp(ip?: string): boolean {
+  if (!ip) return false;
+  const trimmed = ip.trim();
+  if (trimmed === '127.0.0.1') return true;
+  if (/^172\.(1[7-9]|2[0-9]|3[0-1])\./.test(trimmed)) return true;
+  if (/^10\.(0|42|244)\./.test(trimmed)) return true;
+  return false;
+}
+
+/**
  * Intelligent container-to-host matcher.
- * Accurately finds the exact host machine for a container based on IP matching,
- * host metadata, port bindings, and virtualization links.
+ * Imperatively attaches containers to the exact host machine sharing their IP address
+ * or exposed service port, resolving stale parent bindings and eliminating wrong associations.
  */
 export function findBestHostForContainer(
   container: Partial<Device>,
@@ -11,42 +23,126 @@ export function findBestHostForContainer(
 ): Device | undefined {
   if (!devList || devList.length === 0) return undefined;
 
-  // 1. If container already has a valid host assigned, preserve it!
-  if (container.parentHostId) {
-    const existingParent = devList.find((d) => d.id === container.parentHostId);
-    if (
-      existingParent &&
-      existingParent.subType !== 'switch' &&
-      existingParent.subType !== 'router' &&
-      existingParent.subType !== 'access_point' &&
-      existingParent.id !== container.id
-    ) {
-      return existingParent;
-    }
-  }
-
   const isCandidateHost = (d: Device) =>
     d.id !== container.id &&
     d.subType !== 'switch' &&
     d.subType !== 'router' &&
     d.subType !== 'access_point' &&
     d.deviceType !== 'docker' &&
-    (d.deviceType === 'physical' || d.deviceType === 'vm' || d.subType === 'server' || d.subType === 'nas');
+    d.subType !== 'container';
 
-  // 2. Explicit Host IP link in metadata (e.g. metadata['IP Hôte'] set from scan or consolidation)
-  const explicitHostIp = container.metadata?.['IP Hôte'] || container.metadata?.['HostIP'] || container.metadata?.['ip_hote'];
-  if (explicitHostIp && explicitHostIp !== '127.0.0.1' && !isContainerInternalIp(explicitHostIp)) {
+  // 1. Extract explicit host IP from metadata, port bindings, or location
+  const extractExplicitHostIp = (): string | undefined => {
+    // A. Direct metadata
+    const metaIp =
+      container.metadata?.['IP Hôte'] ||
+      container.metadata?.['HostIP'] ||
+      container.metadata?.['ip_hote'] ||
+      container.metadata?.['host_ip'] ||
+      container.metadata?.['IP Machine'];
+    if (metaIp && metaIp !== '127.0.0.1' && !isContainerInternalIp(metaIp)) {
+      return metaIp.trim();
+    }
+
+    // B. portOrInterface regex: e.g. "Hôte: 192.168.1.50:8080" or "192.168.1.50:8080->"
+    if (container.portOrInterface) {
+      const m1 = container.portOrInterface.match(/(?:hôte|host)\s*[:=]?\s*(\d{1,3}(?:\.\d{1,3}){3})/i);
+      if (m1 && m1[1] && m1[1] !== '127.0.0.1' && !isContainerInternalIp(m1[1])) {
+        return m1[1].trim();
+      }
+      const m2 = container.portOrInterface.match(/(\d{1,3}(?:\.\d{1,3}){3}):\d+\s*->/);
+      if (m2 && m2[1] && m2[1] !== '127.0.0.1' && !isContainerInternalIp(m2[1])) {
+        return m2[1].trim();
+      }
+    }
+
+    // C. location regex: e.g. "Hôte: 192.168.1.50" or "Conteneur sur 192.168.1.50"
+    if (container.location) {
+      const mLoc = container.location.match(/(?:hôte|host|sur)\s*[:=]?\s*(\d{1,3}(?:\.\d{1,3}){3})/i);
+      if (mLoc && mLoc[1] && mLoc[1] !== '127.0.0.1' && !isContainerInternalIp(mLoc[1])) {
+        return mLoc[1].trim();
+      }
+    }
+
+    return undefined;
+  };
+
+  const explicitHostIp = extractExplicitHostIp();
+
+  // PRIORITY 1: Explicit shared host IP match -> imperatively attach to host with this shared IP!
+  if (explicitHostIp) {
     const hostWithExplicitIp = devList.find((d) => isCandidateHost(d) && d.ip === explicitHostIp);
     if (hostWithExplicitIp) return hostWithExplicitIp;
   }
 
-  // 3. Exact IP match with a host machine or VM (for containers in --net=host mode)
+  // PRIORITY 2: Exact LAN IP match with host (for containers in --net=host or host scan mode)
   if (container.ip && container.ip !== '127.0.0.1' && !isContainerInternalIp(container.ip)) {
     const hostWithSameIp = devList.find((d) => isCandidateHost(d) && d.ip === container.ip);
     if (hostWithSameIp) return hostWithSameIp;
   }
 
-  // 4. Explicit Host reference in metadata (strict name or hostname match)
+  // PRIORITY 3: Match exposed service port on candidate host's LAN IP
+  // (Containers expose services on ports of their host's LAN IP)
+  const extractContainerExposedPorts = (): number[] => {
+    const ports = new Set<number>(container.openPorts || []);
+
+    const metaPorts = container.metadata?.['Ports'] || container.metadata?.['Ports exposés'] || container.metadata?.['Port'];
+    if (metaPorts) {
+      const matches = metaPorts.match(/\b\d{1,5}\b/g);
+      if (matches) {
+        matches.forEach((p) => {
+          const num = parseInt(p, 10);
+          if (num > 0 && num <= 65535) ports.add(num);
+        });
+      }
+    }
+
+    if (container.portOrInterface) {
+      const mHostPorts = container.portOrInterface.match(/(?:0\.0\.0\.0:|:\s*)(\d{1,5})->/g);
+      if (mHostPorts) {
+        mHostPorts.forEach((hp) => {
+          const num = parseInt(hp.replace(/[^0-9]/g, ''), 10);
+          if (num > 0 && num <= 65535) ports.add(num);
+        });
+      }
+      const allNums = container.portOrInterface.match(/\b\d{2,5}\b/g);
+      if (allNums) {
+        allNums.forEach((p) => {
+          const num = parseInt(p, 10);
+          if (num > 0 && num <= 65535) ports.add(num);
+        });
+      }
+    }
+
+    return Array.from(ports);
+  };
+
+  const containerPorts = extractContainerExposedPorts();
+  if (containerPorts.length > 0) {
+    const specificPorts = containerPorts.filter((p) => ![80, 443].includes(p));
+    const portsToCheck = specificPorts.length > 0 ? specificPorts : containerPorts;
+
+    let bestPortHost: Device | undefined;
+    let maxSharedPorts = 0;
+
+    const candidateHosts = devList.filter(isCandidateHost);
+    for (const host of candidateHosts) {
+      const hostPorts = host.openPorts || [];
+      const shared = portsToCheck.filter((p) => hostPorts.includes(p));
+      if (shared.length > 0) {
+        if (shared.length > maxSharedPorts) {
+          maxSharedPorts = shared.length;
+          bestPortHost = host;
+        }
+      }
+    }
+
+    if (bestPortHost && maxSharedPorts > 0) {
+      return bestPortHost;
+    }
+  }
+
+  // PRIORITY 4: Explicit Host reference in metadata (name or hostname match)
   const hostRef = (
     container.metadata?.['Hôte d\'exécution'] ||
     container.metadata?.['Hôte'] ||
@@ -65,7 +161,7 @@ export function findBestHostForContainer(
     if (hostByRef) return hostByRef;
   }
 
-  // 5. Strict location reference: e.g. location "Conteneur sur PVE-01"
+  // PRIORITY 5: Strict location reference: e.g. location "Conteneur sur PVE-01"
   const location = (container.location || '').trim();
   const matchOn = location.match(/(?:sur|on|hôte|host)\s+([a-zA-Z0-9_\-\.]+)/i);
   if (matchOn && matchOn[1]) {
@@ -78,13 +174,38 @@ export function findBestHostForContainer(
     if (hostByLoc) return hostByLoc;
   }
 
-  // 6. If there is ONLY ONE dedicated host/server in the entire inventory, associate with it
+  // PRIORITY 6: Preserve existing parentHostId ONLY if valid and non-conflicting with explicit host IP
+  if (container.parentHostId) {
+    const existingParent = devList.find((d) => d.id === container.parentHostId);
+    if (
+      existingParent &&
+      isCandidateHost(existingParent) &&
+      (!explicitHostIp || existingParent.ip === explicitHostIp)
+    ) {
+      return existingParent;
+    }
+  }
+
+  // PRIORITY 7: Local Docker daemon inspection (/var/run/docker.sock)
+  if (
+    container.metadata?.['Hôte'] === 'Local Docker Daemon' ||
+    container.metadata?.['Découverte'] === 'Docker Socket' ||
+    container.id?.startsWith('docker-')
+  ) {
+    const localMatch = devList.find(
+      (d) =>
+        isCandidateHost(d) &&
+        (d.subType === 'server' || d.subType === 'nas' || d.deviceType === 'physical')
+    );
+    if (localMatch) return localMatch;
+  }
+
+  // PRIORITY 8: If there is ONLY ONE dedicated host/server/hypervisor in the entire inventory
   const allCandidateHosts = devList.filter(isCandidateHost);
   if (allCandidateHosts.length === 1) {
     return allCandidateHosts[0];
   }
 
-  // 7. Otherwise do NOT guess or assign randomly!
   return undefined;
 }
 
@@ -94,31 +215,23 @@ export function findBestHostForVm(
 ): Device | undefined {
   if (!devList || devList.length === 0) return undefined;
 
-  // 1. If VM ALREADY has a valid parentHostId, preserve it strictly!
-  if (vm.parentHostId) {
-    const existing = devList.find((d) => d.id === vm.parentHostId);
-    if (
-      existing &&
-      existing.id !== vm.id &&
-      existing.subType !== 'switch' &&
-      existing.subType !== 'router' &&
-      existing.subType !== 'access_point'
-    ) {
-      return existing;
-    }
-  }
-
   const isHypervisor = (d: Device) =>
     d.id !== vm.id &&
     d.deviceType === 'physical' &&
     (d.subType === 'server' || d.subType === 'nas');
 
-  // 2. Explicit hypervisor reference in metadata
+  // 1. Explicit hypervisor IP in metadata
+  const explicitHypIp = vm.metadata?.['IP Hyperviseur'] || vm.metadata?.['IP Hôte'];
+  if (explicitHypIp && explicitHypIp !== '127.0.0.1' && !isContainerInternalIp(explicitHypIp)) {
+    const host = devList.find((d) => isHypervisor(d) && d.ip === explicitHypIp);
+    if (host) return host;
+  }
+
+  // 2. Explicit hypervisor reference in metadata (name or hostname)
   const hypRef = (
     vm.metadata?.['Hyperviseur'] ||
     vm.metadata?.['Hôte'] ||
     vm.metadata?.['Host'] ||
-    vm.metadata?.['IP Hyperviseur'] ||
     ''
   ).trim().toLowerCase();
 
@@ -139,13 +252,27 @@ export function findBestHostForVm(
     if (host) return host;
   }
 
-  // 4. If there is ONLY ONE physical server/hypervisor in the entire topology, attach to it:
+  // 4. Preserve existing parentHostId if valid and non-conflicting
+  if (vm.parentHostId) {
+    const existing = devList.find((d) => d.id === vm.parentHostId);
+    if (
+      existing &&
+      existing.id !== vm.id &&
+      existing.subType !== 'switch' &&
+      existing.subType !== 'router' &&
+      existing.subType !== 'access_point' &&
+      (!explicitHypIp || existing.ip === explicitHypIp)
+    ) {
+      return existing;
+    }
+  }
+
+  // 5. If there is ONLY ONE physical server/hypervisor in the entire topology, attach to it:
   const candidateHypervisors = devList.filter(isHypervisor);
   if (candidateHypervisors.length === 1) {
     return candidateHypervisors[0];
   }
 
-  // Multiple hypervisors and no explicit link: do NOT randomly assign!
   return undefined;
 }
 
@@ -169,14 +296,6 @@ export function normalizeServiceName(rawName: string): string {
   return str;
 }
 
-export function isContainerInternalIp(ip?: string): boolean {
-  if (!ip) return false;
-  const trimmed = ip.trim();
-  if (trimmed === '127.0.0.1') return true;
-  if (/^172\.(1[7-9]|2[0-9]|3[0-1])\./.test(trimmed)) return true;
-  if (/^10\.(0|42|244)\./.test(trimmed)) return true;
-  return false;
-}
 
 // Check if an address is a valid non-synthetic hardware MAC address
 export function isRealHardwareMac(mac?: string): boolean {
@@ -357,23 +476,22 @@ export function mergeContainerEntities(
   }
 
   // STRICT PARENT HOST RESOLUTION:
-  // Preserve target or source parentHostId if it's already a valid host
+  // First, find host matching the shared hostIp!
+  const hostByIp = hostIp
+    ? devList.find(
+        (d) =>
+          d.ip === hostIp &&
+          d.id !== target.id &&
+          d.id !== source.id &&
+          !['router', 'switch', 'access_point'].includes(d.subType)
+      )
+    : undefined;
+
   const targetParent = target.parentHostId ? devList.find((d) => d.id === target.parentHostId) : undefined;
   const sourceParent = source.parentHostId ? devList.find((d) => d.id === source.parentHostId) : undefined;
   
-  const hostDevice =
-    targetParent ||
-    sourceParent ||
-    (hostIp
-      ? devList.find(
-          (d) =>
-            d.ip === hostIp &&
-            d.id !== target.id &&
-            d.id !== source.id &&
-            !['router', 'switch', 'access_point'].includes(d.subType)
-        )
-      : undefined);
-
+  // Host with matching hostIp is preferred over any mismatched parentHostId
+  const hostDevice = hostByIp || targetParent || sourceParent;
   const parentHostId = hostDevice?.id || target.parentHostId || source.parentHostId;
   const zoneId = hostDevice?.zoneId || target.zoneId || source.zoneId;
 
@@ -381,7 +499,7 @@ export function mergeContainerEntities(
   const combinedMetadata: Record<string, string> = {
     ...(source.metadata || {}),
     ...(target.metadata || {}),
-    'IP Hôte': hostIp || (hostDevice?.ip || ''),
+    'IP Hôte': hostDevice?.ip || hostIp || target.metadata?.['IP Hôte'] || source.metadata?.['IP Hôte'] || '',
     'IP Conteneur': containerIp || target.ip,
     'Ports exposés': mergedPorts.length > 0 ? mergedPorts.join(', ') : 'Aucun port exposé',
     'Statut fusion': 'Fusionné (Hôte + Conteneur)',
@@ -849,18 +967,31 @@ export function autoLayoutTopology(devList: Device[], zoneList: GeographicZone[]
 
   const coreNodeIds = new Set(coreNodes.map((c) => c.id));
 
-  // 2. Resolve guest containers/VMs to their parent host ONLY if unassigned
+  // 2. Intelligently heal and re-evaluate container & VM parent host bindings:
+  // Containers MUST be imperatively attached to the host with which they share their IP address or exposed ports!
   devices.forEach((d) => {
     if (d.deviceType === 'docker') {
-      // If already assigned to an existing host in inventory, preserve it strictly!
-      if (d.parentHostId && devMap.has(d.parentHostId)) return;
       const best = findBestHostForContainer(d, devices);
-      if (best) d.parentHostId = best.id;
+      if (best) {
+        d.parentHostId = best.id;
+        if (!d.metadata) d.metadata = {};
+        d.metadata['IP Hôte'] = best.ip;
+        d.metadata['Hôte d\'exécution'] = best.name;
+        if (!d.location || d.location === 'Découvert sur le réseau local' || d.location.includes('hôte Docker')) {
+          d.location = `Conteneur sur ${best.name}`;
+        }
+      }
     } else if (d.deviceType === 'vm') {
-      // If already assigned to an existing host in inventory, preserve it strictly!
-      if (d.parentHostId && devMap.has(d.parentHostId)) return;
       const bestVmHost = findBestHostForVm(d, devices);
-      if (bestVmHost) d.parentHostId = bestVmHost.id;
+      if (bestVmHost) {
+        d.parentHostId = bestVmHost.id;
+        if (!d.metadata) d.metadata = {};
+        d.metadata['Hyperviseur'] = bestVmHost.name;
+        d.metadata['IP Hyperviseur'] = bestVmHost.ip;
+        if (!d.location || d.location === 'Découvert sur le réseau local' || d.location.includes('hyperviseur')) {
+          d.location = `Machine virtuelle sur ${bestVmHost.name}`;
+        }
+      }
     }
   });
 
