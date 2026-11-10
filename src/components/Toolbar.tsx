@@ -1,8 +1,7 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Search,
   Plus,
-  Filter,
   Download,
   Upload,
   RotateCcw,
@@ -16,9 +15,12 @@ import {
   FileImage,
   FileText,
   Settings,
-  GitMerge
+  GitMerge,
+  RefreshCw,
+  MoreHorizontal,
+  Check
 } from 'lucide-react';
-import type { DeviceType, DeviceTypeDefinition } from '../types/network';
+import type { DeviceTypeDefinition } from '../types/network';
 
 interface ToolbarProps {
   searchQuery: string;
@@ -35,8 +37,13 @@ interface ToolbarProps {
   counts: Record<string, number>;
   subnet: string;
   onSubnetChange: (sub: string) => void;
-  scanMode?: string;
-  onScanModeChange?: (mode: any) => void;
+
+  // Real-time scan controls on the same level as Scope IP
+  isScanning?: boolean;
+  scanProgress?: number;
+  onTriggerScan?: () => void;
+  onCancelScan?: () => void;
+
   onOpenAddModal: () => void;
   onAutoLayout?: () => void;
   onMergeDuplicates?: () => void;
@@ -50,7 +57,7 @@ interface ToolbarProps {
   types?: DeviceTypeDefinition[];
   onOpenTypeManager?: () => void;
 
-  // Re-located buttons next to "Grouper par hôte parent":
+  // Geographic Zones & Grouping
   showGeographicZones?: boolean;
   onToggleShowGeographicZones?: () => void;
   onOpenZoneManager?: () => void;
@@ -80,8 +87,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   counts,
   subnet,
   onSubnetChange,
-  scanMode,
-  onScanModeChange,
+  isScanning = false,
+  scanProgress = 0,
+  onTriggerScan,
+  onCancelScan,
   onOpenAddModal,
   onAutoLayout,
   onMergeDuplicates,
@@ -104,57 +113,145 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onOpenSettings
 }) => {
   const jsonFileInputRef = useRef<HTMLInputElement>(null);
+  const [isToolsMenuOpen, setIsToolsMenuOpen] = useState(false);
 
   return (
-    <div className="w-full border-b border-slate-800 bg-slate-900/60 backdrop-blur-xs py-3 px-4 sm:px-6 lg:px-8 space-y-3">
-      {/* Upper row: Search, Subnet CIDR, Scan mode, Add device */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        {/* Search Input */}
-        <div className="relative min-w-[240px] max-w-md flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Rechercher par nom, IP, MAC, tag, fabricant, OS..."
-            className="w-full pl-9 pr-8 py-1.5 text-xs bg-slate-950/80 border border-slate-700/80 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-hidden focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/30 transition-colors"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => onSearchChange('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-
-        {/* Subnet & Scan parameters */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-950/60 border border-slate-800 rounded-lg">
-            <span className="text-[11px] text-slate-400 font-medium">Sous-réseau:</span>
+    <div className="w-full border-b border-slate-800/80 bg-slate-900/85 backdrop-blur-md px-4 sm:px-6 lg:px-8 py-2 transition-all">
+      <div className="flex flex-wrap items-center justify-between gap-2.5">
+        {/* Left cluster: Search input + Scope IP & Scan Button */}
+        <div className="flex items-center gap-2 flex-wrap flex-1 min-w-[280px]">
+          {/* Search Input */}
+          <div className="relative min-w-[180px] max-w-xs flex-1">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
             <input
               type="text"
-              value={subnet}
-              onChange={(e) => onSubnetChange(e.target.value)}
-              className="w-28 text-xs font-mono tabular-nums text-slate-200 bg-transparent border-none p-0 focus:outline-hidden"
-              placeholder="192.168.1.0/24"
+              value={searchQuery}
+              onChange={(e) => onSearchChange(e.target.value)}
+              placeholder="Rechercher nom, IP, MAC, port..."
+              className="w-full pl-8 pr-7 py-1 text-xs bg-slate-950/80 border border-slate-700/80 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-hidden focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500/30 transition-colors"
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => onSearchChange('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 cursor-pointer"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
           </div>
 
-          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-cyan-950/40 border border-cyan-800/40 rounded-lg text-xs text-cyan-300 font-medium">
-            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-            <span>Scan Complet & Efficace</span>
+          {/* Scope IP Input & Scan Button on the EXACT SAME LEVEL */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex items-center gap-1 px-2.5 py-1 bg-slate-950/80 border border-slate-700/80 rounded-lg shadow-xs">
+              <span className="text-[11px] text-slate-400 font-medium whitespace-nowrap">Scope IP:</span>
+              <input
+                type="text"
+                value={subnet}
+                onChange={(e) => onSubnetChange(e.target.value)}
+                className="w-28 text-xs font-mono tabular-nums text-slate-200 bg-transparent border-none p-0 focus:outline-hidden"
+                placeholder="192.168.1.0/24"
+              />
+            </div>
+
+            {/* Simply titled "Scan" button */}
+            {isScanning ? (
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  disabled
+                  className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg bg-cyan-950/90 text-cyan-300 border border-cyan-600/70 shadow-xs cursor-wait whitespace-nowrap"
+                >
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin text-cyan-400" />
+                  <span className="font-mono">Scan ({scanProgress}%)</span>
+                </button>
+                {onCancelScan && (
+                  <button
+                    type="button"
+                    onClick={onCancelScan}
+                    title="Arrêter le scan en cours"
+                    className="p-1 text-xs font-semibold rounded-lg bg-rose-950/80 text-rose-300 border border-rose-700/60 hover:bg-rose-900 transition-colors cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5 text-rose-400" />
+                  </button>
+                )}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={onTriggerScan}
+                title="Lancer le scan réseau sur ce scope d'adresse IP"
+                className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white shadow-xs transition-all active:scale-95 cursor-pointer whitespace-nowrap"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Scan</span>
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Action buttons */}
-        <div className="flex items-center gap-1.5 flex-wrap">
+        {/* Center cluster: The 3 dropdown lists placed side-by-side */}
+        <div className="flex items-center gap-1.5 flex-wrap shrink-0">
+          {/* 1. Equipment Types dropdown list */}
+          <select
+            value={selectedType}
+            onChange={(e) => onSelectType(e.target.value)}
+            title="Filtrer par type d'équipement"
+            className="text-xs bg-slate-950/80 border border-slate-700/80 rounded-lg text-slate-200 px-2.5 py-1 focus:outline-hidden focus:border-cyan-500 cursor-pointer shadow-xs font-medium"
+          >
+            <option value="all">Tous les équipements ({counts.all ?? 0})</option>
+            {types.length > 0 ? (
+              types.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name} ({counts[t.id] ?? 0})
+                </option>
+              ))
+            ) : (
+              <>
+                <option value="physical">Machines Physiques ({counts.physical ?? 0})</option>
+                <option value="vm">Machines Virtuelles ({counts.vm ?? 0})</option>
+                <option value="docker">Conteneurs Docker ({counts.docker ?? 0})</option>
+                <option value="iot">Périphériques IoT ({counts.iot ?? 0})</option>
+              </>
+            )}
+          </select>
+
+          {/* 2. Status dropdown list */}
+          <select
+            value={selectedStatus}
+            onChange={(e) => onSelectStatus(e.target.value as any)}
+            title="Filtrer par état de connectivité"
+            className="text-xs bg-slate-950/80 border border-slate-700/80 rounded-lg text-slate-200 px-2.5 py-1 focus:outline-hidden focus:border-cyan-500 cursor-pointer shadow-xs font-medium"
+          >
+            <option value="all">Tous statuts</option>
+            <option value="online">En ligne uniquement</option>
+            <option value="offline">Hors ligne</option>
+          </select>
+
+          {/* 3. VLANs dropdown list */}
+          <select
+            value={selectedVlan}
+            onChange={(e) => onSelectVlan(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+            title="Filtrer par VLAN"
+            className="text-xs bg-slate-950/80 border border-slate-700/80 rounded-lg text-slate-200 px-2.5 py-1 focus:outline-hidden focus:border-cyan-500 cursor-pointer shadow-xs font-medium"
+          >
+            <option value="all">Tous les VLANs</option>
+            {availableVlans.map((vlan) => (
+              <option key={vlan} value={vlan}>
+                VLAN {vlan} {vlan === 1 ? '(Défaut)' : vlan === 10 ? '(Serveurs)' : vlan === 20 ? '(IoT)' : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Right cluster: Primary Actions + Secondary Tools Menu */}
+        <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
           {onAutoLayout && (
             <button
+              type="button"
               onClick={onAutoLayout}
-              title="Organiser la topologie avec le cœur de réseau au centre et les zones en étoile sans chevauchement ni superposition"
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-cyan-700/90 hover:bg-cyan-600 border border-cyan-500/40 rounded-lg transition-all active:scale-95 whitespace-nowrap shadow-xs cursor-pointer"
+              title="Organiser la topologie avec le cœur de réseau au centre et les zones en étoile sans chevauchement"
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-white bg-cyan-700 hover:bg-cyan-600 border border-cyan-500/50 rounded-lg transition-all active:scale-95 whitespace-nowrap shadow-xs cursor-pointer"
             >
               <LayoutGrid className="w-3.5 h-3.5" />
               <span>Générer le schéma</span>
@@ -163,35 +260,226 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
           {(onMergeDuplicates || onMergeContainers) && (
             <button
+              type="button"
               onClick={onMergeDuplicates || onMergeContainers}
-              title="Détecter et fusionner les doublons sur tous les équipements (adresses MAC, IP, noms d'hôtes, ports, services et conteneurs)"
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-cyan-300 bg-cyan-950/60 hover:bg-cyan-900/70 border border-cyan-700/60 rounded-lg transition-all active:scale-95 whitespace-nowrap shadow-xs cursor-pointer"
+              title="Fusionner les doublons multi-identifiants (IP hôte/conteneur, MAC, ports)"
+              className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-cyan-300 bg-cyan-950/60 hover:bg-cyan-900/80 border border-cyan-700/60 rounded-lg transition-all active:scale-95 whitespace-nowrap shadow-xs cursor-pointer"
             >
               <GitMerge className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Fusionner les doublons</span>
+              <span>Fusionner</span>
             </button>
           )}
 
           <button
+            type="button"
             onClick={onOpenAddModal}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-cyan-300 bg-cyan-950/50 hover:bg-cyan-900/50 border border-cyan-800/60 rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+            className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-cyan-300 bg-cyan-950/60 hover:bg-cyan-900/80 border border-cyan-700/60 rounded-lg transition-all active:scale-95 whitespace-nowrap shadow-xs cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Ajouter</span>
           </button>
 
-          {onClearInventory && (
+          {/* Quick toggle: Grouper par hôte */}
+          <button
+            type="button"
+            onClick={onToggleGroupByHost}
+            title={groupByHost ? 'Désactiver le groupement par hôte' : 'Grouper les conteneurs et VMs sous leur hôte parent'}
+            className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap cursor-pointer shadow-xs ${
+              groupByHost
+                ? 'bg-cyan-950/70 text-cyan-300 border-cyan-600/80 font-semibold'
+                : 'bg-slate-950/70 text-slate-400 border-slate-700/80 hover:text-slate-200'
+            }`}
+          >
+            <SlidersHorizontal className="w-3 h-3" />
+            <span className="hidden xl:inline">Hôtes</span>
+          </button>
+
+          {/* Quick toggle: Zones géographiques */}
+          {onToggleShowGeographicZones && (
             <button
-              onClick={onClearInventory}
-              title="Vider entièrement l'inventaire pour repartir de zéro (0 équipement)"
-              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-rose-300 bg-rose-950/50 hover:bg-rose-900/60 border border-rose-800/60 rounded-lg transition-colors whitespace-nowrap cursor-pointer shadow-xs active:scale-95"
+              type="button"
+              onClick={onToggleShowGeographicZones}
+              title={showGeographicZones ? 'Masquer les zones géographiques' : 'Afficher les zones géographiques'}
+              className={`flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap cursor-pointer shadow-xs ${
+                showGeographicZones
+                  ? 'bg-amber-950/60 text-amber-300 border-amber-600/70 font-semibold'
+                  : 'bg-slate-950/70 text-slate-400 border-slate-700/80 hover:text-slate-200'
+              }`}
             >
-              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
-              <span>Vider</span>
+              <MapPin className="w-3 h-3 text-amber-400" />
+              <span className="hidden xl:inline">Zones</span>
             </button>
           )}
 
-          {/* Hidden JSON file input */}
+          {/* Compact More Tools Popover Menu */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setIsToolsMenuOpen(!isToolsMenuOpen)}
+              title="Outils avancés (Zones, Rôles, Déplier, Import/Export, Paramètres)"
+              className="p-1 text-slate-400 hover:text-slate-200 bg-slate-950/80 hover:bg-slate-800 border border-slate-700/80 rounded-lg transition-colors cursor-pointer shadow-xs"
+            >
+              <MoreHorizontal className="w-4 h-4" />
+            </button>
+
+            {isToolsMenuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-30"
+                  onClick={() => setIsToolsMenuOpen(false)}
+                />
+                <div className="absolute right-0 top-full mt-1.5 w-60 z-40 bg-slate-900/95 border border-slate-700 rounded-xl shadow-2xl p-2 backdrop-blur-md space-y-1 text-xs">
+                  {onOpenZoneManager && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsToolsMenuOpen(false);
+                        onOpenZoneManager();
+                      }}
+                      className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-slate-200 hover:bg-slate-800 text-left cursor-pointer transition-colors"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Edit2 className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Gérer les zones</span>
+                      </span>
+                      <span className="font-mono text-[10px] text-slate-400">({zonesCount})</span>
+                    </button>
+                  )}
+
+                  {onOpenTypeManager && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsToolsMenuOpen(false);
+                        onOpenTypeManager();
+                      }}
+                      className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-slate-200 hover:bg-slate-800 text-left cursor-pointer transition-colors"
+                    >
+                      <span className="flex items-center gap-2">
+                        <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Types & Rôles</span>
+                      </span>
+                      <span className="font-mono text-[10px] text-slate-400">({types.length || 4})</span>
+                    </button>
+                  )}
+
+                  {onToggleAllCollapse && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsToolsMenuOpen(false);
+                        onToggleAllCollapse();
+                      }}
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-slate-200 hover:bg-slate-800 text-left cursor-pointer transition-colors"
+                    >
+                      <Layers className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>{allCollapsed ? 'Tout déplier' : 'Tout replier'}</span>
+                    </button>
+                  )}
+
+                  <div className="h-px bg-slate-800 my-1" />
+
+                  {onImportTopology && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsToolsMenuOpen(false);
+                        jsonFileInputRef.current?.click();
+                      }}
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-emerald-300 hover:bg-emerald-950/50 text-left cursor-pointer transition-colors"
+                    >
+                      <Upload className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Importer JSON</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsToolsMenuOpen(false);
+                      onExport();
+                    }}
+                    className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-slate-200 hover:bg-slate-800 text-left cursor-pointer transition-colors"
+                  >
+                    <Download className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>Exporter JSON</span>
+                  </button>
+
+                  {onExportPng && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsToolsMenuOpen(false);
+                        onExportPng();
+                      }}
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-slate-200 hover:bg-slate-800 text-left cursor-pointer transition-colors"
+                    >
+                      <FileImage className="w-3.5 h-3.5 text-sky-400" />
+                      <span>Exporter Image PNG</span>
+                    </button>
+                  )}
+
+                  {onExportPdf && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsToolsMenuOpen(false);
+                        onExportPdf();
+                      }}
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-slate-200 hover:bg-slate-800 text-left cursor-pointer transition-colors"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Exporter Schéma PDF</span>
+                    </button>
+                  )}
+
+                  {onOpenSettings && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsToolsMenuOpen(false);
+                        onOpenSettings();
+                      }}
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-slate-200 hover:bg-slate-800 text-left cursor-pointer transition-colors"
+                    >
+                      <Settings className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>Paramètres système</span>
+                    </button>
+                  )}
+
+                  <div className="h-px bg-slate-800 my-1" />
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsToolsMenuOpen(false);
+                      onResetTopology();
+                    }}
+                    className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-slate-300 hover:bg-slate-800 text-left cursor-pointer transition-colors"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Réinitialiser démo</span>
+                  </button>
+
+                  {onClearInventory && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsToolsMenuOpen(false);
+                        onClearInventory();
+                      }}
+                      className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-rose-300 hover:bg-rose-950/60 text-left cursor-pointer transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                      <span>Vider l'inventaire</span>
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Hidden JSON file input for imports */}
           <input
             type="file"
             ref={jsonFileInputRef}
@@ -205,254 +493,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               e.target.value = '';
             }}
           />
-
-          {onImportTopology && (
-            <button
-              type="button"
-              onClick={() => jsonFileInputRef.current?.click()}
-              title="Importer un fichier JSON de topologie (équipements & zones)"
-              className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-emerald-300 bg-emerald-950/50 hover:bg-emerald-900/60 border border-emerald-700/70 rounded-lg transition-all active:scale-95 cursor-pointer shadow-xs"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              <span>Importer JSON</span>
-            </button>
-          )}
-
-          <button
-            onClick={onExport}
-            title="Exporter la topologie complète en JSON"
-            className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-300 bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 rounded-lg transition-colors cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5 text-cyan-400" />
-            <span>JSON</span>
-          </button>
-
-          {onExportPng && (
-            <button
-              onClick={onExportPng}
-              title="Exporter la vue topologie au format image PNG"
-              className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-300 bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 rounded-lg transition-colors cursor-pointer"
-            >
-              <FileImage className="w-3.5 h-3.5 text-sky-400" />
-              <span>PNG</span>
-            </button>
-          )}
-
-          {onExportPdf && (
-            <button
-              onClick={onExportPdf}
-              title="Exporter le schéma topologique au format PDF"
-              className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-300 bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 rounded-lg transition-colors cursor-pointer"
-            >
-              <FileText className="w-3.5 h-3.5 text-amber-400" />
-              <span>PDF</span>
-            </button>
-          )}
-
-          <button
-            onClick={onResetTopology}
-            title="Recharger la topologie de démonstration par défaut"
-            className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-slate-800 border border-slate-800 rounded-lg transition-colors cursor-pointer"
-          >
-            <RotateCcw className="w-4 h-4" />
-          </button>
-
-          {onOpenSettings && (
-            <button
-              onClick={onOpenSettings}
-              title="Ouvrir les paramètres système (test de présence régulier, nettoyage automatique d'inventaire)"
-              className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-300 bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 hover:border-cyan-500/60 rounded-lg transition-colors cursor-pointer"
-            >
-              <Settings className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Paramètres</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Lower row: Type tabs, Status & VLAN filters, Grouping and Geographic controls */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-slate-800/50">
-        {/* Dynamic Type Filter Tabs */}
-        <div className="flex items-center gap-1 p-0.5 bg-slate-950/70 border border-slate-800 rounded-lg overflow-x-auto max-w-full">
-          <button
-            onClick={() => onSelectType('all')}
-            className={`px-3 py-1 text-xs font-medium rounded-md whitespace-nowrap transition-colors cursor-pointer ${
-              selectedType === 'all'
-                ? 'bg-slate-800 text-white shadow-xs'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Tous <span className="font-mono tabular-nums text-[10px] text-slate-400">({counts.all ?? 0})</span>
-          </button>
-
-          {types.length > 0 ? (
-            types.map((t) => {
-              const isSelected = selectedType === t.id;
-              const count = counts[t.id] ?? 0;
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => onSelectType(t.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-md whitespace-nowrap transition-colors cursor-pointer ${
-                    isSelected
-                      ? 'bg-slate-800 text-white shadow-xs border'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                  style={{
-                    borderColor: isSelected ? t.color || '#38bdf8' : 'transparent'
-                  }}
-                >
-                  <span
-                    className="w-2 h-2 rounded-full shrink-0"
-                    style={{ backgroundColor: t.color || '#38bdf8' }}
-                  />
-                  <span>{t.name}</span>
-                  <span className="font-mono tabular-nums text-[10px] opacity-75">
-                    ({count})
-                  </span>
-                </button>
-              );
-            })
-          ) : (
-            <>
-              <button
-                onClick={() => onSelectType('physical')}
-                className={`px-3 py-1 text-xs font-medium rounded-md whitespace-nowrap transition-colors cursor-pointer ${
-                  selectedType === 'physical'
-                    ? 'bg-blue-900/40 text-blue-300 border border-blue-700/50'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Physique <span className="font-mono tabular-nums text-[10px] text-blue-400">({counts.physical ?? 0})</span>
-              </button>
-
-              <button
-                onClick={() => onSelectType('vm')}
-                className={`px-3 py-1 text-xs font-medium rounded-md whitespace-nowrap transition-colors cursor-pointer ${
-                  selectedType === 'vm'
-                    ? 'bg-indigo-900/40 text-indigo-300 border border-indigo-700/50'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Virtuel (VM) <span className="font-mono tabular-nums text-[10px] text-indigo-400">({counts.vm ?? 0})</span>
-              </button>
-
-              <button
-                onClick={() => onSelectType('docker')}
-                className={`px-3 py-1 text-xs font-medium rounded-md whitespace-nowrap transition-colors cursor-pointer ${
-                  selectedType === 'docker'
-                    ? 'bg-cyan-900/40 text-cyan-300 border border-cyan-700/50'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Docker <span className="font-mono tabular-nums text-[10px] text-cyan-400">({counts.docker ?? 0})</span>
-              </button>
-
-              <button
-                onClick={() => onSelectType('iot')}
-                className={`px-3 py-1 text-xs font-medium rounded-md whitespace-nowrap transition-colors cursor-pointer ${
-                  selectedType === 'iot'
-                    ? 'bg-emerald-900/40 text-emerald-300 border border-emerald-700/50'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                IoT & Capteurs <span className="font-mono tabular-nums text-[10px] text-emerald-400">({counts.iot ?? 0})</span>
-              </button>
-            </>
-          )}
-        </div>
-
-        {/* Secondary filters & Grouping and Geographic controls */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Status filter */}
-          <select
-            value={selectedStatus}
-            onChange={(e) => onSelectStatus(e.target.value as any)}
-            className="text-xs bg-slate-950/70 border border-slate-800 rounded-lg text-slate-300 px-2.5 py-1 focus:outline-hidden"
-          >
-            <option value="all">Tous statuts</option>
-            <option value="online">En ligne uniquement</option>
-            <option value="offline">Hors ligne</option>
-          </select>
-
-          {/* VLAN filter */}
-          <select
-            value={selectedVlan}
-            onChange={(e) => onSelectVlan(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-            className="text-xs bg-slate-950/70 border border-slate-800 rounded-lg text-slate-300 px-2.5 py-1 focus:outline-hidden"
-          >
-            <option value="all">Tous les VLANs</option>
-            {availableVlans.map((vlan) => (
-              <option key={vlan} value={vlan}>
-                VLAN {vlan} {vlan === 1 ? '(Défaut)' : vlan === 10 ? '(Serveurs)' : vlan === 20 ? '(IoT)' : ''}
-              </option>
-            ))}
-          </select>
-
-          {/* Grouping toggle */}
-          <button
-            onClick={onToggleGroupByHost}
-            className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap cursor-pointer ${
-              groupByHost
-                ? 'bg-cyan-950/40 text-cyan-300 border-cyan-700/60'
-                : 'bg-slate-950/70 text-slate-400 border-slate-800 hover:text-slate-200'
-            }`}
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span>Grouper par hôte parent</span>
-          </button>
-
-          {/* Zones géographiques toggle */}
-          {onToggleShowGeographicZones && (
-            <button
-              onClick={onToggleShowGeographicZones}
-              title={showGeographicZones ? 'Masquer les délimitations de zones géographiques' : 'Afficher les zones géographiques'}
-              className={`flex items-center gap-1.5 px-3 py-1 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap cursor-pointer ${
-                showGeographicZones
-                  ? 'bg-amber-950/50 text-amber-300 border-amber-600/60 shadow-xs'
-                  : 'bg-slate-950/70 text-slate-400 border-slate-800 hover:text-slate-200'
-              }`}
-            >
-              <MapPin className="w-3.5 h-3.5 text-amber-400" />
-              <span>Zones géographiques</span>
-            </button>
-          )}
-
-          {/* Gérer les zones */}
-          {onOpenZoneManager && (
-            <button
-              onClick={onOpenZoneManager}
-              title="Gérer, ajouter ou renommer les zones géographiques (pièces, baies, sous-répartiteurs, sites)"
-              className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium bg-slate-950/70 hover:bg-slate-800 text-slate-300 border border-slate-800 hover:border-slate-700 rounded-lg transition-colors whitespace-nowrap cursor-pointer"
-            >
-              <Edit2 className="w-3.5 h-3.5 text-cyan-400" />
-              <span>Gérer les zones ({zonesCount})</span>
-            </button>
-          )}
-
-          {/* Gérer les types & sous-types / rôles */}
-          {onOpenTypeManager && (
-            <button
-              onClick={onOpenTypeManager}
-              title="Gérer les types d'équipements, sous-types et rôles métier"
-              className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium bg-slate-950/70 hover:bg-slate-800 text-slate-300 border border-slate-800 hover:border-slate-700 rounded-lg transition-colors whitespace-nowrap cursor-pointer"
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Types & Rôles ({types.length || 4})</span>
-            </button>
-          )}
-
-          {/* Tout replier / Tout déplier */}
-          {onToggleAllCollapse && (
-            <button
-              onClick={onToggleAllCollapse}
-              title={allCollapsed ? 'Déplier tous les groupes hôtes et zones' : 'Replier tous les groupes hôtes et zones'}
-              className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium bg-slate-950/70 hover:bg-slate-800 text-slate-300 border border-slate-800 hover:border-slate-700 rounded-lg transition-colors whitespace-nowrap cursor-pointer"
-            >
-              <Layers className="w-3.5 h-3.5 text-cyan-400" />
-              <span>{allCollapsed ? 'Tout déplier' : 'Tout replier'}</span>
-            </button>
-          )}
         </div>
       </div>
     </div>

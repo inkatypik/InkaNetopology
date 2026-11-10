@@ -1350,8 +1350,9 @@ export default function App() {
 
   return (
     <div className={`min-h-screen ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-900 text-slate-100'}`}>
-      {/* Top Bar Contract Navbar */}
-      <Navbar
+      {/* Fixed Sticky Header & Circulation Area across ALL views */}
+      <div className="sticky top-0 z-40 w-full shrink-0 shadow-md">
+        <Navbar
         activeTab={activeTab}
         onSelectTab={(tab) => {
           if (tab === 'docker') {
@@ -1373,17 +1374,17 @@ export default function App() {
 
       {/* Real-time Scan Progress Bar Banner */}
       {isScanning && (
-        <div className="w-full bg-cyan-950/80 border-b border-cyan-800/80 px-6 py-2.5 flex items-center justify-between text-xs text-cyan-200">
+        <div className="w-full bg-cyan-950/90 border-b border-cyan-800/80 px-6 py-1.5 flex items-center justify-between text-xs text-cyan-200">
           <div className="flex items-center gap-3">
             <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
-            <span className="font-semibold">Scan réseau en cours d'exécution</span>
+            <span className="font-semibold">Scan réseau en cours:</span>
             <span className="font-mono tabular-nums text-cyan-400">
-              Sondage: {currentScanningIp || subnet} ({scanProgress}%)
+              {currentScanningIp || subnet} ({scanProgress}%)
             </span>
           </div>
 
           <div className="flex items-center gap-3">
-            <div className="w-48 bg-slate-900 rounded-full h-2 overflow-hidden border border-cyan-800/50">
+            <div className="w-48 bg-slate-900 rounded-full h-1.5 overflow-hidden border border-cyan-800/50">
               <div
                 className="bg-cyan-400 h-full transition-all duration-300"
                 style={{ width: `${scanProgress}%` }}
@@ -1391,7 +1392,7 @@ export default function App() {
             </div>
             <button
               onClick={handleCancelScan}
-              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-rose-300 bg-rose-950/80 hover:bg-rose-900/90 border border-rose-700/60 rounded-md transition-colors shadow-xs cursor-pointer active:scale-95"
+              className="flex items-center gap-1.5 px-2.5 py-0.5 text-xs font-semibold text-rose-300 bg-rose-950/80 hover:bg-rose-900 border border-rose-700/60 rounded transition-colors shadow-xs cursor-pointer active:scale-95"
               title="Interrompre immédiatement le scan réseau"
             >
               <XCircle className="w-3.5 h-3.5 text-rose-400" />
@@ -1417,8 +1418,10 @@ export default function App() {
         counts={counts}
         subnet={subnet}
         onSubnetChange={setSubnet}
-        scanMode={scanMode}
-        onScanModeChange={setScanMode}
+        isScanning={isScanning}
+        scanProgress={scanProgress}
+        onTriggerScan={handleTriggerScan}
+        onCancelScan={handleCancelScan}
         onOpenAddModal={() => {
           setAddModalPresetParentId(undefined);
           setAddModalPresetType(undefined);
@@ -1444,6 +1447,7 @@ export default function App() {
         onExportPdf={handleExportPdf}
         onOpenSettings={() => setIsSettingsOpen(true)}
       />
+    </div>
 
       {/* Main View Area by Tab */}
       <main className="w-full">
@@ -1481,6 +1485,9 @@ export default function App() {
         {activeTab === 'hosts' && (
           <HostsDependencyView
             devices={devices}
+            zones={zones}
+            types={deviceTypes}
+            subTypes={deviceSubTypes}
             onUpdateDeviceParent={handleUpdateParent}
             onEditDevice={(dev) => setEditingDevice(dev)}
             onOpenAddModal={(presetParentId, presetType) => {

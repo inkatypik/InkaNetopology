@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import type { Device, GeographicZone } from '../types/network';
 import { getDeviceDefaultIcon, getDeviceTypeColor, resolveServiceIcon } from '../utils/hardwareIcons';
 import { Activity, Edit3, Trash2, Link2, ExternalLink, MapPin, ArrowUpDown, ArrowUp, ArrowDown, GitMerge } from 'lucide-react';
+import { DeviceSummaryCard } from './DeviceSummaryCard';
 
 interface DeviceInventoryTableProps {
   devices: Device[];

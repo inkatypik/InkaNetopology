@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import type { Device, GeographicZone, DeviceTypeDefinition, DeviceSubTypeDefinition } from '../types/network';
 import { DeviceNode } from './DeviceNode';
 import { QuickLinkModal } from './QuickLinkModal';
+import { DeviceSummaryCard } from './DeviceSummaryCard';
 import {
   ZoomIn,
   ZoomOut,
@@ -893,6 +894,24 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
           </button>
         )}
       </div>
+
+      {/* Floating Standardized Fiche Équipement on Canvas for Selected Device */}
+      {selectedDevice && (
+        <div className="absolute bottom-5 left-5 z-30 w-84 max-w-[calc(100vw-40px)] export-exclude animate-in fade-in slide-in-from-bottom-2 duration-200">
+          <DeviceSummaryCard
+            device={selectedDevice}
+            allDevices={devices}
+            zones={zones}
+            types={types}
+            subTypes={subTypes}
+            onEdit={onEditDevice}
+            onPing={onPingDevice}
+            onSelect={onSelectDevice}
+            onClose={() => onSelectDevice(null)}
+            className="shadow-2xl border-cyan-500/50"
+          />
+        </div>
+      )}
 
       {/* Zoom Controls Overlay (Bottom-Right) - "Centrer la vue" and mouse helper text removed */}
       <div className="absolute bottom-5 right-5 z-20 flex flex-col items-end gap-2 export-exclude">
