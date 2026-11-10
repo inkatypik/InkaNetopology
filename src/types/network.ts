@@ -63,6 +63,11 @@ export interface Device {
   openPorts?: number[];
   location?: string;
   customImage?: string; // URL or preset identifier
+  serviceIcon?: string; // Automatically detected official application/service icon
+  isCustomImage?: boolean; // True if user manually customized the icon/image
+  isCustomZone?: boolean; // True if user manually customized the geographic zone
+  isCustomName?: boolean; // True if user manually renamed the equipment
+  isCustomType?: boolean; // True if user manually changed the equipment type/subtype
   tags: string[];
   metadata: Record<string, string>;
   lastSeen: string;
@@ -99,7 +104,7 @@ export interface ScanStatus {
   devicesFound: number;
   subnet: string;
   startedAt?: string;
-  scanMode: 'fast' | 'deep' | 'iot';
+  scanMode?: string;
 }
 
 export interface AppSettings {

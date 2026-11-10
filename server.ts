@@ -586,7 +586,14 @@ function mergeContainerEntities(
   // Host with matching hostIp is preferred over any mismatched parentHostId
   const hostDevice = hostByIp || targetParent || sourceParent;
   const parentHostId = hostDevice?.id || target.parentHostId || source.parentHostId;
-  const zoneId = hostDevice?.zoneId || target.zoneId || source.zoneId;
+  const isCustomZone = Boolean(target.isCustomZone || source.isCustomZone || target.metadata?.['Zone Manuelle'] || source.metadata?.['Zone Manuelle']);
+  const zoneId = isCustomZone
+    ? (target.isCustomZone ? target.zoneId : (source.isCustomZone ? source.zoneId : (target.zoneId || source.zoneId)))
+    : (hostDevice?.zoneId || target.zoneId || source.zoneId);
+
+  const isCustomImage = Boolean(target.isCustomImage || source.isCustomImage);
+  const customImage = target.isCustomImage ? target.customImage : (source.isCustomImage ? source.customImage : (target.customImage || source.customImage));
+  const serviceIcon = target.serviceIcon || source.serviceIcon;
 
   // Build unified metadata with explicit Host IP, Container IP, and exposed ports
   const combinedMetadata: Record<string, string> = {
@@ -597,7 +604,8 @@ function mergeContainerEntities(
     'Ports exposés': mergedPorts.length > 0 ? mergedPorts.join(', ') : 'Aucun port exposé',
     'Statut fusion': 'Fusionné (Hôte + Conteneur)',
     'Détail fusion': reason,
-    'Dernière fusion': new Date().toLocaleString('fr-FR')
+    'Dernière fusion': new Date().toLocaleString('fr-FR'),
+    ...(isCustomZone ? { 'Zone Manuelle': 'true' } : {})
   };
 
   if (hostDevice) {
@@ -633,6 +641,12 @@ function mergeContainerEntities(
     parentHostId,
     portOrInterface,
     openPorts: mergedPorts,
+    customImage,
+    serviceIcon,
+    isCustomImage,
+    isCustomZone,
+    isCustomName: target.isCustomName || source.isCustomName,
+    isCustomType: target.isCustomType || source.isCustomType,
     location: hostDevice ? `Conteneur sur ${hostDevice.name}` : (target.location || `Conteneur sur hôte ${hostIp}`),
     tags: mergedTags,
     metadata: combinedMetadata,
@@ -873,7 +887,15 @@ function mergeTwoDevices(
   // ParentHost / Switch / Zone preservation
   const chosenParentHostId = target.parentHostId || source.parentHostId;
   const chosenSwitchId = target.connectedToSwitchId || source.connectedToSwitchId;
-  const chosenZoneId = target.zoneId || source.zoneId;
+
+  const isCustomZone = Boolean(target.isCustomZone || source.isCustomZone || target.metadata?.['Zone Manuelle'] || source.metadata?.['Zone Manuelle']);
+  const chosenZoneId = isCustomZone
+    ? (target.isCustomZone ? target.zoneId : (source.isCustomZone ? source.zoneId : (target.zoneId || source.zoneId)))
+    : (target.zoneId || source.zoneId);
+
+  const isCustomImage = Boolean(target.isCustomImage || source.isCustomImage);
+  const chosenCustomImage = target.isCustomImage ? target.customImage : (source.isCustomImage ? source.customImage : (target.customImage || source.customImage));
+  const chosenServiceIcon = target.serviceIcon || source.serviceIcon;
 
   // Metadata consolidation
   const combinedMetadata: Record<string, string> = {
@@ -882,7 +904,8 @@ function mergeTwoDevices(
     'Statut fusion': 'Fusionné (Multi-identifiants)',
     'Détail fusion': reason,
     'Dernière fusion': new Date().toLocaleString('fr-FR'),
-    ...(allIps.length > 1 ? { 'Adresses IP associées': allIps.join(', ') } : {})
+    ...(allIps.length > 1 ? { 'Adresses IP associées': allIps.join(', ') } : {}),
+    ...(isCustomZone ? { 'Zone Manuelle': 'true' } : {})
   };
 
   return {
@@ -898,6 +921,12 @@ function mergeTwoDevices(
     zoneId: chosenZoneId,
     parentHostId: chosenParentHostId,
     connectedToSwitchId: chosenSwitchId,
+    customImage: chosenCustomImage,
+    serviceIcon: chosenServiceIcon,
+    isCustomImage,
+    isCustomZone,
+    isCustomName: target.isCustomName || source.isCustomName,
+    isCustomType: target.isCustomType || source.isCustomType,
     metadata: combinedMetadata,
     lastSeen: new Date().toISOString(),
     latencyMs: chosenLatency === 999 ? undefined : chosenLatency
@@ -1105,10 +1134,13 @@ function autoLayoutTopology(devList: Device[], zoneList: GeographicZone[] = zone
   };
 
   devices.forEach((d) => {
-    if (d.parentHostId && devMap.has(d.parentHostId)) {
-      const parentZone = resolveZoneId(d);
-      if (parentZone) {
-        d.zoneId = parentZone;
+    // Strictly preserve manually assigned or customized zone!
+    if (!d.isCustomZone && !d.metadata?.['Zone Manuelle'] && !d.zoneId) {
+      if (d.parentHostId && devMap.has(d.parentHostId)) {
+        const parentZone = resolveZoneId(d);
+        if (parentZone) {
+          d.zoneId = parentZone;
+        }
       }
     }
   });
@@ -2520,6 +2552,177 @@ function classifyDevice(
   };
 }
 
+// ---------------- OFFICIAL SERVICE & CONTAINER ICON RESOLVER ----------------
+// Resolves official vector brand icons from walkxcode/dashboard-icons CDN (GitHub)
+function resolveServiceIcon(device: Partial<Device>): string | undefined {
+  const cdnSvg = (slug: string) => `https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/${slug}.svg`;
+
+  const name = (device.name || '').toLowerCase();
+  const title = ((device.metadata?.['Titre Web'] || '') + ' ' + (device.metadata?.['Image'] || '')).toLowerCase();
+  const hostname = (device.metadata?.['Nom d\'hôte'] || '').toLowerCase();
+  const os = (device.os || '').toLowerCase();
+  const subType = (device.subType || '').toLowerCase();
+  const ports = device.openPorts || [];
+
+  const haystack = `${name} ${title} ${hostname} ${os} ${device.location || ''} ${Object.values(device.metadata || {}).join(' ')}`.toLowerCase();
+
+  // 1. Home Assistant
+  if (/home\s*assistant|hassio|hass\b/i.test(haystack) || ports.includes(8123)) {
+    return cdnSvg('home-assistant');
+  }
+
+  // 2. Portainer
+  if (/portainer/i.test(haystack) || ports.includes(9000) || ports.includes(9443)) {
+    return cdnSvg('portainer');
+  }
+
+  // 3. Proxmox VE
+  if (/proxmox|pve/i.test(haystack) || ports.includes(8006)) {
+    return cdnSvg('proxmox');
+  }
+
+  // 4. TrueNAS / FreeNAS
+  if (/truenas|freenas/i.test(haystack)) {
+    return cdnSvg('truenas');
+  }
+
+  // 5. Synology DSM
+  if (/synology|dsm|diskstation/i.test(haystack) || ports.includes(5000) || ports.includes(5001)) {
+    return cdnSvg('synology');
+  }
+
+  // 6. QNAP
+  if (/qnap|qts/i.test(haystack) || (ports.includes(8080) && /qnap/i.test(haystack))) {
+    return cdnSvg('qnap');
+  }
+
+  // 7. Pi-hole
+  if (/pi[\s-]*hole/i.test(haystack)) {
+    return cdnSvg('pi-hole');
+  }
+
+  // 8. AdGuard Home
+  if (/adguard/i.test(haystack) || (ports.includes(3000) && /adguard/i.test(haystack))) {
+    return cdnSvg('adguard-home');
+  }
+
+  // 9. Plex
+  if (/plex/i.test(haystack) || ports.includes(32400)) {
+    return cdnSvg('plex');
+  }
+
+  // 10. Jellyfin
+  if (/jellyfin/i.test(haystack) || ports.includes(8096)) {
+    return cdnSvg('jellyfin');
+  }
+
+  // 11. Emby
+  if (/emby/i.test(haystack) || (ports.includes(8096) && /emby/i.test(haystack))) {
+    return cdnSvg('emby');
+  }
+
+  // 12. Nextcloud
+  if (/nextcloud/i.test(haystack)) {
+    return cdnSvg('nextcloud');
+  }
+
+  // 13. Nginx Proxy Manager
+  if (/nginx[\s-]*proxy[\s-]*manager|npm\b/i.test(haystack) || (ports.includes(81) && /nginx/i.test(haystack))) {
+    return cdnSvg('nginx-proxy-manager');
+  }
+
+  // 14. Traefik
+  if (/traefik/i.test(haystack) || (ports.includes(8080) && /traefik/i.test(haystack))) {
+    return cdnSvg('traefik');
+  }
+
+  // 15. Grafana
+  if (/grafana/i.test(haystack) || (ports.includes(3000) && /grafana/i.test(haystack))) {
+    return cdnSvg('grafana');
+  }
+
+  // 16. Prometheus
+  if (/prometheus/i.test(haystack) || ports.includes(9090)) {
+    return cdnSvg('prometheus');
+  }
+
+  // 17. Uptime Kuma
+  if (/uptime[\s-]*kuma/i.test(haystack) || ports.includes(3001)) {
+    return cdnSvg('uptime-kuma');
+  }
+
+  // 18. Vaultwarden / Bitwarden
+  if (/vaultwarden|bitwarden/i.test(haystack)) {
+    return cdnSvg('vaultwarden');
+  }
+
+  // 19. Node-RED
+  if (/node[\s-]*red/i.test(haystack) || ports.includes(1880)) {
+    return cdnSvg('node-red');
+  }
+
+  // 20. Mosquitto MQTT
+  if (/mosquitto|mqtt/i.test(haystack) || ports.includes(1883)) {
+    return cdnSvg('mosquitto');
+  }
+
+  // 21. PostgreSQL
+  if (/postgres|pgsql/i.test(haystack) || ports.includes(5432)) {
+    return cdnSvg('postgres');
+  }
+
+  // 22. MySQL / MariaDB
+  if (/mariadb/i.test(haystack)) return cdnSvg('mariadb');
+  if (/mysql/i.test(haystack) || ports.includes(3306)) return cdnSvg('mysql');
+
+  // 23. Redis
+  if (/redis/i.test(haystack) || ports.includes(6379)) {
+    return cdnSvg('redis');
+  }
+
+  // 24. UniFi
+  if (/unifi/i.test(haystack) || (ports.includes(8443) && /unifi/i.test(haystack))) {
+    return cdnSvg('unifi');
+  }
+
+  // 25. WireGuard
+  if (/wireguard/i.test(haystack) || ports.includes(51820)) {
+    return cdnSvg('wireguard');
+  }
+
+  // 26. pfSense
+  if (/pfsense/i.test(haystack)) {
+    return cdnSvg('pfsense');
+  }
+
+  // 27. qBittorrent
+  if (/qbittorrent|qbit/i.test(haystack)) {
+    return cdnSvg('qbittorrent');
+  }
+
+  // 28. Paperless
+  if (/paperless/i.test(haystack)) {
+    return cdnSvg('paperless-ngx');
+  }
+
+  // 29. Immich
+  if (/immich/i.test(haystack) || ports.includes(2283)) {
+    return cdnSvg('immich');
+  }
+
+  // 30. Frigate
+  if (/frigate/i.test(haystack)) {
+    return cdnSvg('frigate');
+  }
+
+  // 31. Generic Docker
+  if (device.deviceType === 'docker' || subType === 'container') {
+    return cdnSvg('docker');
+  }
+
+  return undefined;
+}
+
 // ---------------- API ROUTES ----------------
 
 // Get interfaces
@@ -2922,10 +3125,31 @@ app.put('/api/devices/:id', (req, res) => {
   }
 
   const prev = devices[index];
+  const body = req.body || {};
+
+  // Detect and lock manual customization flags so future scans never erase them
+  const isCustomImage = body.isCustomImage ?? (body.customImage !== undefined && body.customImage !== prev.customImage ? true : prev.isCustomImage);
+  const isCustomZone = body.isCustomZone ?? (body.zoneId !== undefined && body.zoneId !== prev.zoneId ? true : prev.isCustomZone);
+  const isCustomName = body.isCustomName ?? (body.name !== undefined && body.name !== prev.name ? true : prev.isCustomName);
+  const isCustomType = body.isCustomType ?? ((body.deviceType !== undefined && body.deviceType !== prev.deviceType) || (body.subType !== undefined && body.subType !== prev.subType) ? true : prev.isCustomType);
+
+  const updatedMetadata = {
+    ...(prev.metadata || {}),
+    ...(body.metadata || {})
+  };
+  if (isCustomZone) {
+    updatedMetadata['Zone Manuelle'] = 'true';
+  }
+
   const updated: Device = {
     ...prev,
-    ...req.body,
-    id // preserve ID
+    ...body,
+    id, // preserve ID
+    isCustomImage,
+    isCustomZone,
+    isCustomName,
+    isCustomType,
+    metadata: updatedMetadata
   };
 
   if (prev.parentHostId !== updated.parentHostId) {
@@ -3083,7 +3307,6 @@ app.post('/api/scan', async (req, res) => {
   }
 
   const subnet = req.body.subnet || '192.168.1.0/24';
-  const scanMode: 'fast' | 'deep' | 'iot' = req.body.scanMode || 'fast';
 
   isScanCancelled = false;
   scanStatus = {
@@ -3092,14 +3315,13 @@ app.post('/api/scan', async (req, res) => {
     currentIp: subnet.replace(/\.0\/\d+/, '.1'),
     devicesFound: devices.length,
     subnet,
-    startedAt: new Date().toISOString(),
-    scanMode
+    startedAt: new Date().toISOString()
   };
 
   addLog({
     level: 'INFO',
     category: 'SYSTEM',
-    message: `Démarrage du scan réseau sur le sous-réseau ${subnet} (Mode: ${scanMode.toUpperCase()})...`
+    message: `Démarrage du scan réseau complet et unifié sur le sous-réseau ${subnet}...`
   });
 
   res.json({ success: true, message: 'Scan lancé avec succès.', scanStatus });
@@ -3118,13 +3340,12 @@ app.post('/api/scan', async (req, res) => {
         candidateIps.push(`${baseIp}.${i}`);
       }
 
-      // Check key common ports according to scan mode
-      const portsToProbe =
-        scanMode === 'deep'
-          ? [22, 53, 80, 443, 445, 554, 1883, 3000, 3389, 5000, 5001, 8006, 8080, 8123, 8443, 9000, 9443]
-          : scanMode === 'iot'
-          ? [80, 443, 554, 1883, 5353, 6053, 8000, 8123]
-          : [22, 53, 80, 443, 445, 8006, 5000, 8123, 8080];
+      // Unified comprehensive port list covering Infrastructure, Hypervisors, Containers, Databases, IoT & Web
+      const portsToProbe = [
+        21, 22, 53, 80, 443, 445, 554, 1883, 2375, 2376, 3000, 3306, 3389,
+        5000, 5001, 5353, 5432, 6053, 6379, 8000, 8006, 8080, 8086, 8123,
+        8443, 9000, 9090, 9443
+      ];
 
       // Keep discovered alive hosts: Map<IP, { mac, rtt, openPorts, hostname, title, isFromArp }>
       const aliveHosts = new Map<
@@ -3175,8 +3396,8 @@ app.post('/api/scan', async (req, res) => {
             let bestRtt = pingRes.rtt;
             const openPortsFound: number[] = [];
 
-            // Probe a quick subset of ports (80, 443, 22) during sweep
-            for (const port of [80, 443, 22, 8006, 5000]) {
+            // Probe key fast discovery ports during sweep
+            for (const port of [80, 443, 22, 8006, 5000, 8123, 1883, 9000]) {
               if (isScanCancelled) break;
               const res = await probePort(targetIp, port, 160);
               if (res.open) {
@@ -3394,12 +3615,36 @@ app.post('/api/scan', async (req, res) => {
             ...(isIpChanged ? [oldIp] : [])
           ])).filter(Boolean);
 
+          // Compute auto service icon from detected ports, title, and hostname
+          const tempDev: Partial<Device> = {
+            ...existing,
+            ip,
+            openPorts: mergedPorts,
+            metadata: {
+              ...(existing.metadata || {}),
+              ...(hostInfo.webTitle ? { 'Titre Web': hostInfo.webTitle } : {}),
+              ...(hostInfo.hostname ? { 'Nom d\'hôte': hostInfo.hostname } : {})
+            }
+          };
+          const autoIcon = resolveServiceIcon(tempDev);
+
           let updatedName = existing.name;
-          if (isIpChanged && updatedName.includes(oldIp)) {
-            updatedName = updatedName.replace(oldIp, ip);
-          } else if (hostInfo.hostname && (/^(Équipement|Machine|Device)\s+/i.test(updatedName) || /\(\d+\.\d+\.\d+\.\d+\)$/.test(updatedName))) {
-            updatedName = hostInfo.hostname;
+          if (!existing.isCustomName) {
+            if (isIpChanged && updatedName.includes(oldIp)) {
+              updatedName = updatedName.replace(oldIp, ip);
+            } else if (hostInfo.hostname && (/^(Équipement|Machine|Device)\s+/i.test(updatedName) || /\(\d+\.\d+\.\d+\.\d+\)$/.test(updatedName))) {
+              updatedName = hostInfo.hostname;
+            }
           }
+
+          // Strict preservation of manual customizations:
+          // 1. customImage: if manually set, NEVER overwrite; if not, apply autoIcon or keep existing
+          const customImage = existing.isCustomImage
+            ? existing.customImage
+            : (existing.customImage || autoIcon || undefined);
+
+          // 2. zoneId: strictly preserve existing zone (never overwrite user assigned zone during scan!)
+          const zoneId = existing.zoneId;
 
           devices[existingIndex] = {
             ...existing,
@@ -3411,6 +3656,14 @@ app.post('/api/scan', async (req, res) => {
             openPorts: mergedPorts,
             mac: (existing.mac && isRealHardwareMac(existing.mac)) ? existing.mac : mac,
             vendor: (existing.vendor && existing.vendor !== 'Générique / Inconnu') ? existing.vendor : vendor,
+            customImage,
+            serviceIcon: autoIcon || existing.serviceIcon,
+            zoneId,
+            isCustomImage: existing.isCustomImage,
+            isCustomZone: existing.isCustomZone,
+            isCustomName: existing.isCustomName,
+            isCustomType: existing.isCustomType,
+            position: existing.position, // Keep user placed position!
             metadata: {
               ...(existing.metadata || {}),
               ...(hostInfo.webTitle ? { 'Titre Web': hostInfo.webTitle } : {}),
@@ -3464,6 +3717,20 @@ app.post('/api/scan', async (req, res) => {
             defaultZoneId = assignedParent?.zoneId || 'zone-datacenter';
           }
 
+          const tempNewDev: Partial<Device> = {
+            name: classification.name,
+            ip,
+            openPorts: hostInfo.openPorts,
+            deviceType: classification.deviceType,
+            subType: classification.subType,
+            os: classification.os,
+            metadata: {
+              ...(hostInfo.webTitle ? { 'Titre Web': hostInfo.webTitle } : {}),
+              ...(hostInfo.hostname ? { 'Nom d\'hôte': hostInfo.hostname } : {})
+            }
+          };
+          const autoServiceIcon = resolveServiceIcon(tempNewDev);
+
           const newDevice: Device = {
             id: `dev-${ip.replace(/\./g, '-')}-${Date.now().toString(36)}`,
             name: classification.name,
@@ -3479,6 +3746,8 @@ app.post('/api/scan', async (req, res) => {
             vlan: 1,
             os: classification.os,
             openPorts: hostInfo.openPorts,
+            customImage: autoServiceIcon || undefined,
+            serviceIcon: autoServiceIcon || undefined,
             location: isDockerDevice
               ? `Conteneur sur ${assignedParent ? assignedParent.name : 'hôte Docker'}`
               : isVmDevice
@@ -3559,7 +3828,17 @@ app.post('/api/scan', async (req, res) => {
           existingCt.lastSeen = new Date().toISOString();
           existingCt.openPorts = openPorts;
           if (ctIp !== '127.0.0.1') existingCt.ip = ctIp;
-          if (dockerHost) {
+          const autoCtIcon = resolveServiceIcon({
+            ...existingCt,
+            openPorts,
+            os: ct.Image,
+            metadata: { ...(existingCt.metadata || {}), 'Image': ct.Image }
+          });
+          if (autoCtIcon) existingCt.serviceIcon = autoCtIcon;
+          if (!existingCt.isCustomImage && !existingCt.customImage && autoCtIcon) {
+            existingCt.customImage = autoCtIcon;
+          }
+          if (dockerHost && !existingCt.parentHostId) {
             existingCt.parentHostId = dockerHost.id;
             if (!existingCt.metadata) existingCt.metadata = {};
             existingCt.metadata['IP Hôte'] = dockerHost.ip;
@@ -3569,6 +3848,19 @@ app.post('/api/scan', async (req, res) => {
         } else {
           const posX = 120 + (devices.length % 7) * 170;
           const posY = 750 + Math.floor(devices.length / 7) * 160;
+
+          const tempCtDev: Partial<Device> = {
+            name: ctName,
+            ip: ctIp,
+            openPorts,
+            deviceType: 'docker',
+            subType: 'container',
+            os: ct.Image,
+            metadata: {
+              'Image': ct.Image
+            }
+          };
+          const autoCtIcon = resolveServiceIcon(tempCtDev);
 
           const newContainer: Device = {
             id: `docker-${ctId}`,
@@ -3585,6 +3877,8 @@ app.post('/api/scan', async (req, res) => {
             vlan: 1,
             os: ct.Image,
             openPorts,
+            customImage: autoCtIcon || undefined,
+            serviceIcon: autoCtIcon || undefined,
             location: `Conteneur sur ${dockerHost ? dockerHost.name : 'hôte Docker'}`,
             tags: ['Docker', 'Conteneur', 'Local'],
             metadata: {

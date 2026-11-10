@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { Device, DeviceSubType, DeviceType, DeviceStatus, GeographicZone, DeviceTypeDefinition, DeviceSubTypeDefinition } from '../types/network';
 import { X, Save, Plus, Trash2, Link2, Image, Activity, Tag, Info, Cpu, Box, Server, MapPin, Upload, Star, Settings, Check } from 'lucide-react';
-import { PRESET_HARDWARE_IMAGES, getIconComponentByName } from '../utils/hardwareIcons';
+import { PRESET_HARDWARE_IMAGES, getIconComponentByName, resolveServiceIcon } from '../utils/hardwareIcons';
 
 interface DeviceEditModalProps {
   device: Device;
@@ -115,8 +115,15 @@ export const DeviceEditModal: React.FC<DeviceEditModalProps> = ({
     setCustomImage(url);
   };
 
+  const detectedServiceIcon = useMemo(() => resolveServiceIcon(device), [device]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const isCustomImage = Boolean(customImage && customImage.trim());
+    const isCustomZone = Boolean(zoneId && zoneId.trim());
+    const isCustomName = Boolean(name && name.trim() !== device.name) || Boolean(device.isCustomName);
+    const isCustomType = (deviceType !== device.deviceType || subType !== device.subType) || Boolean(device.isCustomType);
+
     const updated: Device = {
       ...device,
       name,
@@ -136,8 +143,16 @@ export const DeviceEditModal: React.FC<DeviceEditModalProps> = ({
       os: os || undefined,
       location: location || undefined,
       customImage: customImage || undefined,
+      isCustomImage,
+      isCustomZone,
+      isCustomName,
+      isCustomType,
       tags,
-      metadata
+      metadata: {
+        ...metadata,
+        ...(isCustomZone ? { 'Zone Manuelle': 'true' } : {}),
+        ...(isCustomImage ? { 'Icône Personnalisée': 'true' } : {})
+      }
     };
     onSave(updated);
     onClose();
@@ -583,6 +598,33 @@ export const DeviceEditModal: React.FC<DeviceEditModalProps> = ({
                 </button>
               )}
             </div>
+
+            {detectedServiceIcon && customImage !== detectedServiceIcon && (
+              <div className="flex items-center justify-between p-3 bg-cyan-950/40 border border-cyan-700/50 rounded-xl">
+                <div className="flex items-center gap-2.5">
+                  <img
+                    src={detectedServiceIcon}
+                    alt="Icône officielle"
+                    className="w-8 h-8 rounded-lg object-contain p-1 bg-slate-900 border border-cyan-600/40"
+                  />
+                  <div>
+                    <span className="text-xs font-semibold text-cyan-200 block">
+                      Icône officielle de service identifiée
+                    </span>
+                    <span className="text-[10px] text-cyan-400/80">
+                      Détectée automatiquement depuis le nom, port ou image du service
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCustomImage(detectedServiceIcon)}
+                  className="px-2.5 py-1 text-xs font-medium bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg transition-colors cursor-pointer"
+                >
+                  Appliquer l'icône
+                </button>
+              </div>
+            )}
 
             {/* Local file picker & current preview */}
             <div className="flex items-center gap-4 p-3 bg-slate-900 border border-slate-800 rounded-xl">

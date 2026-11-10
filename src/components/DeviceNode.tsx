@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { Device, GeographicZone, DeviceTypeDefinition, DeviceSubTypeDefinition } from '../types/network';
-import { getDeviceDefaultIcon, getDeviceTypeColor } from '../utils/hardwareIcons';
+import { getDeviceDefaultIcon, getDeviceTypeColor, resolveServiceIcon } from '../utils/hardwareIcons';
 import { Activity, Edit3, Link2, ChevronDown, ChevronRight, Layers, MapPin, Star, Tag } from 'lucide-react';
 
 interface DeviceNodeProps {
@@ -41,6 +41,8 @@ export const DeviceNode: React.FC<DeviceNodeProps> = ({
   const typeStyle = getDeviceTypeColor(device.deviceType, types);
   const isOnline = device.status === 'online';
   const hasChildren = childCount > 0;
+  const iconUrl = device.customImage || device.serviceIcon || resolveServiceIcon(device);
+  const [imgError, setImgError] = useState(false);
 
   return (
     <div
@@ -68,15 +70,13 @@ export const DeviceNode: React.FC<DeviceNodeProps> = ({
       {/* Upper header: Icon / Custom Image + Status + Device Type */}
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="flex items-center gap-2.5 min-w-0">
-          {device.customImage ? (
+          {iconUrl && !imgError ? (
             <img
-              src={device.customImage}
+              src={iconUrl}
               alt={device.name}
               referrerPolicy="no-referrer"
-              className="w-9 h-9 rounded-lg object-cover border border-slate-700 bg-slate-800 shrink-0"
-              onError={(e) => {
-                (e.target as HTMLElement).style.display = 'none';
-              }}
+              className="w-9 h-9 rounded-lg object-contain p-1 border border-slate-700/80 bg-slate-900/90 shrink-0 shadow-xs"
+              onError={() => setImgError(true)}
             />
           ) : (
             <div className="w-9 h-9 rounded-lg bg-slate-800/80 border border-slate-700/60 flex items-center justify-center shrink-0">

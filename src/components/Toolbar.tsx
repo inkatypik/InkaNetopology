@@ -35,8 +35,8 @@ interface ToolbarProps {
   counts: Record<string, number>;
   subnet: string;
   onSubnetChange: (sub: string) => void;
-  scanMode: 'fast' | 'deep' | 'iot';
-  onScanModeChange: (mode: 'fast' | 'deep' | 'iot') => void;
+  scanMode?: string;
+  onScanModeChange?: (mode: any) => void;
   onOpenAddModal: () => void;
   onAutoLayout?: () => void;
   onMergeDuplicates?: () => void;
@@ -142,15 +142,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             />
           </div>
 
-          <select
-            value={scanMode}
-            onChange={(e) => onScanModeChange(e.target.value as any)}
-            className="text-xs bg-slate-950/60 border border-slate-800 rounded-lg text-slate-300 px-2.5 py-1.5 focus:outline-hidden focus:border-cyan-500"
-          >
-            <option value="fast">Découverte Rapide (ARP/ICMP)</option>
-            <option value="deep">Scan Approfondi (Ports & OS)</option>
-            <option value="iot">Audit Spécialisé IoT & Domotique</option>
-          </select>
+          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-cyan-950/40 border border-cyan-800/40 rounded-lg text-xs text-cyan-300 font-medium">
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+            <span>Scan Complet & Efficace</span>
+          </div>
         </div>
 
         {/* Action buttons */}

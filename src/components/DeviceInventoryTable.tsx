@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import type { Device, GeographicZone } from '../types/network';
-import { getDeviceDefaultIcon, getDeviceTypeColor } from '../utils/hardwareIcons';
+import { getDeviceDefaultIcon, getDeviceTypeColor, resolveServiceIcon } from '../utils/hardwareIcons';
 import { Activity, Edit3, Trash2, Link2, ExternalLink, MapPin, ArrowUpDown, ArrowUp, ArrowDown, GitMerge } from 'lucide-react';
 
 interface DeviceInventoryTableProps {
@@ -311,18 +311,27 @@ export const DeviceInventoryTable: React.FC<DeviceInventoryTableProps> = ({
                       {/* Name & Type */}
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-3">
-                          {device.customImage ? (
-                            <img
-                              src={device.customImage}
-                              alt=""
-                              className="w-7 h-7 rounded-md object-cover border border-slate-700 bg-slate-800"
-                              referrerPolicy="no-referrer"
-                            />
-                          ) : (
-                            <div className="w-7 h-7 rounded-md bg-slate-800 border border-slate-700 flex items-center justify-center">
-                              {getDeviceDefaultIcon(device.subType, device.deviceType)}
-                            </div>
-                          )}
+                          {(() => {
+                            const iconUrl = device.customImage || device.serviceIcon || resolveServiceIcon(device);
+                            if (iconUrl) {
+                              return (
+                                <img
+                                  src={iconUrl}
+                                  alt=""
+                                  className="w-7 h-7 rounded-md object-contain p-0.5 border border-slate-700 bg-slate-900 shadow-xs"
+                                  referrerPolicy="no-referrer"
+                                  onError={(e) => {
+                                    (e.target as HTMLElement).style.display = 'none';
+                                  }}
+                                />
+                              );
+                            }
+                            return (
+                              <div className="w-7 h-7 rounded-md bg-slate-800 border border-slate-700 flex items-center justify-center">
+                                {getDeviceDefaultIcon(device.subType, device.deviceType)}
+                              </div>
+                            );
+                          })()}
                           <div>
                             <button
                               type="button"

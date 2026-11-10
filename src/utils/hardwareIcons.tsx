@@ -245,6 +245,197 @@ export const PRESET_HARDWARE_IMAGES: PresetImage[] = [
       <rect x="24" y="46" width="32" height="14" rx="2" fill="#f1f5f9"/>
       <circle cx="56" cy="38" r="2" fill="#10b981"/>
     `)
+  },
+
+  // 7. SERVICES OFFICIELS & CONTENEURS (Icônes identifiées GitHub / Dashboard)
+  {
+    id: 'icon_portainer',
+    label: 'Portainer (Gestion conteneurs)',
+    category: 'docker',
+    subType: 'container',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/portainer.svg'
+  },
+  {
+    id: 'icon_home_assistant',
+    label: 'Home Assistant (Domotique)',
+    category: 'docker',
+    subType: 'container',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/home-assistant.svg'
+  },
+  {
+    id: 'icon_pihole',
+    label: 'Pi-hole (Bloqueur DNS)',
+    category: 'docker',
+    subType: 'dns',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/pi-hole.svg'
+  },
+  {
+    id: 'icon_adguard',
+    label: 'AdGuard Home (DNS & Sécurité)',
+    category: 'docker',
+    subType: 'dns',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/adguard-home.svg'
+  },
+  {
+    id: 'icon_proxmox',
+    label: 'Proxmox VE (Hyperviseur)',
+    category: 'vm',
+    subType: 'server',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/proxmox.svg'
+  },
+  {
+    id: 'icon_truenas',
+    label: 'TrueNAS (Stockage ZFS)',
+    category: 'vm',
+    subType: 'truenas',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/truenas.svg'
+  },
+  {
+    id: 'icon_synology',
+    label: 'Synology DSM (Serveur NAS)',
+    category: 'physical',
+    subType: 'nas',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/synology.svg'
+  },
+  {
+    id: 'icon_plex',
+    label: 'Plex Media Server',
+    category: 'docker',
+    subType: 'container',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/plex.svg'
+  },
+  {
+    id: 'icon_jellyfin',
+    label: 'Jellyfin (Media Server libre)',
+    category: 'docker',
+    subType: 'container',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/jellyfin.svg'
+  },
+  {
+    id: 'icon_nextcloud',
+    label: 'Nextcloud (Cloud Privé)',
+    category: 'docker',
+    subType: 'container',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/nextcloud.svg'
+  },
+  {
+    id: 'icon_npm',
+    label: 'Nginx Proxy Manager',
+    category: 'docker',
+    subType: 'reverse_proxy',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/nginx-proxy-manager.svg'
+  },
+  {
+    id: 'icon_traefik',
+    label: 'Traefik (Reverse Proxy Cloud)',
+    category: 'docker',
+    subType: 'reverse_proxy',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/traefik.svg'
+  },
+  {
+    id: 'icon_grafana',
+    label: 'Grafana (Métriques & Tableaux)',
+    category: 'docker',
+    subType: 'monitoring',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/grafana.svg'
+  },
+  {
+    id: 'icon_uptime_kuma',
+    label: 'Uptime Kuma (Surveillance statuts)',
+    category: 'docker',
+    subType: 'monitoring',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/uptime-kuma.svg'
+  },
+  {
+    id: 'icon_vaultwarden',
+    label: 'Vaultwarden (Gestionnaire mots de passe)',
+    category: 'docker',
+    subType: 'container',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/vaultwarden.svg'
+  },
+  {
+    id: 'icon_node_red',
+    label: 'Node-RED (Automatisations IoT)',
+    category: 'docker',
+    subType: 'container',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/node-red.svg'
+  },
+  {
+    id: 'icon_mosquitto',
+    label: 'Mosquitto MQTT (Broker messagerie)',
+    category: 'docker',
+    subType: 'container',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/mosquitto.svg'
+  },
+  {
+    id: 'icon_postgres',
+    label: 'PostgreSQL (Base relationnelle)',
+    category: 'docker',
+    subType: 'database',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/postgres.svg'
+  },
+  {
+    id: 'icon_mysql',
+    label: 'MySQL / MariaDB',
+    category: 'docker',
+    subType: 'database',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/mysql.svg'
+  },
+  {
+    id: 'icon_redis',
+    label: 'Redis (Cache mémoire)',
+    category: 'docker',
+    subType: 'database',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/redis.svg'
+  },
+  {
+    id: 'icon_unifi',
+    label: 'UniFi Network Controller',
+    category: 'docker',
+    subType: 'container',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/unifi.svg'
+  },
+  {
+    id: 'icon_wireguard',
+    label: 'WireGuard (VPN haute vitesse)',
+    category: 'docker',
+    subType: 'container',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/wireguard.svg'
+  },
+  {
+    id: 'icon_pfsense',
+    label: 'pfSense (Pare-feu & Routage)',
+    category: 'physical',
+    subType: 'router',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/pfsense.svg'
+  },
+  {
+    id: 'icon_qbittorrent',
+    label: 'qBittorrent (Client Torrent)',
+    category: 'docker',
+    subType: 'container',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/qbittorrent.svg'
+  },
+  {
+    id: 'icon_paperless',
+    label: 'Paperless-ngx (GED & Documents)',
+    category: 'docker',
+    subType: 'container',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/paperless-ngx.svg'
+  },
+  {
+    id: 'icon_immich',
+    label: 'Immich (Sauvegarde Photos)',
+    category: 'docker',
+    subType: 'container',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/immich.svg'
+  },
+  {
+    id: 'icon_frigate',
+    label: 'Frigate NVR (Vidéoprotection IA)',
+    category: 'docker',
+    subType: 'container',
+    previewUrl: 'https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/frigate.svg'
   }
 ];
 
@@ -438,4 +629,251 @@ export function getDeviceTypeLabel(deviceType: DeviceType, customTypes?: DeviceT
     default:
       return deviceType;
   }
+}
+
+/**
+ * Automatically resolves the official SVG application/service icon
+ * from walkxcode dashboard-icons open-source repository or well-known badges
+ */
+export function resolveServiceIcon(device: {
+  name?: string;
+  ip?: string;
+  subType?: string;
+  deviceType?: string;
+  openPorts?: number[];
+  os?: string;
+  metadata?: Record<string, string>;
+}): string | undefined {
+  const name = (device.name || '').toLowerCase();
+  const os = (device.os || '').toLowerCase();
+  const subType = (device.subType || '').toLowerCase();
+  const meta = device.metadata || {};
+  const webTitle = (meta['Titre Web'] || '').toLowerCase();
+  const image = (meta['Image'] || '').toLowerCase();
+  const ports = device.openPorts || [];
+
+  const haystack = `${name} ${os} ${subType} ${webTitle} ${image}`;
+
+  // Helper CDN builder: standard walkxcode dashboard-icons
+  const cdnSvg = (slug: string) => `https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/${slug}.svg`;
+
+  // 1. Portainer
+  if (/portainer/i.test(haystack) || ports.includes(9443) || (ports.includes(9000) && /docker|container|dash|portainer/i.test(haystack))) {
+    return cdnSvg('portainer');
+  }
+
+  // 2. Home Assistant
+  if (/home\s*assistant|hass\b|homeassistant/i.test(haystack) || (ports.includes(8123) && !/node-red/i.test(haystack))) {
+    return cdnSvg('home-assistant');
+  }
+
+  // 3. Proxmox VE
+  if (/proxmox|pve/i.test(haystack) || ports.includes(8006)) {
+    return cdnSvg('proxmox');
+  }
+
+  // 4. TrueNAS / FreeNAS
+  if (/truenas|freenas/i.test(haystack)) {
+    return cdnSvg('truenas');
+  }
+
+  // 5. Synology DSM
+  if (/synology|dsm/i.test(haystack) || ((ports.includes(5000) || ports.includes(5001)) && /diskstation|rackstation|syno/i.test(haystack))) {
+    return cdnSvg('synology');
+  }
+
+  // 6. Pi-hole
+  if (/pi[\s_-]?hole|pihole/i.test(haystack)) {
+    return cdnSvg('pi-hole');
+  }
+
+  // 7. AdGuard Home
+  if (/adguard/i.test(haystack) || (ports.includes(3000) && /adguard/i.test(haystack))) {
+    return cdnSvg('adguard-home');
+  }
+
+  // 8. Plex Media Server
+  if (/plex/i.test(haystack) || ports.includes(32400)) {
+    return cdnSvg('plex');
+  }
+
+  // 9. Jellyfin
+  if (/jellyfin/i.test(haystack) || ports.includes(8096)) {
+    return cdnSvg('jellyfin');
+  }
+
+  // 10. Emby
+  if (/emby/i.test(haystack) || ports.includes(8097)) {
+    return cdnSvg('emby');
+  }
+
+  // 11. Nextcloud
+  if (/nextcloud/i.test(haystack)) {
+    return cdnSvg('nextcloud');
+  }
+
+  // 12. Owncloud
+  if (/owncloud/i.test(haystack)) {
+    return cdnSvg('owncloud');
+  }
+
+  // 13. Nginx Proxy Manager
+  if (/nginx[\s_-]?proxy[\s_-]?manager|npm\b/i.test(haystack) || (ports.includes(81) && /nginx/i.test(haystack))) {
+    return cdnSvg('nginx-proxy-manager');
+  }
+
+  // 14. Nginx
+  if (/nginx/i.test(haystack)) {
+    return cdnSvg('nginx');
+  }
+
+  // 15. Traefik
+  if (/traefik/i.test(haystack)) {
+    return cdnSvg('traefik');
+  }
+
+  // 16. Caddy
+  if (/caddy/i.test(haystack)) {
+    return cdnSvg('caddy');
+  }
+
+  // 17. Grafana
+  if (/grafana/i.test(haystack) || (ports.includes(3000) && /grafana/i.test(haystack))) {
+    return cdnSvg('grafana');
+  }
+
+  // 18. Prometheus
+  if (/prometheus/i.test(haystack) || ports.includes(9090)) {
+    return cdnSvg('prometheus');
+  }
+
+  // 19. Uptime Kuma
+  if (/uptime[\s_-]?kuma|uptimekuma/i.test(haystack) || (ports.includes(3001) && /kuma|uptime/i.test(haystack))) {
+    return cdnSvg('uptime-kuma');
+  }
+
+  // 20. Vaultwarden / Bitwarden
+  if (/vaultwarden|bitwarden/i.test(haystack)) {
+    return cdnSvg('vaultwarden');
+  }
+
+  // 21. Node-RED
+  if (/node[\s_-]?red|nodered/i.test(haystack) || ports.includes(1880)) {
+    return cdnSvg('node-red');
+  }
+
+  // 22. Mosquitto / MQTT
+  if (/mosquitto|mqtt/i.test(haystack) || ports.includes(1883)) {
+    return cdnSvg('mosquitto');
+  }
+
+  // 23. Zabbix
+  if (/zabbix/i.test(haystack) || ports.includes(10050) || ports.includes(10051)) {
+    return cdnSvg('zabbix');
+  }
+
+  // 24. UniFi / Ubiquiti
+  if (/unifi|ubiquiti|udm|cloudkey/i.test(haystack) || ports.includes(8443)) {
+    return cdnSvg('unifi');
+  }
+
+  // 25. pfSense
+  if (/pfsense/i.test(haystack)) {
+    return cdnSvg('pfsense');
+  }
+
+  // 26. OPNsense
+  if (/opnsense/i.test(haystack)) {
+    return cdnSvg('opnsense');
+  }
+
+  // 27. WireGuard
+  if (/wireguard/i.test(haystack) || ports.includes(51820)) {
+    return cdnSvg('wireguard');
+  }
+
+  // 28. Tailscale
+  if (/tailscale/i.test(haystack)) {
+    return cdnSvg('tailscale');
+  }
+
+  // 29. qBittorrent
+  if (/qbittorrent|qbit/i.test(haystack)) {
+    return cdnSvg('qbittorrent');
+  }
+
+  // 30. Transmission
+  if (/transmission/i.test(haystack) || ports.includes(9091)) {
+    return cdnSvg('transmission');
+  }
+
+  // 31. Sonarr
+  if (/sonarr/i.test(haystack) || ports.includes(8989)) {
+    return cdnSvg('sonarr');
+  }
+
+  // 32. Radarr
+  if (/radarr/i.test(haystack) || ports.includes(7878)) {
+    return cdnSvg('radarr');
+  }
+
+  // 33. Gitea
+  if (/gitea/i.test(haystack)) {
+    return cdnSvg('gitea');
+  }
+
+  // 34. GitLab
+  if (/gitlab/i.test(haystack)) {
+    return cdnSvg('gitlab');
+  }
+
+  // 35. Paperless
+  if (/paperless/i.test(haystack)) {
+    return cdnSvg('paperless-ngx');
+  }
+
+  // 36. Immich
+  if (/immich/i.test(haystack) || ports.includes(2283)) {
+    return cdnSvg('immich');
+  }
+
+  // 37. Frigate
+  if (/frigate/i.test(haystack) || (ports.includes(5000) && /frigate/i.test(haystack))) {
+    return cdnSvg('frigate');
+  }
+
+  // 38. PostgreSQL
+  if (/postgres|pgsql/i.test(haystack) || ports.includes(5432)) {
+    return cdnSvg('postgres');
+  }
+
+  // 39. MySQL / MariaDB
+  if (/mariadb/i.test(haystack)) {
+    return cdnSvg('mariadb');
+  }
+  if (/mysql/i.test(haystack) || ports.includes(3306)) {
+    return cdnSvg('mysql');
+  }
+
+  // 40. Redis
+  if (/redis/i.test(haystack) || ports.includes(6379)) {
+    return cdnSvg('redis');
+  }
+
+  // 41. InfluxDB
+  if (/influxdb|influx/i.test(haystack) || ports.includes(8086)) {
+    return cdnSvg('influxdb');
+  }
+
+  // 42. Unraid
+  if (/unraid/i.test(haystack)) {
+    return cdnSvg('unraid');
+  }
+
+  // 43. Generic Docker container if subType container or deviceType docker
+  if (device.deviceType === 'docker' || subType === 'container') {
+    return cdnSvg('docker');
+  }
+
+  return undefined;
 }

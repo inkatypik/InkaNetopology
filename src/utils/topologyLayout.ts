@@ -493,7 +493,14 @@ export function mergeContainerEntities(
   // Host with matching hostIp is preferred over any mismatched parentHostId
   const hostDevice = hostByIp || targetParent || sourceParent;
   const parentHostId = hostDevice?.id || target.parentHostId || source.parentHostId;
-  const zoneId = hostDevice?.zoneId || target.zoneId || source.zoneId;
+  const isCustomZone = Boolean(target.isCustomZone || source.isCustomZone || target.metadata?.['Zone Manuelle'] || source.metadata?.['Zone Manuelle']);
+  const zoneId = isCustomZone
+    ? (target.isCustomZone ? target.zoneId : (source.isCustomZone ? source.zoneId : (target.zoneId || source.zoneId)))
+    : (hostDevice?.zoneId || target.zoneId || source.zoneId);
+
+  const isCustomImage = Boolean(target.isCustomImage || source.isCustomImage);
+  const customImage = target.isCustomImage ? target.customImage : (source.isCustomImage ? source.customImage : (target.customImage || source.customImage));
+  const serviceIcon = target.serviceIcon || source.serviceIcon;
 
   // Build unified metadata with explicit Host IP, Container IP, and exposed ports
   const combinedMetadata: Record<string, string> = {
@@ -504,7 +511,8 @@ export function mergeContainerEntities(
     'Ports exposés': mergedPorts.length > 0 ? mergedPorts.join(', ') : 'Aucun port exposé',
     'Statut fusion': 'Fusionné (Hôte + Conteneur)',
     'Détail fusion': reason,
-    'Dernière fusion': new Date().toLocaleString('fr-FR')
+    'Dernière fusion': new Date().toLocaleString('fr-FR'),
+    ...(isCustomZone ? { 'Zone Manuelle': 'true' } : {})
   };
 
   if (hostDevice) {
@@ -540,6 +548,12 @@ export function mergeContainerEntities(
     parentHostId,
     portOrInterface,
     openPorts: mergedPorts,
+    customImage,
+    serviceIcon,
+    isCustomImage,
+    isCustomZone,
+    isCustomName: target.isCustomName || source.isCustomName,
+    isCustomType: target.isCustomType || source.isCustomType,
     location: hostDevice ? `Conteneur sur ${hostDevice.name}` : (target.location || `Conteneur sur hôte ${hostIp}`),
     tags: mergedTags,
     metadata: combinedMetadata,
@@ -766,7 +780,15 @@ export function mergeTwoDevices(
 
   const chosenParentHostId = target.parentHostId || source.parentHostId;
   const chosenSwitchId = target.connectedToSwitchId || source.connectedToSwitchId;
-  const chosenZoneId = target.zoneId || source.zoneId;
+
+  const isCustomZone = Boolean(target.isCustomZone || source.isCustomZone || target.metadata?.['Zone Manuelle'] || source.metadata?.['Zone Manuelle']);
+  const chosenZoneId = isCustomZone
+    ? (target.isCustomZone ? target.zoneId : (source.isCustomZone ? source.zoneId : (target.zoneId || source.zoneId)))
+    : (target.zoneId || source.zoneId);
+
+  const isCustomImage = Boolean(target.isCustomImage || source.isCustomImage);
+  const chosenCustomImage = target.isCustomImage ? target.customImage : (source.isCustomImage ? source.customImage : (target.customImage || source.customImage));
+  const chosenServiceIcon = target.serviceIcon || source.serviceIcon;
 
   const combinedMetadata: Record<string, string> = {
     ...(source.metadata || {}),
@@ -774,7 +796,8 @@ export function mergeTwoDevices(
     'Statut fusion': 'Fusionné (Multi-identifiants)',
     'Détail fusion': reason,
     'Dernière fusion': new Date().toLocaleString('fr-FR'),
-    ...(allIps.length > 1 ? { 'Adresses IP associées': allIps.join(', ') } : {})
+    ...(allIps.length > 1 ? { 'Adresses IP associées': allIps.join(', ') } : {}),
+    ...(isCustomZone ? { 'Zone Manuelle': 'true' } : {})
   };
 
   return {
@@ -790,6 +813,12 @@ export function mergeTwoDevices(
     zoneId: chosenZoneId,
     parentHostId: chosenParentHostId,
     connectedToSwitchId: chosenSwitchId,
+    customImage: chosenCustomImage,
+    serviceIcon: chosenServiceIcon,
+    isCustomImage,
+    isCustomZone,
+    isCustomName: target.isCustomName || source.isCustomName,
+    isCustomType: target.isCustomType || source.isCustomType,
     metadata: combinedMetadata,
     lastSeen: new Date().toISOString(),
     latencyMs: chosenLatency === 999 ? undefined : chosenLatency
@@ -1007,10 +1036,13 @@ export function autoLayoutTopology(devList: Device[], zoneList: GeographicZone[]
   };
 
   devices.forEach((d) => {
-    if (d.parentHostId && devMap.has(d.parentHostId)) {
-      const parentZone = resolveZoneId(d);
-      if (parentZone) {
-        d.zoneId = parentZone;
+    // Strictly preserve manually assigned or customized zone!
+    if (!d.isCustomZone && !d.metadata?.['Zone Manuelle'] && !d.zoneId) {
+      if (d.parentHostId && devMap.has(d.parentHostId)) {
+        const parentZone = resolveZoneId(d);
+        if (parentZone) {
+          d.zoneId = parentZone;
+        }
       }
     }
   });
