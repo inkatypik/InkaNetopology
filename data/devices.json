@@ -1,1 +1,313 @@
-[]
+[
+  {
+    "id": "gw-core-udm",
+    "name": "UniFi Dream Machine Pro",
+    "ip": "192.168.1.1",
+    "mac": "74:83:c2:1a:2b:3c",
+    "vendor": "Ubiquiti Networks",
+    "deviceType": "physical",
+    "subType": "router",
+    "isCore": true,
+    "status": "online",
+    "vlan": 1,
+    "zoneId": "zone-baie",
+    "os": "UniFi OS 3.2",
+    "openPorts": [
+      22,
+      53,
+      80,
+      443,
+      8443
+    ],
+    "latencyMs": 1,
+    "tags": [
+      "Passerelle",
+      "Cœur de réseau",
+      "UDM Pro",
+      "DHCP"
+    ],
+    "metadata": {},
+    "position": {
+      "x": 1800,
+      "y": 1400
+    },
+    "lastSeen": "2026-11-11T14:59:38.182Z"
+  },
+  {
+    "id": "sw-core-poe",
+    "name": "Switch USW-Pro-24-PoE",
+    "ip": "192.168.1.2",
+    "mac": "74:83:c2:4d:5e:6f",
+    "vendor": "Ubiquiti Networks",
+    "deviceType": "physical",
+    "subType": "switch",
+    "status": "online",
+    "vlan": 1,
+    "zoneId": "zone-baie",
+    "connectedToSwitchId": "gw-core-udm",
+    "portOrInterface": "SFP+ Port 25 (10 Gbps)",
+    "openPorts": [
+      22,
+      80,
+      443
+    ],
+    "latencyMs": 1,
+    "tags": [
+      "Switch Cœur",
+      "PoE+"
+    ],
+    "metadata": {},
+    "position": {
+      "x": 1800,
+      "y": 1700
+    },
+    "lastSeen": "2026-11-11T14:59:38.182Z"
+  },
+  {
+    "id": "srv-proxmox-pve1",
+    "name": "Serveur Proxmox PVE-01",
+    "ip": "192.168.1.50",
+    "mac": "bc:24:11:aa:bb:cc",
+    "vendor": "Dell PowerEdge",
+    "deviceType": "physical",
+    "subType": "server",
+    "status": "online",
+    "vlan": 10,
+    "zoneId": "zone-serveurs",
+    "connectedToSwitchId": "sw-core-poe",
+    "portOrInterface": "Port 1 (LACP 2 Gbps)",
+    "os": "Proxmox VE 8.1 (Debian 12)",
+    "openPorts": [
+      22,
+      8006,
+      111
+    ],
+    "latencyMs": 2,
+    "tags": [
+      "Hyperviseur",
+      "Proxmox",
+      "KVM/LXC"
+    ],
+    "metadata": {},
+    "position": {
+      "x": 1200,
+      "y": 1300
+    },
+    "lastSeen": "2026-11-11T14:59:38.182Z"
+  },
+  {
+    "id": "nas-synology-ds920",
+    "name": "NAS Synology DS920+",
+    "ip": "192.168.1.60",
+    "mac": "00:11:32:88:99:aa",
+    "vendor": "Synology Inc.",
+    "deviceType": "physical",
+    "subType": "nas",
+    "status": "online",
+    "vlan": 10,
+    "zoneId": "zone-serveurs",
+    "connectedToSwitchId": "sw-core-poe",
+    "portOrInterface": "Port 4",
+    "os": "DSM 7.2",
+    "openPorts": [
+      22,
+      80,
+      443,
+      5000,
+      5001,
+      32400
+    ],
+    "latencyMs": 2,
+    "tags": [
+      "Stockage",
+      "iSCSI",
+      "NFS",
+      "Docker"
+    ],
+    "metadata": {},
+    "position": {
+      "x": 2400,
+      "y": 1300
+    },
+    "lastSeen": "2026-11-11T14:59:38.182Z"
+  },
+  {
+    "id": "vm-docker-engine",
+    "name": "VM Docker Engine (Production)",
+    "ip": "192.168.1.55",
+    "mac": "52:54:00:12:34:56",
+    "vendor": "QEMU / Proxmox",
+    "deviceType": "vm",
+    "subType": "server",
+    "status": "online",
+    "vlan": 10,
+    "zoneId": "zone-serveurs",
+    "parentHostId": "srv-proxmox-pve1",
+    "os": "Debian 12 Bookworm",
+    "openPorts": [
+      22,
+      2375
+    ],
+    "latencyMs": 1,
+    "tags": [
+      "Docker Host",
+      "VM"
+    ],
+    "metadata": {},
+    "position": {
+      "x": 1000,
+      "y": 1600
+    },
+    "lastSeen": "2026-11-11T14:59:38.182Z"
+  },
+  {
+    "id": "cnt-pihole-dns",
+    "name": "Pi-hole DNS & AdBlock",
+    "ip": "172.17.0.2",
+    "mac": "02:42:ac:11:00:02",
+    "vendor": "Pi-hole",
+    "deviceType": "docker",
+    "subType": "dns",
+    "status": "online",
+    "parentHostId": "srv-proxmox-pve1",
+    "openPorts": [
+      53,
+      80
+    ],
+    "tags": [
+      "DNS",
+      "Conteneur Docker",
+      "AdBlock"
+    ],
+    "metadata": {
+      "IP Hôte": "192.168.1.50",
+      "Nom conteneur": "pihole-production",
+      "Image": "pihole/pihole:latest",
+      "Ports exposés": "53/udp, 80->8080"
+    },
+    "position": {
+      "x": 900,
+      "y": 1850
+    },
+    "lastSeen": "2026-11-11T14:59:38.182Z"
+  },
+  {
+    "id": "cnt-homeassistant",
+    "name": "Home Assistant Core",
+    "ip": "172.17.0.3",
+    "mac": "02:42:ac:11:00:03",
+    "vendor": "Home Assistant",
+    "deviceType": "docker",
+    "subType": "iot",
+    "status": "online",
+    "parentHostId": "srv-proxmox-pve1",
+    "openPorts": [
+      8123
+    ],
+    "tags": [
+      "Domotique",
+      "Conteneur Docker"
+    ],
+    "metadata": {
+      "IP Hôte": "192.168.1.50",
+      "Nom conteneur": "homeassistant",
+      "Image": "ghcr.io/home-assistant/home-assistant:stable",
+      "Ports exposés": "8123->8123"
+    },
+    "position": {
+      "x": 1200,
+      "y": 1850
+    },
+    "lastSeen": "2026-11-11T14:59:38.182Z"
+  },
+  {
+    "id": "cnt-plex-media",
+    "name": "Plex Media Server",
+    "ip": "172.18.0.2",
+    "mac": "02:42:ac:12:00:02",
+    "vendor": "Plex Inc.",
+    "deviceType": "docker",
+    "subType": "server",
+    "status": "online",
+    "parentHostId": "nas-synology-ds920",
+    "openPorts": [
+      32400
+    ],
+    "tags": [
+      "Streaming",
+      "Conteneur Docker"
+    ],
+    "metadata": {
+      "IP Hôte": "192.168.1.60",
+      "Nom conteneur": "plexms",
+      "Image": "plexinc/pms-docker:latest",
+      "Ports exposés": "32400->32400"
+    },
+    "position": {
+      "x": 2400,
+      "y": 1650
+    },
+    "lastSeen": "2026-11-11T14:59:38.182Z"
+  },
+  {
+    "id": "iot-shelly-relay",
+    "name": "Shelly Pro 4PM (Tableau Électrique)",
+    "ip": "192.168.1.110",
+    "mac": "34:94:54:11:22:33",
+    "vendor": "Shelly Group (Allterco)",
+    "deviceType": "iot",
+    "subType": "iot",
+    "status": "online",
+    "vlan": 20,
+    "zoneId": "zone-iot",
+    "connectedToSwitchId": "sw-core-poe",
+    "portOrInterface": "Wi-Fi IoT",
+    "openPorts": [
+      80
+    ],
+    "latencyMs": 14,
+    "tags": [
+      "IoT",
+      "Shelly",
+      "Relais Électrique",
+      "VLAN 20"
+    ],
+    "metadata": {},
+    "position": {
+      "x": 2200,
+      "y": 2000
+    },
+    "lastSeen": "2026-11-11T14:59:38.182Z"
+  },
+  {
+    "id": "iot-esp32-sensor",
+    "name": "Passerelle ESP32 Zigbee & Climat",
+    "ip": "192.168.1.111",
+    "mac": "24:0a:c4:44:55:66",
+    "vendor": "Espressif Inc.",
+    "deviceType": "iot",
+    "subType": "iot",
+    "status": "online",
+    "vlan": 20,
+    "zoneId": "zone-iot",
+    "connectedToSwitchId": "sw-core-poe",
+    "portOrInterface": "Wi-Fi IoT",
+    "openPorts": [
+      80,
+      1883
+    ],
+    "latencyMs": 18,
+    "tags": [
+      "IoT",
+      "ESP32",
+      "Zigbee Gateway",
+      "MQTT"
+    ],
+    "metadata": {},
+    "position": {
+      "x": 2500,
+      "y": 2000
+    },
+    "lastSeen": "2026-11-11T14:59:38.182Z"
+  }
+]

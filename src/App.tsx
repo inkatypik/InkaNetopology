@@ -25,7 +25,6 @@ export default function App() {
   const [deviceSubTypes, setDeviceSubTypes] = useState<DeviceSubTypeDefinition[]>([]);
   const [logs, setLogs] = useState<NetworkLog[]>([]);
   const [activeTab, setActiveTab] = useState<ActiveTab>('topology');
-  const [isDark, setIsDark] = useState<boolean>(true);
   const [isSseConnected, setIsSseConnected] = useState<boolean>(false);
 
   // Scan state
@@ -78,14 +77,10 @@ export default function App() {
     }, 3500);
   };
 
-  // Sync dark class on root document
+  // Permanent dark mode
   useEffect(() => {
-    if (isDark) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [isDark]);
+    document.documentElement.classList.add('dark');
+  }, []);
 
   // Initial fetch for devices, zones, types, subtypes, interfaces, and logs
   useEffect(() => {
@@ -1349,28 +1344,26 @@ export default function App() {
   const onlineCount = useMemo(() => devices.filter((d) => d.status === 'online').length, [devices]);
 
   return (
-    <div className={`min-h-screen ${isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-900 text-slate-100'}`}>
+    <div className="min-h-screen bg-slate-950 text-slate-100">
       {/* Fixed Sticky Header & Circulation Area across ALL views */}
       <div className="sticky top-0 z-40 w-full shrink-0 shadow-md">
         <Navbar
-        activeTab={activeTab}
-        onSelectTab={(tab) => {
-          if (tab === 'docker') {
-            setIsDockerModalOpen(true);
-          } else {
-            setActiveTab(tab);
-          }
-        }}
-        isScanning={isScanning}
-        scanProgress={scanProgress}
-        onTriggerScan={handleTriggerScan}
-        onCancelScan={handleCancelScan}
-        isDark={isDark}
-        onToggleTheme={() => setIsDark(!isDark)}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        onlineCount={onlineCount}
-        totalCount={devices.length}
-      />
+          activeTab={activeTab}
+          onSelectTab={(tab) => {
+            if (tab === 'docker') {
+              setIsDockerModalOpen(true);
+            } else {
+              setActiveTab(tab);
+            }
+          }}
+          isScanning={isScanning}
+          scanProgress={scanProgress}
+          onTriggerScan={handleTriggerScan}
+          onCancelScan={handleCancelScan}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          onlineCount={onlineCount}
+          totalCount={devices.length}
+        />
 
       {/* Real-time Scan Progress Bar Banner */}
       {isScanning && (
@@ -1453,6 +1446,7 @@ export default function App() {
       <main className="w-full">
         {activeTab === 'topology' && (
           <TopologyCanvas
+            allDevices={devices}
             devices={filteredDevices}
             zones={zones}
             types={deviceTypes}
@@ -1501,8 +1495,12 @@ export default function App() {
 
         {activeTab === 'inventory' && (
           <DeviceInventoryTable
+            allDevices={devices}
             devices={filteredDevices}
             zones={zones}
+            types={deviceTypes}
+            subTypes={deviceSubTypes}
+            selectedDevice={selectedDevice}
             onSelectDevice={(dev) => setSelectedDevice(dev)}
             onEditDevice={(dev) => setEditingDevice(dev)}
             onPingDevice={handlePingDevice}

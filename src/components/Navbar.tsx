@@ -1,5 +1,5 @@
 import React from 'react';
-import { Moon, Sun, Terminal, Layers, Network, Table, Settings, RefreshCw } from 'lucide-react';
+import { Terminal, Layers, Network, Table, Settings, RefreshCw } from 'lucide-react';
 
 export type ActiveTab = 'topology' | 'hosts' | 'inventory' | 'logs' | 'docker';
 
@@ -10,8 +10,6 @@ interface NavbarProps {
   scanProgress?: number;
   onTriggerScan?: () => void;
   onCancelScan?: () => void;
-  isDark: boolean;
-  onToggleTheme: () => void;
   onOpenSettings?: () => void;
   onlineCount: number;
   totalCount: number;
@@ -22,8 +20,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSelectTab,
   isScanning = false,
   scanProgress = 0,
-  isDark,
-  onToggleTheme,
   onOpenSettings,
   onlineCount,
   totalCount
@@ -127,14 +123,6 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           )}
 
-          <button
-            type="button"
-            onClick={onToggleTheme}
-            aria-label="Basculer thème"
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/80 transition-colors cursor-pointer"
-          >
-            {isDark ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-slate-300" />}
-          </button>
 
           {onOpenSettings && (
             <button

@@ -1,13 +1,17 @@
 import React, { useState, useMemo } from 'react';
-import type { Device, GeographicZone } from '../types/network';
+import type { Device, GeographicZone, DeviceTypeDefinition, DeviceSubTypeDefinition } from '../types/network';
 import { getDeviceDefaultIcon, getDeviceTypeColor, resolveServiceIcon } from '../utils/hardwareIcons';
 import { Activity, Edit3, Trash2, Link2, ExternalLink, MapPin, ArrowUpDown, ArrowUp, ArrowDown, GitMerge } from 'lucide-react';
 import { DeviceSummaryCard } from './DeviceSummaryCard';
 
 interface DeviceInventoryTableProps {
   devices: Device[];
+  allDevices?: Device[];
   zones?: GeographicZone[];
-  onSelectDevice: (device: Device) => void;
+  types?: DeviceTypeDefinition[];
+  subTypes?: DeviceSubTypeDefinition[];
+  selectedDevice?: Device | null;
+  onSelectDevice: (device: Device | null) => void;
   onEditDevice: (device: Device) => void;
   onPingDevice: (device: Device) => void;
   onDeleteDevice: (id: string) => void;
@@ -31,7 +35,11 @@ function ipToNumber(ip: string): number {
 
 export const DeviceInventoryTable: React.FC<DeviceInventoryTableProps> = ({
   devices,
+  allDevices,
   zones = [],
+  types = [],
+  subTypes = [],
+  selectedDevice,
   onSelectDevice,
   onEditDevice,
   onPingDevice,
@@ -564,6 +572,29 @@ export const DeviceInventoryTable: React.FC<DeviceInventoryTableProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Fiche Équipement standardisée avec accès direct à l'édition */}
+      {selectedDevice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="w-full max-w-md animate-in zoom-in-95 duration-150 shadow-2xl">
+            <DeviceSummaryCard
+              device={selectedDevice}
+              allDevices={allDevices || devices}
+              zones={zones}
+              types={types}
+              subTypes={subTypes}
+              onEdit={(dev) => {
+                onSelectDevice(null);
+                onEditDevice(dev);
+              }}
+              onPing={onPingDevice}
+              onSelect={onSelectDevice}
+              onClose={() => onSelectDevice(null)}
+              className="border-cyan-500/60 shadow-2xl"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

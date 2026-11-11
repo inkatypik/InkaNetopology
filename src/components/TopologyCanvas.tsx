@@ -32,6 +32,7 @@ import {
 import { getDeviceTypeColor, getDeviceTypeLabel } from '../utils/hardwareIcons';
 
 interface TopologyCanvasProps {
+  allDevices?: Device[];
   devices: Device[];
   zones?: GeographicZone[];
   types?: DeviceTypeDefinition[];
@@ -61,6 +62,7 @@ interface TopologyCanvasProps {
 }
 
 export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
+  allDevices,
   devices,
   zones = [],
   types = [],
@@ -216,27 +218,28 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
     return map;
   }, [zones]);
 
-  // Identify Core Network Node(s)
-  const coreNodes = useMemo(() => {
-    const manuals = devices.filter((d) => d.isCore === true);
-    if (manuals.length > 0) return manuals;
+  // Canonical Core Network Node determined from the COMPLETE inventory (allDevices)
+  // CRITICAL: The core node MUST remain the true core whether selected, displayed, or filtered out.
+  // Never assign core status to a non-core device!
+  const trueCoreNode = useMemo(() => {
+    const list = allDevices && allDevices.length > 0 ? allDevices : devices;
+    const manuals = list.filter((d) => d.isCore === true);
+    if (manuals.length > 0) return manuals[0];
     const defaultCore =
-      devices.find(
+      list.find(
         (d) =>
           d.subType === 'router' ||
-          d.tags?.some((t) => t.toLowerCase().includes('passerelle') || t.toLowerCase().includes('cœur')) ||
+          d.tags?.some((t) => t.toLowerCase().includes('passerelle') || t.toLowerCase().includes('cœur') || t.toLowerCase().includes('coeur')) ||
           d.name.toLowerCase().includes('cœur') ||
           d.name.toLowerCase().includes('coeur') ||
           d.name.toLowerCase().includes('udm') ||
           d.ip.endsWith('.1') ||
           d.ip.endsWith('.254')
       ) ||
-      devices.find((d) => d.subType === 'switch') ||
-      devices[0];
-    return defaultCore ? [defaultCore] : [];
-  }, [devices]);
-
-  const coreNode = coreNodes[0];
+      list.find((d) => d.subType === 'switch') ||
+      list[0];
+    return defaultCore || null;
+  }, [allDevices, devices]);
 
   const isDraggingActive = Boolean(
     draggedNodeId || draggedZoneId || draggedClusterHostId || isPanning || isDraggingLegend
@@ -244,45 +247,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   const isDraggingActiveRef = useRef(false);
   isDraggingActiveRef.current = isDraggingActive;
 
-  // Center viewport on the network core node or all devices
-  const centerViewOnCore = useCallback((targetScale?: number) => {
-    if (isDraggingActiveRef.current) return;
-    if (!containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    const currentScale = targetScale ?? scale;
-
-    // Find the center point of the core network node (or average center of all devices)
-    const targetCore = coreNode;
-    let targetX = 1800;
-    let targetY = 1400;
-
-    if (targetCore?.position) {
-      targetX = targetCore.position.x + 140;
-      targetY = targetCore.position.y + 110;
-    } else if (devices.length > 0) {
-      let sumX = 0;
-      let sumY = 0;
-      let count = 0;
-      devices.forEach((d) => {
-        if (d.position) {
-          sumX += d.position.x + 140;
-          sumY += d.position.y + 110;
-          count++;
-        }
-      });
-      if (count > 0) {
-        targetX = sumX / count;
-        targetY = sumY / count;
-      }
-    }
-
-    const nextOffsetX = Math.round(rect.width / 2 - targetX * currentScale);
-    const nextOffsetY = Math.round(rect.height / 2 - targetY * currentScale);
-    setOffset({ x: nextOffsetX, y: nextOffsetY });
-  }, [coreNode, devices, scale]);
-
-  const centerViewOnCoreRef = useRef(centerViewOnCore);
-  centerViewOnCoreRef.current = centerViewOnCore;
+  const centerViewOnCoreRef = useRef<((targetScale?: number) => void) | null>(null);
 
   // Center automatically ONLY on initial load when devices first arrive
   const hasInitiallyCenteredRef = useRef(false);
@@ -290,7 +255,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
     if (!hasInitiallyCenteredRef.current && devices.length > 0) {
       hasInitiallyCenteredRef.current = true;
       const timer = setTimeout(() => {
-        if (!isDraggingActiveRef.current) {
+        if (!isDraggingActiveRef.current && centerViewOnCoreRef.current) {
           centerViewOnCoreRef.current();
         }
       }, 50);
@@ -304,7 +269,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
     if (layoutTrigger && layoutTrigger > 0 && layoutTrigger !== lastHandledLayoutTriggerRef.current) {
       lastHandledLayoutTriggerRef.current = layoutTrigger;
       const timer = setTimeout(() => {
-        if (!isDraggingActiveRef.current) {
+        if (!isDraggingActiveRef.current && centerViewOnCoreRef.current) {
           centerViewOnCoreRef.current();
         }
       }, 60);
@@ -487,7 +452,50 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
 
   const visibleDeviceIds = useMemo(() => new Set(visibleDevices.map((d) => d.id)), [visibleDevices]);
 
-  // Links computation (only among visible nodes)
+  // Is the true core node currently visible in the active filtered view?
+  const isTrueCoreVisible = useMemo(() => {
+    return trueCoreNode ? visibleDeviceIds.has(trueCoreNode.id) : false;
+  }, [trueCoreNode, visibleDeviceIds]);
+
+  // Center viewport on the network core node (if visible) or visible devices average center
+  const centerViewOnCore = useCallback((targetScale?: number) => {
+    if (isDraggingActiveRef.current) return;
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const currentScale = targetScale ?? scale;
+
+    const targetCore = isTrueCoreVisible ? trueCoreNode : null;
+    let targetX = 1800;
+    let targetY = 1400;
+
+    if (targetCore?.position) {
+      targetX = targetCore.position.x + 140;
+      targetY = targetCore.position.y + 110;
+    } else if (visibleDevices.length > 0) {
+      let sumX = 0;
+      let sumY = 0;
+      let count = 0;
+      visibleDevices.forEach((d) => {
+        if (d.position) {
+          sumX += d.position.x + 140;
+          sumY += d.position.y + 110;
+          count++;
+        }
+      });
+      if (count > 0) {
+        targetX = sumX / count;
+        targetY = sumY / count;
+      }
+    }
+
+    const nextOffsetX = Math.round(rect.width / 2 - targetX * currentScale);
+    const nextOffsetY = Math.round(rect.height / 2 - targetY * currentScale);
+    setOffset({ x: nextOffsetX, y: nextOffsetY });
+  }, [trueCoreNode, isTrueCoreVisible, visibleDevices, scale]);
+
+  centerViewOnCoreRef.current = centerViewOnCore;
+
+  // Links computation (strictly among visible nodes, never re-routing to an arbitrary fake core)
   const { physicalLinks, virtualLinks } = useMemo(() => {
     const phys: Array<{ from: Device; to: Device; label?: string; isAuto?: boolean }> = [];
     const virt: Array<{ host: Device; guest: Device; isDocker: boolean }> = [];
@@ -496,6 +504,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
       if (!visibleDeviceIds.has(dev.id)) return;
 
       // 1. Virtualization link (VM or Docker container to host)
+      // Only draw if BOTH the guest and the host are currently visible
       if (dev.parentHostId && deviceMap.has(dev.parentHostId)) {
         const host = deviceMap.get(dev.parentHostId)!;
         if (visibleDeviceIds.has(host.id) && !collapsedHostIds.has(host.id)) {
@@ -509,6 +518,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
       }
 
       // 2. Explicit network switch link
+      // Only draw if BOTH endpoints (switch and device) are visible
       if (dev.connectedToSwitchId && deviceMap.has(dev.connectedToSwitchId)) {
         const sw = deviceMap.get(dev.connectedToSwitchId)!;
         if (visibleDeviceIds.has(sw.id)) {
@@ -521,21 +531,22 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
         return;
       }
 
-      // 3. Fallback star ray link to core router / switch
-      if (coreNode && dev.id !== coreNode.id) {
-        if (visibleDeviceIds.has(coreNode.id)) {
-          phys.push({
-            from: coreNode,
-            to: dev,
-            label: dev.portOrInterface || (dev.deviceType === 'iot' ? 'Wi-Fi / LAN' : 'LAN'),
-            isAuto: true
-          });
-        }
+      // 3. Fallback star ray link to canonical core router / switch
+      // CRITICAL: The core network node remains the true canonical core, visible or not.
+      // If the true core node is NOT visible in the filtered view, links to it are simply not displayed!
+      // They are NEVER re-routed to an arbitrary device!
+      if (trueCoreNode && isTrueCoreVisible && dev.id !== trueCoreNode.id) {
+        phys.push({
+          from: trueCoreNode,
+          to: dev,
+          label: dev.portOrInterface || (dev.deviceType === 'iot' ? 'Wi-Fi / LAN' : 'LAN'),
+          isAuto: true
+        });
       }
     });
 
     return { physicalLinks: phys, virtualLinks: virt };
-  }, [devices, deviceMap, visibleDeviceIds, collapsedHostIds, coreNode]);
+  }, [devices, deviceMap, visibleDeviceIds, collapsedHostIds, trueCoreNode, isTrueCoreVisible]);
 
   // CLUSTER BOUNDING BOXES FOR HOST VIRTUALIZATION
   const hostClusters = useMemo(() => {
@@ -1605,7 +1616,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
           const childCount = childrenCountMap.get(device.id) || 0;
           const isCollapsed = collapsedHostIds.has(device.id);
           const zone = device.zoneId ? zoneMap.get(device.zoneId) : undefined;
-          const isCore = coreNode ? device.id === coreNode.id : false;
+          const isCore = trueCoreNode ? device.id === trueCoreNode.id : false;
 
           return (
             <div

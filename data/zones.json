@@ -1,1 +1,23 @@
-[]
+[
+  {
+    "id": "zone-baie",
+    "name": "Baie Réseau & Cœur",
+    "type": "baie",
+    "description": "Rack principal et équipements de cœur",
+    "color": "#06b6d4"
+  },
+  {
+    "id": "zone-serveurs",
+    "name": "Local Serveurs / Virtualisation",
+    "type": "sous_repartiteur",
+    "description": "Hôtes hyperviseurs Proxmox et NAS",
+    "color": "#6366f1"
+  },
+  {
+    "id": "zone-iot",
+    "name": "Bâtiment - Capteurs & IoT",
+    "type": "site",
+    "description": "Capteurs d'ambiance et domotique",
+    "color": "#f59e0b"
+  }
+]
