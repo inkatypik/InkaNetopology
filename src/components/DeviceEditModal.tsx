@@ -12,6 +12,7 @@ interface DeviceEditModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (updated: Device) => void;
+  onDelete?: (deviceId: string) => void;
   onPing: (device: Device) => void;
   onOpenTypeManager?: () => void;
   onSaveSubType?: (subType: DeviceSubTypeDefinition) => void;
@@ -26,6 +27,7 @@ export const DeviceEditModal: React.FC<DeviceEditModalProps> = ({
   isOpen,
   onClose,
   onSave,
+  onDelete,
   onPing,
   onOpenTypeManager,
   onSaveSubType
@@ -809,21 +811,40 @@ export const DeviceEditModal: React.FC<DeviceEditModalProps> = ({
           </div>
 
           {/* Modal Footer */}
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg font-medium transition-colors"
-            >
-              Annuler
-            </button>
-            <button
-              type="submit"
-              className="flex items-center gap-2 px-5 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg font-semibold shadow-md transition-colors"
-            >
-              <Save className="w-4 h-4" />
-              <span>Enregistrer les Modifications</span>
-            </button>
+          <div className="flex items-center justify-between gap-3 pt-4 border-t border-slate-800">
+            {onDelete ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm(`Confirmer la suppression définitive de l'équipement "${name}" de l'inventaire ?`)) {
+                    onDelete(device.id);
+                    onClose();
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-2 text-rose-300 hover:text-white bg-rose-950/60 hover:bg-rose-900 border border-rose-800/60 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                title="Supprimer cet équipement de l'inventaire"
+              >
+                <Trash2 className="w-4 h-4 text-rose-400" />
+                <span>Supprimer l'équipement</span>
+              </button>
+            ) : <div />}
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg font-medium transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                type="submit"
+                className="flex items-center gap-2 px-5 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg font-semibold shadow-md transition-colors"
+              >
+                <Save className="w-4 h-4" />
+                <span>Enregistrer les Modifications</span>
+              </button>
+            </div>
           </div>
         </form>
       </div>

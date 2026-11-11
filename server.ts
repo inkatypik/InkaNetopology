@@ -2003,6 +2003,41 @@ function fetchDockerContainers(): Promise<any[]> {
   });
 }
 
+// Read running Docker containers from remote Docker TCP socket (e.g. port 2375/2376 on physical host or VM)
+function fetchRemoteDockerContainers(ip: string, port = 2375): Promise<any[]> {
+  return new Promise((resolve) => {
+    const req = http.request(
+      {
+        host: ip,
+        port,
+        path: '/containers/json',
+        method: 'GET',
+        headers: { Host: `${ip}:${port}` },
+        timeout: 1200
+      },
+      (res) => {
+        let body = '';
+        res.on('data', (chunk) => (body += chunk));
+        res.on('end', () => {
+          try {
+            const containers = JSON.parse(body);
+            resolve(Array.isArray(containers) ? containers : []);
+          } catch {
+            resolve([]);
+          }
+        });
+      }
+    );
+
+    req.on('error', () => resolve([]));
+    req.on('timeout', () => {
+      req.destroy();
+      resolve([]);
+    });
+    req.end();
+  });
+}
+
 // Probe TCP port connectivity with strict hard JS timer to guarantee abort on filtered ports
 function probePort(ip: string, port: number, timeout = 180): Promise<{ open: boolean; rtt: number }> {
   return new Promise((resolve) => {
@@ -3909,7 +3944,113 @@ app.post('/api/scan', async (req, res) => {
         }
       }
 
-      // C) Deduplicate and fuse Docker containers (host entity vs container IP entity)
+      // C) Process Remote Docker daemons discovered on physical hosts OR virtual machines (port 2375 or 2376)
+      for (const [hostIp, hostInfo] of aliveHosts.entries()) {
+        const dockerPort = hostInfo.openPorts.find((p) => p === 2375 || p === 2376);
+        if (dockerPort) {
+          try {
+            const remoteContainers = await fetchRemoteDockerContainers(hostIp, dockerPort);
+            if (remoteContainers.length > 0) {
+              const matchedHost = devices.find((d) => d.ip === hostIp);
+              const hostName = matchedHost ? matchedHost.name : hostIp;
+              addLog({
+                level: 'INFO',
+                category: 'DOCKER',
+                message: `Docker distant détecté sur ${hostName} (${hostIp}:${dockerPort}): ${remoteContainers.length} conteneur(s) interrogé(s).`
+              });
+
+              for (const ct of remoteContainers) {
+                const ctId = ct.Id.substring(0, 12);
+                const ctName = `Docker - ${(ct.Names[0] || ctId).replace(/^\//, '')}`;
+                const existingCt = devices.find(
+                  (d) => d.id === `docker-${ctId}` || d.name === ctName
+                );
+
+                const openPorts = (ct.Ports || [])
+                  .map((p: any) => p.PublicPort || p.PrivatePort)
+                  .filter(Boolean);
+
+                let ctIp = '127.0.0.1';
+                if (ct.NetworkSettings?.Networks) {
+                  for (const netName of Object.keys(ct.NetworkSettings.Networks)) {
+                    const netIp = ct.NetworkSettings.Networks[netName]?.IPAddress;
+                    if (netIp && netIp.trim()) {
+                      ctIp = netIp.trim();
+                      break;
+                    }
+                  }
+                }
+                if (ctIp === '127.0.0.1') ctIp = hostIp;
+
+                const hostPortBinding = openPorts.length > 0
+                  ? `Hôte: ${hostIp}:${openPorts[0]} → Conteneur: ${ctIp}:${openPorts[0]}`
+                  : `Docker Engine (${ct.Image})`;
+
+                if (existingCt) {
+                  existingCt.status = ct.State === 'running' ? 'online' : 'offline';
+                  existingCt.lastSeen = new Date().toISOString();
+                  existingCt.openPorts = openPorts;
+                  if (matchedHost) existingCt.parentHostId = matchedHost.id;
+                  broadcastSse('device_updated', existingCt);
+                } else {
+                  const posX = 120 + (devices.length % 7) * 170;
+                  const posY = 750 + Math.floor(devices.length / 7) * 160;
+                  const tempCtDev: Partial<Device> = {
+                    name: ctName,
+                    ip: ctIp,
+                    openPorts,
+                    deviceType: 'docker',
+                    subType: 'container',
+                    os: ct.Image,
+                    metadata: { 'Image': ct.Image }
+                  };
+                  const autoCtIcon = resolveServiceIcon(tempCtDev);
+
+                  const newContainer: Device = {
+                    id: `docker-${ctId}`,
+                    name: ctName,
+                    ip: ctIp,
+                    mac: '02:42:ac:11:' + (ctId.slice(0, 4).match(/../g)?.join(':') || '00:99'),
+                    vendor: 'Docker Inc.',
+                    deviceType: 'docker',
+                    subType: 'container',
+                    status: ct.State === 'running' ? 'online' : 'offline',
+                    zoneId: matchedHost?.zoneId || 'zone-datacenter',
+                    parentHostId: matchedHost ? matchedHost.id : undefined,
+                    portOrInterface: hostPortBinding,
+                    vlan: matchedHost?.vlan || 1,
+                    os: ct.Image,
+                    openPorts,
+                    customImage: autoCtIcon || undefined,
+                    serviceIcon: autoCtIcon || undefined,
+                    location: `Conteneur sur ${matchedHost ? matchedHost.name : hostIp}`,
+                    tags: ['Docker', 'Conteneur', matchedHost?.deviceType === 'vm' ? 'VM Docker' : 'Hôte Docker'],
+                    metadata: {
+                      'Image': ct.Image,
+                      'Command': ct.Command || '',
+                      'Status': ct.Status || '',
+                      'ContainerID': ctId,
+                      'IP Conteneur': ctIp,
+                      ...(matchedHost ? { 'IP Hôte': matchedHost.ip, 'Hôte d\'exécution': matchedHost.name } : {}),
+                      ...(openPorts.length > 0 ? { 'Ports exposés': openPorts.join(', ') } : {})
+                    },
+                    lastSeen: new Date().toISOString(),
+                    latencyMs: 0.5,
+                    position: { x: posX, y: posY }
+                  };
+                  devices.push(newContainer);
+                  newlyAddedCount++;
+                  broadcastSse('device_added', newContainer);
+                }
+              }
+            }
+          } catch {
+            // ignore remote docker socket error
+          }
+        }
+      }
+
+      // D) Deduplicate and fuse Docker containers (host entity vs container IP entity)
       const mergeRes = mergeDuplicateContainers(devices);
       if (mergeRes.mergedCount > 0) {
         devices = mergeRes.devices;
@@ -4012,237 +4153,160 @@ app.post('/api/devices/:id/ping', async (req, res) => {
   });
 });
 
-// Reset topology to rich demonstration infrastructure
+// Reset topology and clear inventory completely (no demo data)
 app.post('/api/reset-topology', (req, res) => {
-  const demoZones: GeographicZone[] = [
-    { id: 'zone-baie', name: 'Baie Réseau & Cœur', type: 'baie', description: 'Rack principal et équipements de cœur', color: '#06b6d4' },
-    { id: 'zone-serveurs', name: 'Local Serveurs / Virtualisation', type: 'sous_repartiteur', description: 'Hôtes hyperviseurs Proxmox et NAS', color: '#6366f1' },
-    { id: 'zone-iot', name: 'Bâtiment - Capteurs & IoT', type: 'site', description: 'Capteurs d\'ambiance et domotique', color: '#f59e0b' }
-  ];
-
-  const demoDevices: Device[] = [
-    {
-      id: 'gw-core-udm',
-      name: 'UniFi Dream Machine Pro',
-      ip: '192.168.1.1',
-      mac: '74:83:c2:1a:2b:3c',
-      vendor: 'Ubiquiti Networks',
-      deviceType: 'physical',
-      subType: 'router',
-      isCore: true,
-      status: 'online',
-      vlan: 1,
-      zoneId: 'zone-baie',
-      os: 'UniFi OS 3.2',
-      openPorts: [22, 53, 80, 443, 8443],
-      latencyMs: 1,
-      tags: ['Passerelle', 'Cœur de réseau', 'UDM Pro', 'DHCP'],
-      metadata: {},
-      position: { x: 1800, y: 1400 },
-      lastSeen: new Date().toISOString()
-    },
-    {
-      id: 'sw-core-poe',
-      name: 'Switch USW-Pro-24-PoE',
-      ip: '192.168.1.2',
-      mac: '74:83:c2:4d:5e:6f',
-      vendor: 'Ubiquiti Networks',
-      deviceType: 'physical',
-      subType: 'switch',
-      status: 'online',
-      vlan: 1,
-      zoneId: 'zone-baie',
-      connectedToSwitchId: 'gw-core-udm',
-      portOrInterface: 'SFP+ Port 25 (10 Gbps)',
-      openPorts: [22, 80, 443],
-      latencyMs: 1,
-      tags: ['Switch Cœur', 'PoE+'],
-      metadata: {},
-      position: { x: 1800, y: 1700 },
-      lastSeen: new Date().toISOString()
-    },
-    {
-      id: 'srv-proxmox-pve1',
-      name: 'Serveur Proxmox PVE-01',
-      ip: '192.168.1.50',
-      mac: 'bc:24:11:aa:bb:cc',
-      vendor: 'Dell PowerEdge',
-      deviceType: 'physical',
-      subType: 'server',
-      status: 'online',
-      vlan: 10,
-      zoneId: 'zone-serveurs',
-      connectedToSwitchId: 'sw-core-poe',
-      portOrInterface: 'Port 1 (LACP 2 Gbps)',
-      os: 'Proxmox VE 8.1 (Debian 12)',
-      openPorts: [22, 8006, 111],
-      latencyMs: 2,
-      tags: ['Hyperviseur', 'Proxmox', 'KVM/LXC'],
-      metadata: {},
-      position: { x: 1200, y: 1300 },
-      lastSeen: new Date().toISOString()
-    },
-    {
-      id: 'nas-synology-ds920',
-      name: 'NAS Synology DS920+',
-      ip: '192.168.1.60',
-      mac: '00:11:32:88:99:aa',
-      vendor: 'Synology Inc.',
-      deviceType: 'physical',
-      subType: 'nas',
-      status: 'online',
-      vlan: 10,
-      zoneId: 'zone-serveurs',
-      connectedToSwitchId: 'sw-core-poe',
-      portOrInterface: 'Port 4',
-      os: 'DSM 7.2',
-      openPorts: [22, 80, 443, 5000, 5001, 32400],
-      latencyMs: 2,
-      tags: ['Stockage', 'iSCSI', 'NFS', 'Docker'],
-      metadata: {},
-      position: { x: 2400, y: 1300 },
-      lastSeen: new Date().toISOString()
-    },
-    {
-      id: 'vm-docker-engine',
-      name: 'VM Docker Engine (Production)',
-      ip: '192.168.1.55',
-      mac: '52:54:00:12:34:56',
-      vendor: 'QEMU / Proxmox',
-      deviceType: 'vm',
-      subType: 'server',
-      status: 'online',
-      vlan: 10,
-      zoneId: 'zone-serveurs',
-      parentHostId: 'srv-proxmox-pve1',
-      os: 'Debian 12 Bookworm',
-      openPorts: [22, 2375],
-      latencyMs: 1,
-      tags: ['Docker Host', 'VM'],
-      metadata: {},
-      position: { x: 1000, y: 1600 },
-      lastSeen: new Date().toISOString()
-    },
-    {
-      id: 'cnt-pihole-dns',
-      name: 'Pi-hole DNS & AdBlock',
-      ip: '172.17.0.2',
-      mac: '02:42:ac:11:00:02',
-      vendor: 'Pi-hole',
-      deviceType: 'docker',
-      subType: 'dns',
-      status: 'online',
-      parentHostId: 'srv-proxmox-pve1',
-      openPorts: [53, 80],
-      tags: ['DNS', 'Conteneur Docker', 'AdBlock'],
-      metadata: {
-        'IP Hôte': '192.168.1.50',
-        'Nom conteneur': 'pihole-production',
-        'Image': 'pihole/pihole:latest',
-        'Ports exposés': '53/udp, 80->8080'
-      },
-      position: { x: 900, y: 1850 },
-      lastSeen: new Date().toISOString()
-    },
-    {
-      id: 'cnt-homeassistant',
-      name: 'Home Assistant Core',
-      ip: '172.17.0.3',
-      mac: '02:42:ac:11:00:03',
-      vendor: 'Home Assistant',
-      deviceType: 'docker',
-      subType: 'iot',
-      status: 'online',
-      parentHostId: 'srv-proxmox-pve1',
-      openPorts: [8123],
-      tags: ['Domotique', 'Conteneur Docker'],
-      metadata: {
-        'IP Hôte': '192.168.1.50',
-        'Nom conteneur': 'homeassistant',
-        'Image': 'ghcr.io/home-assistant/home-assistant:stable',
-        'Ports exposés': '8123->8123'
-      },
-      position: { x: 1200, y: 1850 },
-      lastSeen: new Date().toISOString()
-    },
-    {
-      id: 'cnt-plex-media',
-      name: 'Plex Media Server',
-      ip: '172.18.0.2',
-      mac: '02:42:ac:12:00:02',
-      vendor: 'Plex Inc.',
-      deviceType: 'docker',
-      subType: 'server',
-      status: 'online',
-      parentHostId: 'nas-synology-ds920',
-      openPorts: [32400],
-      tags: ['Streaming', 'Conteneur Docker'],
-      metadata: {
-        'IP Hôte': '192.168.1.60',
-        'Nom conteneur': 'plexms',
-        'Image': 'plexinc/pms-docker:latest',
-        'Ports exposés': '32400->32400'
-      },
-      position: { x: 2400, y: 1650 },
-      lastSeen: new Date().toISOString()
-    },
-    {
-      id: 'iot-shelly-relay',
-      name: 'Shelly Pro 4PM (Tableau Électrique)',
-      ip: '192.168.1.110',
-      mac: '34:94:54:11:22:33',
-      vendor: 'Shelly Group (Allterco)',
-      deviceType: 'iot',
-      subType: 'iot',
-      status: 'online',
-      vlan: 20,
-      zoneId: 'zone-iot',
-      connectedToSwitchId: 'sw-core-poe',
-      portOrInterface: 'Wi-Fi IoT',
-      openPorts: [80],
-      latencyMs: 14,
-      tags: ['IoT', 'Shelly', 'Relais Électrique', 'VLAN 20'],
-      metadata: {},
-      position: { x: 2200, y: 2000 },
-      lastSeen: new Date().toISOString()
-    },
-    {
-      id: 'iot-esp32-sensor',
-      name: 'Passerelle ESP32 Zigbee & Climat',
-      ip: '192.168.1.111',
-      mac: '24:0a:c4:44:55:66',
-      vendor: 'Espressif Inc.',
-      deviceType: 'iot',
-      subType: 'iot',
-      status: 'online',
-      vlan: 20,
-      zoneId: 'zone-iot',
-      connectedToSwitchId: 'sw-core-poe',
-      portOrInterface: 'Wi-Fi IoT',
-      openPorts: [80, 1883],
-      latencyMs: 18,
-      tags: ['IoT', 'ESP32', 'Zigbee Gateway', 'MQTT'],
-      metadata: {},
-      position: { x: 2500, y: 2000 },
-      lastSeen: new Date().toISOString()
-    }
-  ];
-
-  devices = demoDevices;
-  zones = demoZones;
+  devices = [];
+  zones = [];
   saveDevicesToFile();
   saveZonesToFile();
 
   addLog({
-    level: 'INFO',
+    level: 'WARN',
     category: 'SYSTEM',
-    message: `Parc de démonstration réinitialisé avec succès (${devices.length} équipements, ${zones.length} zones, cœur UniFi UDM Pro configuré).`
+    message: 'Topologie réseau et inventaire entièrement réinitialisés (aucun équipement démo conservé).'
   });
 
   broadcastSse('topology_reset', devices);
   broadcastSse('zones_updated', zones);
+  broadcastSse('inventory_cleared', {});
   broadcastSse('scan_complete', { devices, scanStatus });
   res.json({ success: true, devices, zones });
+});
+
+// Manual Merge of 2 selected equipment records with maximal information consolidation
+app.post('/api/inventory/merge-two', (req, res) => {
+  const { sourceId, targetId, preferredName, primaryIpChoice } = req.body;
+  if (!sourceId || !targetId) {
+    return res.status(400).json({ error: 'sourceId et targetId sont obligatoires.' });
+  }
+
+  const devA = devices.find((d) => d.id === sourceId);
+  const devB = devices.find((d) => d.id === targetId);
+
+  if (!devA || !devB) {
+    return res.status(404).json({ error: 'Un ou les deux équipements sélectionnés sont introuvables.' });
+  }
+
+  // 1. Custom icon / image: Strictly preserve custom icon if chosen on either equipment!
+  let customImage: string | undefined;
+  let isCustomImage = false;
+  if (devA.isCustomImage && devA.customImage) {
+    customImage = devA.customImage;
+    isCustomImage = true;
+  } else if (devB.isCustomImage && devB.customImage) {
+    customImage = devB.customImage;
+    isCustomImage = true;
+  } else {
+    customImage = devA.customImage || devB.customImage || undefined;
+    isCustomImage = Boolean(devA.isCustomImage || devB.isCustomImage);
+  }
+  const serviceIcon = devA.serviceIcon || devB.serviceIcon || undefined;
+
+  // 2. Name: preserve custom name or pick the most informative
+  let name = preferredName?.trim() || devA.name;
+  if (!preferredName) {
+    if (devA.isCustomName) name = devA.name;
+    else if (devB.isCustomName) name = devB.name;
+    else if (devA.name.startsWith('Équipement') && !devB.name.startsWith('Équipement')) name = devB.name;
+    else name = devA.name;
+  }
+
+  // 3. IP Addresses: select main primary IP and store secondary in metadata & tags
+  let primaryIp = devA.ip;
+  let secondaryIp = devB.ip;
+  if (primaryIpChoice === devB.ip) {
+    primaryIp = devB.ip;
+    secondaryIp = devA.ip;
+  } else if (isContainerInternalIp(devA.ip) && !isContainerInternalIp(devB.ip)) {
+    primaryIp = devB.ip;
+    secondaryIp = devA.ip;
+  }
+
+  // 4. Hardware MAC address: preserve real hardware MAC
+  let mac = devA.mac;
+  if ((!devA.mac || !isRealHardwareMac(devA.mac)) && devB.mac && isRealHardwareMac(devB.mac)) {
+    mac = devB.mac;
+  }
+
+  // 5. Union of all open ports
+  const mergedPorts = Array.from(new Set([...(devA.openPorts || []), ...(devB.openPorts || [])])).sort((a, b) => a - b);
+
+  // 6. Union of all tags
+  const mergedTags = Array.from(new Set([...(devA.tags || []), ...(devB.tags || []), 'Fusionné']));
+
+  // 7. Consolidation of all metadata (Docker ports, host IP, titles, etc.)
+  const mergedMetadata: Record<string, string> = {
+    ...(devB.metadata || {}),
+    ...(devA.metadata || {}),
+    'Date fusion': new Date().toLocaleString('fr-FR'),
+    'Équipements fusionnés': `${devA.name} [${devA.ip}] + ${devB.name} [${devB.ip}]`,
+    'Statut fusion': 'Fusionné manuellement'
+  };
+  if (secondaryIp && secondaryIp !== primaryIp) {
+    mergedMetadata['Adresse IP secondaire'] = secondaryIp;
+    if (!mergedTags.includes(secondaryIp)) mergedTags.push(secondaryIp);
+  }
+  if (devB.mac && devB.mac !== mac) {
+    mergedMetadata['MAC secondaire'] = devB.mac;
+  }
+
+  // 8. Zone, Host and Switch links
+  const zoneId = (devA.isCustomZone ? devA.zoneId : devB.isCustomZone ? devB.zoneId : (devA.zoneId || devB.zoneId)) || undefined;
+  const parentHostId = devA.parentHostId || devB.parentHostId || undefined;
+  const connectedToSwitchId = devA.connectedToSwitchId || devB.connectedToSwitchId || undefined;
+  const portOrInterface = devA.portOrInterface || devB.portOrInterface || undefined;
+  const isCore = Boolean(devA.isCore || devB.isCore);
+
+  const mergedDevice: Device = {
+    ...devA,
+    name,
+    ip: primaryIp,
+    mac: mac || '02:00:00:00:00:00',
+    vendor: (devA.vendor && devA.vendor !== 'Générique / Inconnu' && devA.vendor !== 'Inconnu') ? devA.vendor : (devB.vendor || devA.vendor || 'Inconnu'),
+    deviceType: (devA.deviceType === 'docker' || devB.deviceType === 'docker') ? 'docker' : (devA.deviceType === 'vm' || devB.deviceType === 'vm' ? 'vm' : devA.deviceType),
+    subType: (devA.subType !== 'server' && devA.subType !== 'other') ? devA.subType : devB.subType,
+    status: (devA.status === 'online' || devB.status === 'online') ? 'online' : 'offline',
+    os: devA.os || devB.os || undefined,
+    openPorts: mergedPorts,
+    tags: mergedTags,
+    metadata: mergedMetadata,
+    customImage,
+    serviceIcon,
+    isCustomImage,
+    isCustomZone: Boolean(devA.isCustomZone || devB.isCustomZone),
+    isCustomName: Boolean(devA.isCustomName || devB.isCustomName),
+    zoneId,
+    parentHostId,
+    connectedToSwitchId,
+    portOrInterface,
+    isCore,
+    lastSeen: new Date().toISOString()
+  };
+
+  // Re-point any child guests (VMs/containers) or switch connections from devB to mergedDevice.id
+  devices.forEach((d) => {
+    if (d.parentHostId === devB.id) d.parentHostId = mergedDevice.id;
+    if (d.connectedToSwitchId === devB.id) d.connectedToSwitchId = mergedDevice.id;
+  });
+
+  // Replace devA and remove devB
+  const idxA = devices.findIndex((d) => d.id === devA.id);
+  devices[idxA] = mergedDevice;
+  devices = devices.filter((d) => d.id !== devB.id);
+
+  saveDevicesToFile();
+
+  addLog({
+    level: 'INFO',
+    category: 'SYSTEM',
+    message: `Fusion manuelle réussie : "${devA.name}" (${devA.ip}) et "${devB.name}" (${devB.ip}) consolidés sous "${mergedDevice.name}". ${mergedPorts.length} ports et icône préservée.`
+  });
+
+  broadcastSse('device_updated', mergedDevice);
+  broadcastSse('device_deleted', { id: devB.id });
+  broadcastSse('topology_updated', devices);
+
+  res.json({ success: true, mergedDevice, deletedId: devB.id, devices });
 });
 
 // Clear entire inventory endpoint (empty to 0)

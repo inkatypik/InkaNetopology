@@ -1,5 +1,5 @@
 import React from 'react';
-import { Terminal, Layers, Network, Table, Settings, RefreshCw } from 'lucide-react';
+import { Terminal, Layers, Network, Table, Eye, EyeOff, RefreshCw } from 'lucide-react';
 
 export type ActiveTab = 'topology' | 'hosts' | 'inventory' | 'logs' | 'docker';
 
@@ -10,7 +10,8 @@ interface NavbarProps {
   scanProgress?: number;
   onTriggerScan?: () => void;
   onCancelScan?: () => void;
-  onOpenSettings?: () => void;
+  showInspectorAndHighlight?: boolean;
+  onToggleInspectorAndHighlight?: () => void;
   onlineCount: number;
   totalCount: number;
 }
@@ -20,7 +21,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSelectTab,
   isScanning = false,
   scanProgress = 0,
-  onOpenSettings,
+  showInspectorAndHighlight = true,
+  onToggleInspectorAndHighlight,
   onlineCount,
   totalCount
 }) => {
@@ -114,8 +116,8 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         </nav>
 
-        {/* Zone 3: Settings & Theme toggles */}
-        <div className="flex items-center gap-1 shrink-0">
+        {/* Zone 3: Inspector / Highlight toggle */}
+        <div className="flex items-center gap-1.5 shrink-0">
           {isScanning && (
             <div className="hidden lg:flex items-center gap-1.5 px-2 py-0.5 text-[11px] font-mono text-cyan-400 bg-cyan-950/50 border border-cyan-800/40 rounded-md mr-1">
               <RefreshCw className="w-3 h-3 animate-spin text-cyan-400" />
@@ -123,15 +125,32 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           )}
 
-
-          {onOpenSettings && (
+          {onToggleInspectorAndHighlight && (
             <button
               type="button"
-              onClick={onOpenSettings}
-              title="Paramètres de test de présence et de rétention d'inventaire"
-              className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-300 hover:bg-slate-800/80 transition-colors cursor-pointer"
+              onClick={onToggleInspectorAndHighlight}
+              title={
+                showInspectorAndHighlight
+                  ? 'Désactiver le résumé de fiche et la surbrillance de liaison au clic'
+                  : 'Activer le résumé de fiche et la surbrillance de liaison au clic'
+              }
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors cursor-pointer shadow-xs ${
+                showInspectorAndHighlight
+                  ? 'bg-cyan-950/70 text-cyan-300 border-cyan-600/70 hover:bg-cyan-900/80'
+                  : 'bg-slate-900 text-slate-400 border-slate-700/80 hover:text-slate-200 hover:bg-slate-800'
+              }`}
             >
-              <Settings className="w-3.5 h-3.5" />
+              {showInspectorAndHighlight ? (
+                <>
+                  <Eye className="w-3.5 h-3.5 text-cyan-400" />
+                  <span className="hidden sm:inline">Aperçu & Liaisons</span>
+                </>
+              ) : (
+                <>
+                  <EyeOff className="w-3.5 h-3.5 text-slate-400" />
+                  <span className="hidden sm:inline">Aperçu masqué</span>
+                </>
+              )}
             </button>
           )}
         </div>

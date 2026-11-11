@@ -46,8 +46,9 @@ interface ToolbarProps {
   onAutoLayout?: () => void;
   onMergeDuplicates?: () => void;
   onMergeContainers?: () => void;
+  onOpenManualMerge?: () => void;
   onExport: () => void;
-  onResetTopology: () => void;
+  onResetTopology?: () => void;
   onClearInventory?: () => void;
   onOpenSettings?: () => void;
 
@@ -93,6 +94,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onAutoLayout,
   onMergeDuplicates,
   onMergeContainers,
+  onOpenManualMerge,
   onExport,
   onResetTopology,
   onClearInventory,
@@ -212,11 +214,23 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             <button
               type="button"
               onClick={onMergeDuplicates || onMergeContainers}
-              title="Fusionner les doublons multi-identifiants (IP hôte/conteneur, MAC, ports)"
+              title="Fusionner automatiquement les doublons multi-identifiants (IP hôte/conteneur, MAC, ports)"
               className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-cyan-300 bg-cyan-950/60 hover:bg-cyan-900/80 border border-cyan-700/60 rounded-lg transition-all active:scale-95 whitespace-nowrap shadow-xs cursor-pointer"
             >
               <GitMerge className="w-3.5 h-3.5 text-cyan-400" />
               <span>Fusionner</span>
+            </button>
+          )}
+
+          {onOpenManualMerge && (
+            <button
+              type="button"
+              onClick={onOpenManualMerge}
+              title="Sélectionner manuellement deux équipements à fusionner et consolider l'ensemble des données"
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-indigo-300 bg-indigo-950/60 hover:bg-indigo-900/80 border border-indigo-700/60 rounded-lg transition-all active:scale-95 whitespace-nowrap shadow-xs cursor-pointer"
+            >
+              <GitMerge className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Fusion manuelle</span>
             </button>
           )}
 
@@ -408,16 +422,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               <Settings className="w-3.5 h-3.5" />
             </button>
           )}
-
-          <button
-            type="button"
-            onClick={onResetTopology}
-            title="Réinitialiser avec le parc démo par défaut"
-            className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-lg text-slate-400 hover:text-slate-200 bg-slate-950/70 hover:bg-slate-800 border border-slate-700/80 transition-colors cursor-pointer shadow-xs whitespace-nowrap"
-          >
-            <RotateCcw className="w-3 h-3 text-slate-400" />
-            <span className="hidden md:inline">Réinitialiser démo</span>
-          </button>
 
           {onClearInventory && (
             <button

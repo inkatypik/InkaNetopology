@@ -17,7 +17,8 @@ import {
   ExternalLink,
   Shield,
   Clock,
-  HardDrive
+  HardDrive,
+  Trash2
 } from 'lucide-react';
 
 interface DeviceSummaryCardProps {
@@ -27,6 +28,8 @@ interface DeviceSummaryCardProps {
   types?: DeviceTypeDefinition[];
   subTypes?: DeviceSubTypeDefinition[];
   onEdit: (device: Device) => void;
+  onDelete?: (deviceId: string) => void;
+  onInitiateMerge?: (device: Device) => void;
   onPing?: (device: Device) => void;
   onSelect?: (device: Device) => void;
   onClose?: () => void;
@@ -41,6 +44,8 @@ export const DeviceSummaryCard: React.FC<DeviceSummaryCardProps> = ({
   types = [],
   subTypes = [],
   onEdit,
+  onDelete,
+  onInitiateMerge,
   onPing,
   onSelect,
   onClose,
@@ -364,21 +369,51 @@ export const DeviceSummaryCard: React.FC<DeviceSummaryCardProps> = ({
           )}
         </div>
 
-        {/* Footer: Last Seen & Primary Edit Action Button */}
-        <div className="pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-[11px]">
+        {/* Footer: Last Seen & Primary Actions (Supprimer, Fusionner, Éditer) */}
+        <div className="pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-[11px] gap-2 flex-wrap">
           <span className="text-slate-400 flex items-center gap-1 font-mono text-[10px]">
             <Clock className="w-3 h-3 text-slate-400" />
             <span>{formatLastSeen(device.lastSeen)}</span>
           </span>
 
-          <button
-            type="button"
-            onClick={() => onEdit(device)}
-            className="flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-500 rounded-lg shadow-sm transition-all active:scale-95 cursor-pointer"
-          >
-            <Edit3 className="w-3.5 h-3.5" />
-            <span>Éditer la fiche</span>
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {onInitiateMerge && (
+              <button
+                type="button"
+                onClick={() => onInitiateMerge(device)}
+                className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-cyan-300 hover:text-white bg-cyan-950/60 hover:bg-cyan-900 border border-cyan-800/60 rounded-lg transition-colors cursor-pointer"
+                title="Fusionner cet équipement avec un autre"
+              >
+                <GitMerge className="w-3.5 h-3.5 text-cyan-400" />
+                <span className="hidden sm:inline">Fusionner</span>
+              </button>
+            )}
+
+            {onDelete && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm(`Confirmer la suppression définitive de l'équipement "${device.name}" (${device.ip}) de l'inventaire ?`)) {
+                    onDelete(device.id);
+                  }
+                }}
+                className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-rose-300 hover:text-white bg-rose-950/60 hover:bg-rose-900 border border-rose-800/60 rounded-lg transition-colors cursor-pointer"
+                title="Supprimer cet équipement de l'inventaire"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                <span>Supprimer</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => onEdit(device)}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-500 rounded-lg shadow-sm transition-all active:scale-95 cursor-pointer"
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+              <span>Éditer</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

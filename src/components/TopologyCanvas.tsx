@@ -40,6 +40,8 @@ interface TopologyCanvasProps {
   selectedDevice: Device | null;
   onSelectDevice: (device: Device | null) => void;
   onEditDevice: (device: Device) => void;
+  onDeleteDevice?: (id: string) => void;
+  onInitiateMerge?: (device: Device) => void;
   onPingDevice: (device: Device) => void;
   onSaveDevice?: (device: Device) => void;
   onUpdateDevicePosition: (id: string, pos: { x: number; y: number }) => void;
@@ -51,6 +53,7 @@ interface TopologyCanvasProps {
   onSaveZone?: (zone: GeographicZone) => void;
   onDeleteZone?: (zoneId: string) => void;
   onOpenZoneManager?: () => void;
+  showInspectorAndHighlight?: boolean;
   groupByHost: boolean;
   showZoneEnclosures?: boolean;
   collapsedHostIds?: Set<string>;
@@ -70,6 +73,8 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   selectedDevice,
   onSelectDevice,
   onEditDevice,
+  onDeleteDevice,
+  onInitiateMerge,
   onPingDevice,
   onSaveDevice,
   onUpdateDevicePosition,
@@ -81,6 +86,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   onSaveZone,
   onDeleteZone,
   onOpenZoneManager,
+  showInspectorAndHighlight = true,
   groupByHost,
   showZoneEnclosures: propShowZoneEnclosures,
   collapsedHostIds: propCollapsedHostIds,
@@ -893,8 +899,8 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
 
       {/* Floating Canvas Action Toolbar (Top-Right) */}
       <div className="absolute top-4 right-4 z-20 flex items-center gap-2 flex-wrap justify-end export-exclude">
-        {/* Direct Link Editor for selected device */}
-        {selectedDevice && (
+        {/* Direct Link Editor for selected device (gated by showInspectorAndHighlight) */}
+        {showInspectorAndHighlight && selectedDevice && (
           <button
             onClick={() => setLinkingDevice(selectedDevice)}
             title={`Modifier l'organisation et les liaisons de "${selectedDevice.name}"`}
@@ -906,8 +912,8 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
         )}
       </div>
 
-      {/* Floating Standardized Fiche Équipement on Canvas for Selected Device */}
-      {selectedDevice && (
+      {/* Floating Standardized Fiche Équipement on Canvas for Selected Device (gated by showInspectorAndHighlight) */}
+      {showInspectorAndHighlight && selectedDevice && (
         <div className="absolute bottom-5 left-5 z-30 w-84 max-w-[calc(100vw-40px)] export-exclude animate-in fade-in slide-in-from-bottom-2 duration-200">
           <DeviceSummaryCard
             device={selectedDevice}
@@ -916,6 +922,8 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
             types={types}
             subTypes={subTypes}
             onEdit={onEditDevice}
+            onDelete={onDeleteDevice}
+            onInitiateMerge={onInitiateMerge}
             onPing={onPingDevice}
             onSelect={onSelectDevice}
             onClose={() => onSelectDevice(null)}
@@ -1344,6 +1352,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
             const midY = (y1 + y2) / 2;
 
             const isRelated =
+              showInspectorAndHighlight &&
               selectedDevice &&
               (selectedDevice.id === from.id || selectedDevice.id === to.id);
 
@@ -1394,6 +1403,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
 
             const midY = (y1 + y2) / 2;
             const isRelated =
+              showInspectorAndHighlight &&
               selectedDevice &&
               (selectedDevice.id === host.id || selectedDevice.id === guest.id);
 

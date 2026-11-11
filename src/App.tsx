@@ -13,6 +13,7 @@ import { ClearInventoryModal } from './components/ClearInventoryModal';
 import { ZoneManagerModal } from './components/ZoneManagerModal';
 import { TypeManagerModal } from './components/TypeManagerModal';
 import { SettingsModal } from './components/SettingsModal';
+import { ManualMergeModal } from './components/ManualMergeModal';
 import { autoLayoutTopology, autoLayoutByZones } from './utils/topologyLayout';
 import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
@@ -56,6 +57,9 @@ export default function App() {
   const [isZoneManagerOpen, setIsZoneManagerOpen] = useState<boolean>(false);
   const [isTypeManagerOpen, setIsTypeManagerOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [isManualMergeModalOpen, setIsManualMergeModalOpen] = useState<boolean>(false);
+  const [manualMergePresetDevice, setManualMergePresetDevice] = useState<Device | null>(null);
+  const [showInspectorAndHighlight, setShowInspectorAndHighlight] = useState<boolean>(true);
   const [settings, setSettings] = useState<AppSettings>({
     presenceCheckEnabled: true,
     presenceCheckIntervalMinutes: 5,
@@ -657,6 +661,45 @@ export default function App() {
   };
 
   const handleMergeContainers = handleMergeDuplicates;
+
+  // Manual Merge of Two Selected Devices with Maximum Informative Consolidation & Custom Icon Preservation
+  const handleManualMerge = async (
+    sourceId: string,
+    targetId: string,
+    preferredName?: string,
+    primaryIpChoice?: string
+  ) => {
+    try {
+      const res = await fetch('/api/inventory/merge-two', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sourceDeviceId: sourceId,
+          targetDeviceId: targetId,
+          preferredName,
+          primaryIpChoice
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Erreur lors de la fusion');
+      }
+      if (data.devices) {
+        setDevices(data.devices);
+      }
+      if (data.mergedDevice) {
+        setSelectedDevice(data.mergedDevice);
+      }
+      showToast(
+        data.message ||
+          'Les deux équipements ont été fusionnés avec succès et toutes leurs données consolidées.'
+      );
+    } catch (err: any) {
+      console.error('Erreur fusion manuelle:', err);
+      showToast(err.message || 'Erreur lors de la fusion manuelle des deux équipements.');
+      throw err;
+    }
+  };
 
   // Collapse / Fold helpers
   const hostIdsWithChildren = useMemo(() => {
@@ -1360,7 +1403,10 @@ export default function App() {
           scanProgress={scanProgress}
           onTriggerScan={handleTriggerScan}
           onCancelScan={handleCancelScan}
-          onOpenSettings={() => setIsSettingsOpen(true)}
+          showInspectorAndHighlight={showInspectorAndHighlight}
+          onToggleInspectorAndHighlight={() =>
+            setShowInspectorAndHighlight(!showInspectorAndHighlight)
+          }
           onlineCount={onlineCount}
           totalCount={devices.length}
         />
@@ -1423,6 +1469,10 @@ export default function App() {
         onAutoLayout={handleStarTopologyLayout}
         onMergeDuplicates={handleMergeDuplicates}
         onMergeContainers={handleMergeDuplicates}
+        onOpenManualMerge={() => {
+          setManualMergePresetDevice(selectedDevice || null);
+          setIsManualMergeModalOpen(true);
+        }}
         onExport={handleExportTopology}
         onResetTopology={handleResetTopology}
         onClearInventory={() => setIsClearModalOpen(true)}
@@ -1454,6 +1504,11 @@ export default function App() {
             selectedDevice={selectedDevice}
             onSelectDevice={setSelectedDevice}
             onEditDevice={(dev) => setEditingDevice(dev)}
+            onDeleteDevice={handleDeleteDevice}
+            onInitiateMerge={(dev) => {
+              setManualMergePresetDevice(dev);
+              setIsManualMergeModalOpen(true);
+            }}
             onPingDevice={handlePingDevice}
             onSaveDevice={handleSaveDevice}
             onUpdateDevicePosition={handleUpdatePosition}
@@ -1465,6 +1520,7 @@ export default function App() {
             onSaveZone={handleSaveZone}
             onDeleteZone={handleDeleteZone}
             onOpenZoneManager={() => setIsZoneManagerOpen(true)}
+            showInspectorAndHighlight={showInspectorAndHighlight}
             groupByHost={groupByHost}
             showZoneEnclosures={showZoneEnclosures}
             collapsedHostIds={collapsedHostIds}
@@ -1532,9 +1588,22 @@ export default function App() {
           isOpen={Boolean(editingDevice)}
           onClose={() => setEditingDevice(null)}
           onSave={handleSaveDevice}
+          onDelete={handleDeleteDevice}
           onPing={handlePingDevice}
         />
       )}
+
+      {/* Manual Merge Modal for Two Selected Equipment */}
+      <ManualMergeModal
+        isOpen={isManualMergeModalOpen}
+        onClose={() => {
+          setIsManualMergeModalOpen(false);
+          setManualMergePresetDevice(null);
+        }}
+        devices={devices}
+        preselectedDevice={manualMergePresetDevice}
+        onMerge={handleManualMerge}
+      />
 
       {/* Add Device Modal */}
       <AddDeviceModal
