@@ -11,7 +11,8 @@ interface DeviceNodeProps {
   subTypes?: DeviceSubTypeDefinition[];
   isCore?: boolean;
   isSelected: boolean;
-  onSelect: (device: Device) => void;
+  selectionIndex?: number; // 1 for first selected, 2 for second selected
+  onSelect: (device: Device, event?: React.MouseEvent) => void;
   onEdit: (device: Device) => void;
   onPing: (device: Device) => void;
   onQuickLink?: (device: Device) => void;
@@ -29,6 +30,7 @@ export const DeviceNode: React.FC<DeviceNodeProps> = ({
   subTypes = [],
   isCore,
   isSelected,
+  selectionIndex,
   onSelect,
   onEdit,
   onPing,
@@ -48,18 +50,24 @@ export const DeviceNode: React.FC<DeviceNodeProps> = ({
     <div
       onClick={(e) => {
         e.stopPropagation();
-        onSelect(device);
+        onSelect(device, e);
       }}
       className={`relative w-64 rounded-xl border p-3.5 select-none transition-all duration-200 cursor-move backdrop-blur-md shadow-lg ${
         typeStyle.bg
       } ${
         isSelected
-          ? 'ring-2 ring-cyan-400 border-cyan-400 scale-[1.02] z-30 shadow-cyan-900/30'
+          ? 'ring-2 ring-cyan-400 border-cyan-400 scale-[1.02] z-30 shadow-cyan-900/40'
           : isCore
           ? 'ring-2 ring-amber-400/60 border-amber-500/80 shadow-amber-950/30 z-20'
           : `${typeStyle.border} hover:shadow-cyan-950/20 z-10`
       } ${isDragging ? 'opacity-85 shadow-2xl scale-[1.03]' : ''}`}
     >
+      {/* Multi-selection Order Badge (1 ou 2 pour fusion) */}
+      {isSelected && selectionIndex && (
+        <div className="absolute -top-2.5 -right-2 z-40 px-2 py-0.5 rounded-full bg-cyan-500 text-slate-950 font-bold text-[10px] shadow-lg border border-white/40 flex items-center gap-1 animate-in zoom-in-50">
+          <span>#{selectionIndex}</span>
+        </div>
+      )}
       {/* Cœur de réseau Badge */}
       {isCore && (
         <div className="mb-2 px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-500/50 text-amber-200 text-[10px] font-bold flex items-center justify-center gap-1.5 shadow-xs">

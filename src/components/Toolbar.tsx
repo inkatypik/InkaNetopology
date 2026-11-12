@@ -47,6 +47,7 @@ interface ToolbarProps {
   onMergeDuplicates?: () => void;
   onMergeContainers?: () => void;
   onOpenManualMerge?: () => void;
+  selectedCount?: number;
   onExport: () => void;
   onResetTopology?: () => void;
   onClearInventory?: () => void;
@@ -95,6 +96,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onMergeDuplicates,
   onMergeContainers,
   onOpenManualMerge,
+  selectedCount = 0,
   onExport,
   onResetTopology,
   onClearInventory,
@@ -226,11 +228,28 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             <button
               type="button"
               onClick={onOpenManualMerge}
-              title="Sélectionner manuellement deux équipements à fusionner et consolider l'ensemble des données"
-              className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-indigo-300 bg-indigo-950/60 hover:bg-indigo-900/80 border border-indigo-700/60 rounded-lg transition-all active:scale-95 whitespace-nowrap shadow-xs cursor-pointer"
+              title={
+                selectedCount === 2
+                  ? 'Fusionner directement les 2 équipements sélectionnés (Ctrl+Clic)'
+                  : selectedCount === 1
+                  ? '1 équipement sélectionné. Utilisez Ctrl+Clic sur un 2e équipement pour les fusionner ensemble'
+                  : 'Sélectionner manuellement deux équipements à fusionner et consolider l\'ensemble des données'
+              }
+              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg transition-all active:scale-95 whitespace-nowrap shadow-xs cursor-pointer ${
+                selectedCount === 2
+                  ? 'text-white bg-indigo-600 hover:bg-indigo-500 border border-indigo-400 ring-2 ring-indigo-400/40 animate-pulse'
+                  : 'text-indigo-300 bg-indigo-950/60 hover:bg-indigo-900/80 border border-indigo-700/60'
+              }`}
             >
-              <GitMerge className="w-3.5 h-3.5 text-indigo-400" />
+              <GitMerge className={`w-3.5 h-3.5 ${selectedCount === 2 ? 'text-white' : 'text-indigo-400'}`} />
               <span>Fusion manuelle</span>
+              {selectedCount > 0 && (
+                <span className={`px-1.5 py-0.2 rounded-full font-mono text-[10px] ${
+                  selectedCount === 2 ? 'bg-white text-indigo-700 font-bold' : 'bg-indigo-800 text-indigo-200'
+                }`}>
+                  {selectedCount}/2
+                </span>
+              )}
             </button>
           )}
 

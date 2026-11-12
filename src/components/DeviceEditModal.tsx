@@ -226,13 +226,15 @@ export const DeviceEditModal: React.FC<DeviceEditModalProps> = ({
             </div>
 
             <div>
-              <label className="block text-slate-400 font-medium mb-1">Adresse IP</label>
+              <label className="block text-slate-400 font-medium mb-1">
+                Adresse IP <span className="text-slate-500 font-normal">(optionnelle)</span>
+              </label>
               <input
                 type="text"
                 value={ip}
                 onChange={(e) => setIp(e.target.value)}
-                required
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg font-mono tabular-nums text-slate-100 focus:outline-hidden focus:border-cyan-500"
+                placeholder="Ex: 192.168.1.80 (laisser vide si sans IP)"
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg font-mono tabular-nums text-slate-100 placeholder-slate-600 focus:outline-hidden focus:border-cyan-500"
               />
             </div>
 

@@ -1592,9 +1592,25 @@ function loadTypesFromFile() {
     if (fs.existsSync(TYPES_FILE)) {
       const content = fs.readFileSync(TYPES_FILE, 'utf-8');
       const parsed = JSON.parse(content);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        deviceTypes = parsed;
-        console.log(`[InkaNetopology] ${deviceTypes.length} types d'équipements chargés depuis ${TYPES_FILE}`);
+      if (Array.isArray(parsed)) {
+        // Map of all types by id
+        const typeMap = new Map<string, DeviceTypeDefinition>();
+        // 1. Ensure default built-in types exist
+        defaultDeviceTypes.forEach((t) => typeMap.set(t.id, { ...t }));
+        // 2. Merge parsed types from file (preserving any edits or new custom types)
+        parsed.forEach((t) => {
+          if (t && t.id) {
+            const existingBuiltin = typeMap.get(t.id);
+            if (existingBuiltin) {
+              typeMap.set(t.id, { ...existingBuiltin, ...t, isBuiltin: true });
+            } else {
+              typeMap.set(t.id, t);
+            }
+          }
+        });
+        deviceTypes = Array.from(typeMap.values());
+        saveTypesToFile();
+        console.log(`[InkaNetopology] ${deviceTypes.length} types d'équipements chargés depuis ${TYPES_FILE} (4 types par défaut garantis + personnalisés)`);
         return;
       }
     }
@@ -1621,9 +1637,22 @@ function loadSubTypesFromFile() {
     if (fs.existsSync(SUBTYPES_FILE)) {
       const content = fs.readFileSync(SUBTYPES_FILE, 'utf-8');
       const parsed = JSON.parse(content);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        deviceSubTypes = parsed;
-        console.log(`[InkaNetopology] ${deviceSubTypes.length} sous-types/rôles chargés depuis ${SUBTYPES_FILE}`);
+      if (Array.isArray(parsed)) {
+        const subMap = new Map<string, DeviceSubTypeDefinition>();
+        defaultDeviceSubTypes.forEach((st) => subMap.set(st.id, { ...st }));
+        parsed.forEach((st) => {
+          if (st && st.id) {
+            const existingBuiltin = subMap.get(st.id);
+            if (existingBuiltin) {
+              subMap.set(st.id, { ...existingBuiltin, ...st, isBuiltin: true });
+            } else {
+              subMap.set(st.id, st);
+            }
+          }
+        });
+        deviceSubTypes = Array.from(subMap.values());
+        saveSubTypesToFile();
+        console.log(`[InkaNetopology] ${deviceSubTypes.length} sous-types/rôles chargés depuis ${SUBTYPES_FILE} (rôles par défaut garantis + personnalisés)`);
         return;
       }
     }
@@ -2219,6 +2248,13 @@ function executeInventoryPrune(manual = false): { prunedCount: number; prunedDev
   for (const dev of devices) {
     // If protecting core devices (routers, central switches), skip pruning
     if (appSettings.protectCoreDevices && dev.isCore) {
+      keptDevices.push(dev);
+      continue;
+    }
+
+    // CRITICAL: Manually added equipment (e.g., Zigbee / Z-Wave sensors without IP)
+    // cannot be pinged or scanned; they MUST be kept by default unless manually deleted by user!
+    if (dev.isManualAdded || !dev.ip || dev.ip === 'sans IP' || dev.tags?.includes('Sans IP')) {
       keptDevices.push(dev);
       continue;
     }
@@ -3108,16 +3144,18 @@ app.get('/api/devices', (req, res) => {
 // Create a new device
 app.post('/api/devices', (req, res) => {
   const body = req.body;
-  if (!body.name || !body.ip) {
-    return res.status(400).json({ error: 'Nom et adresse IP requis.' });
+  if (!body.name || !body.name.trim()) {
+    return res.status(400).json({ error: 'Le nom de l\'équipement est requis.' });
   }
+
+  const cleanIp = body.ip ? body.ip.trim() : '';
 
   const newDevice: Device = {
     id: body.id || `dev-${Date.now()}`,
-    name: body.name,
-    ip: body.ip,
+    name: body.name.trim(),
+    ip: cleanIp,
     mac: body.mac || '02:00:00:' + Array.from({ length: 3 }, () => Math.floor(Math.random() * 256).toString(16).padStart(2, '0')).join(':'),
-    vendor: body.vendor || 'Générique / Inconnu',
+    vendor: body.vendor || (body.deviceType === 'docker' ? 'Docker Inc.' : body.deviceType === 'vm' ? 'QEMU / KVM' : cleanIp ? 'Générique' : 'IoT / Capteur sans IP'),
     deviceType: body.deviceType || 'physical',
     subType: body.subType || 'other',
     status: body.status || 'online',
@@ -3129,10 +3167,14 @@ app.post('/api/devices', (req, res) => {
     openPorts: body.openPorts || [],
     location: body.location || 'Localisation non définie',
     customImage: body.customImage,
-    tags: body.tags || [],
-    metadata: body.metadata || {},
+    isManualAdded: true, // Manually added by user -> preserved indefinitely across scans and presence tests
+    tags: body.tags || (cleanIp ? [] : ['Sans IP', 'Capteur']),
+    metadata: {
+      ...(body.metadata || {}),
+      ...(cleanIp ? {} : { 'Protocole': 'Zigbee / Z-Wave / Non-IP', 'Ajouté manuellement': 'Oui' })
+    },
     lastSeen: new Date().toISOString(),
-    latencyMs: body.latencyMs || 1.0,
+    latencyMs: body.latencyMs || (cleanIp ? 1.0 : undefined),
     position: body.position || { x: 300 + Math.random() * 200, y: 300 + Math.random() * 200 }
   };
 
@@ -3141,10 +3183,10 @@ app.post('/api/devices', (req, res) => {
 
   addLog({
     level: 'DISCOVERY',
-    category: newDevice.deviceType === 'docker' ? 'DOCKER' : newDevice.deviceType === 'vm' ? 'VM' : newDevice.deviceType === 'iot' ? 'IOT' : 'ARP',
-    ip: newDevice.ip,
+    category: newDevice.deviceType === 'docker' ? 'DOCKER' : newDevice.deviceType === 'vm' ? 'VM' : newDevice.deviceType === 'iot' ? 'IOT' : 'SYSTEM',
+    ip: newDevice.ip || 'sans IP',
     deviceId: newDevice.id,
-    message: `Nouvel équipement ajouté: "${newDevice.name}" (${newDevice.ip} - ${newDevice.deviceType.toUpperCase()})`
+    message: `Nouvel équipement ajouté manuellement: "${newDevice.name}" (${newDevice.ip || 'Sans IP'} - ${newDevice.deviceType.toUpperCase()})`
   });
 
   broadcastSse('device_added', newDevice);

@@ -38,7 +38,8 @@ interface TopologyCanvasProps {
   types?: DeviceTypeDefinition[];
   subTypes?: DeviceSubTypeDefinition[];
   selectedDevice: Device | null;
-  onSelectDevice: (device: Device | null) => void;
+  selectedDevices?: Device[];
+  onSelectDevice: (device: Device | null, event?: React.MouseEvent) => void;
   onEditDevice: (device: Device) => void;
   onDeleteDevice?: (id: string) => void;
   onInitiateMerge?: (device: Device) => void;
@@ -71,6 +72,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   types = [],
   subTypes = [],
   selectedDevice,
+  selectedDevices = [],
   onSelectDevice,
   onEditDevice,
   onDeleteDevice,
@@ -413,7 +415,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
       const clickY = (e.clientY - rect.top - offset.y) / scale;
       setDragOffset({ x: clickX - pos.x, y: clickY - pos.y });
       setDraggedNodeId(dev.id);
-      onSelectDevice(dev);
+      onSelectDevice(dev, e);
     }
   };
 
@@ -1627,6 +1629,9 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
           const isCollapsed = collapsedHostIds.has(device.id);
           const zone = device.zoneId ? zoneMap.get(device.zoneId) : undefined;
           const isCore = trueCoreNode ? device.id === trueCoreNode.id : false;
+          const multiIndex = selectedDevices.findIndex((d) => d.id === device.id);
+          const isSelected = multiIndex !== -1 || selectedDevice?.id === device.id;
+          const selectionIndex = multiIndex !== -1 ? multiIndex + 1 : undefined;
 
           return (
             <div
@@ -1645,7 +1650,8 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
                 types={types}
                 subTypes={subTypes}
                 isCore={isCore}
-                isSelected={selectedDevice?.id === device.id}
+                isSelected={isSelected}
+                selectionIndex={selectionIndex}
                 onSelect={onSelectDevice}
                 onEdit={onEditDevice}
                 onPing={onPingDevice}

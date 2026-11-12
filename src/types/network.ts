@@ -68,6 +68,7 @@ export interface Device {
   isCustomZone?: boolean; // True if user manually customized the geographic zone
   isCustomName?: boolean; // True if user manually renamed the equipment
   isCustomType?: boolean; // True if user manually changed the equipment type/subtype
+  isManualAdded?: boolean; // True if equipment was added manually (Zigbee, Z-Wave, non-IP sensor, etc.)
   tags: string[];
   metadata: Record<string, string>;
   lastSeen: string;

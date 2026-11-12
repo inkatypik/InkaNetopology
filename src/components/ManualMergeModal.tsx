@@ -8,6 +8,7 @@ interface ManualMergeModalProps {
   onClose: () => void;
   devices: Device[];
   preselectedDevice?: Device | null;
+  preselectedDevices?: Device[] | null;
   onMerge: (sourceId: string, targetId: string, preferredName?: string, primaryIpChoice?: string) => Promise<void>;
 }
 
@@ -16,6 +17,7 @@ export const ManualMergeModal: React.FC<ManualMergeModalProps> = ({
   onClose,
   devices,
   preselectedDevice,
+  preselectedDevices,
   onMerge
 }) => {
   const [selectedAId, setSelectedAId] = useState<string>('');
@@ -30,25 +32,33 @@ export const ManualMergeModal: React.FC<ManualMergeModalProps> = ({
   // Initialize or update selection when modal opens
   useEffect(() => {
     if (isOpen) {
-      if (preselectedDevice) {
+      if (preselectedDevices && preselectedDevices.length >= 2) {
+        setSelectedAId(preselectedDevices[0].id);
+        setSelectedBId(preselectedDevices[1].id);
+      } else if (preselectedDevice) {
         setSelectedAId(preselectedDevice.id);
-        // If a candidate with same IP or shared host exists, auto-suggest
-        const candidateB = devices.find(
-          (d) =>
-            d.id !== preselectedDevice.id &&
-            (d.ip === preselectedDevice.ip ||
-              d.name.toLowerCase().includes(preselectedDevice.name.toLowerCase()) ||
-              (d.metadata && d.metadata['IP Hôte'] === preselectedDevice.ip))
-        );
-        if (candidateB) setSelectedBId(candidateB.id);
-        else setSelectedBId('');
+        // If candidate provided in preselectedDevices as 2nd element
+        if (preselectedDevices && preselectedDevices.length === 1 && preselectedDevices[0].id !== preselectedDevice.id) {
+          setSelectedBId(preselectedDevices[0].id);
+        } else {
+          // If a candidate with same IP or shared host exists, auto-suggest
+          const candidateB = devices.find(
+            (d) =>
+              d.id !== preselectedDevice.id &&
+              (d.ip === preselectedDevice.ip ||
+                d.name.toLowerCase().includes(preselectedDevice.name.toLowerCase()) ||
+                (d.metadata && d.metadata['IP Hôte'] === preselectedDevice.ip))
+          );
+          if (candidateB) setSelectedBId(candidateB.id);
+          else setSelectedBId('');
+        }
       } else {
         setSelectedAId(devices[0]?.id || '');
         setSelectedBId(devices[1]?.id || '');
       }
       setErrorMessage(null);
     }
-  }, [isOpen, preselectedDevice, devices]);
+  }, [isOpen, preselectedDevice, preselectedDevices, devices]);
 
   const devA = useMemo(() => devices.find((d) => d.id === selectedAId), [devices, selectedAId]);
   const devB = useMemo(() => devices.find((d) => d.id === selectedBId), [devices, selectedBId]);

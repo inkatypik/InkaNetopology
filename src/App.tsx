@@ -50,6 +50,7 @@ export default function App() {
 
   // Modals & Selection
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
+  const [selectedDevices, setSelectedDevices] = useState<Device[]>([]);
   const [editingDevice, setEditingDevice] = useState<Device | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
   const [isDockerModalOpen, setIsDockerModalOpen] = useState<boolean>(false);
@@ -59,6 +60,7 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isManualMergeModalOpen, setIsManualMergeModalOpen] = useState<boolean>(false);
   const [manualMergePresetDevice, setManualMergePresetDevice] = useState<Device | null>(null);
+  const [manualMergePresetDevices, setManualMergePresetDevices] = useState<Device[] | null>(null);
   const [showInspectorAndHighlight, setShowInspectorAndHighlight] = useState<boolean>(true);
   const [settings, setSettings] = useState<AppSettings>({
     presenceCheckEnabled: true,
@@ -583,6 +585,51 @@ export default function App() {
     }
   };
 
+  // Multi-selection handler: support single click (device 1) and Ctrl+click (device 2) for direct manual merge
+  const handleDeviceSelection = (device: Device | null, event?: React.MouseEvent) => {
+    if (!device) {
+      setSelectedDevice(null);
+      setSelectedDevices([]);
+      return;
+    }
+
+    const isCtrlOrCmd = event ? (event.ctrlKey || event.metaKey || event.shiftKey) : false;
+
+    if (isCtrlOrCmd) {
+      setSelectedDevices((prev) => {
+        // If already selected, deselect
+        if (prev.some((d) => d.id === device.id)) {
+          const filtered = prev.filter((d) => d.id !== device.id);
+          setSelectedDevice(filtered[0] || null);
+          return filtered;
+        }
+        // If 0 previously selected, but selectedDevice exists
+        let baseList = [...prev];
+        if (baseList.length === 0 && selectedDevice && selectedDevice.id !== device.id) {
+          baseList = [selectedDevice];
+        }
+        // Limit to max 2 equipment for fusion
+        if (baseList.length >= 2) {
+          // Replace second device
+          const updated = [baseList[0], device];
+          setSelectedDevice(device);
+          showToast(`2 équipements sélectionnés pour la fusion : "${updated[0].name}" et "${updated[1].name}".`);
+          return updated;
+        }
+        const updated = [...baseList, device];
+        setSelectedDevice(device);
+        if (updated.length === 2) {
+          showToast(`2 équipements sélectionnés pour la fusion : "${updated[0].name}" et "${updated[1].name}". Cliquez sur "Fusion manuelle" pour les fusionner.`);
+        }
+        return updated;
+      });
+    } else {
+      // Normal single click: selects equipment #1
+      setSelectedDevice(device);
+      setSelectedDevices([device]);
+    }
+  };
+
   // Delete device
   const handleDeleteDevice = async (id: string) => {
     if (!window.confirm('Confirmer la suppression de cet équipement de la topologie ?')) {
@@ -592,6 +639,7 @@ export default function App() {
       await fetch(`/api/devices/${id}`, { method: 'DELETE' });
       setDevices((prev) => prev.filter((d) => d.id !== id));
       if (selectedDevice?.id === id) setSelectedDevice(null);
+      setSelectedDevices((prev) => prev.filter((d) => d.id !== id));
       showToast('Équipement supprimé.');
     } catch (err) {
       console.error(err);
@@ -1469,8 +1517,18 @@ export default function App() {
         onAutoLayout={handleStarTopologyLayout}
         onMergeDuplicates={handleMergeDuplicates}
         onMergeContainers={handleMergeDuplicates}
+        selectedCount={selectedDevices.length}
         onOpenManualMerge={() => {
-          setManualMergePresetDevice(selectedDevice || null);
+          if (selectedDevices.length >= 2) {
+            setManualMergePresetDevices([selectedDevices[0], selectedDevices[1]]);
+            setManualMergePresetDevice(selectedDevices[0]);
+          } else if (selectedDevices.length === 1) {
+            setManualMergePresetDevices([selectedDevices[0]]);
+            setManualMergePresetDevice(selectedDevices[0]);
+          } else {
+            setManualMergePresetDevices(null);
+            setManualMergePresetDevice(selectedDevice || null);
+          }
           setIsManualMergeModalOpen(true);
         }}
         onExport={handleExportTopology}
@@ -1502,11 +1560,13 @@ export default function App() {
             types={deviceTypes}
             subTypes={deviceSubTypes}
             selectedDevice={selectedDevice}
-            onSelectDevice={setSelectedDevice}
+            selectedDevices={selectedDevices}
+            onSelectDevice={handleDeviceSelection}
             onEditDevice={(dev) => setEditingDevice(dev)}
             onDeleteDevice={handleDeleteDevice}
             onInitiateMerge={(dev) => {
               setManualMergePresetDevice(dev);
+              setManualMergePresetDevices([dev]);
               setIsManualMergeModalOpen(true);
             }}
             onPingDevice={handlePingDevice}
@@ -1557,7 +1617,7 @@ export default function App() {
             types={deviceTypes}
             subTypes={deviceSubTypes}
             selectedDevice={selectedDevice}
-            onSelectDevice={(dev) => setSelectedDevice(dev)}
+            onSelectDevice={(dev) => handleDeviceSelection(dev)}
             onEditDevice={(dev) => setEditingDevice(dev)}
             onPingDevice={handlePingDevice}
             onDeleteDevice={handleDeleteDevice}
@@ -1599,9 +1659,11 @@ export default function App() {
         onClose={() => {
           setIsManualMergeModalOpen(false);
           setManualMergePresetDevice(null);
+          setManualMergePresetDevices(null);
         }}
         devices={devices}
         preselectedDevice={manualMergePresetDevice}
+        preselectedDevices={manualMergePresetDevices}
         onMerge={handleManualMerge}
       />
 
