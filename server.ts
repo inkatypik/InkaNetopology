@@ -4217,7 +4217,9 @@ app.post('/api/reset-topology', (req, res) => {
 
 // Manual Merge of 2 selected equipment records with maximal information consolidation
 app.post('/api/inventory/merge-two', (req, res) => {
-  const { sourceId, targetId, preferredName, primaryIpChoice } = req.body;
+  const sourceId = req.body.sourceId || req.body.sourceDeviceId;
+  const targetId = req.body.targetId || req.body.targetDeviceId;
+  const { preferredName, primaryIpChoice } = req.body;
   if (!sourceId || !targetId) {
     return res.status(400).json({ error: 'sourceId et targetId sont obligatoires.' });
   }

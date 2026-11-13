@@ -107,6 +107,9 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   // Single node drag state
   const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const nodeMouseDownClientRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const didDragNodeRef = useRef<boolean>(false);
+  const ctrlHeldOnMouseDownRef = useRef<boolean>(false);
 
   // Group / Zone multi-node drag state
   const [draggedZoneId, setDraggedZoneId] = useState<string | null>(null);
@@ -288,7 +291,9 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   // Pan handlers
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.target === containerRef.current || (e.target as HTMLElement).tagName === 'svg') {
-      onSelectDevice(null);
+      if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        onSelectDevice(null);
+      }
       setIsPanning(true);
       setPanStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
     }
@@ -332,6 +337,13 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
         y: e.clientY - panStart.y
       });
     } else if (draggedNodeId) {
+      const dist = Math.hypot(
+        e.clientX - nodeMouseDownClientRef.current.x,
+        e.clientY - nodeMouseDownClientRef.current.y
+      );
+      if (dist > 5) {
+        didDragNodeRef.current = true;
+      }
       const dev = devices.find((d) => d.id === draggedNodeId);
       if (dev && containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
@@ -405,17 +417,19 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
     };
   };
 
-  // Node drag start
+  // Node drag start (selection is handled exclusively on click release so Ctrl+click doesn't double-toggle)
   const handleNodeMouseDown = (e: React.MouseEvent, dev: Device) => {
     e.stopPropagation();
     const pos = dev.position || { x: 100, y: 100 };
+    nodeMouseDownClientRef.current = { x: e.clientX, y: e.clientY };
+    didDragNodeRef.current = false;
+    ctrlHeldOnMouseDownRef.current = Boolean(e.ctrlKey || e.metaKey || e.shiftKey);
     if (containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
       const clickX = (e.clientX - rect.left - offset.x) / scale;
       const clickY = (e.clientY - rect.top - offset.y) / scale;
       setDragOffset({ x: clickX - pos.x, y: clickY - pos.y });
       setDraggedNodeId(dev.id);
-      onSelectDevice(dev, e);
     }
   };
 
@@ -1652,7 +1666,18 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
                 isCore={isCore}
                 isSelected={isSelected}
                 selectionIndex={selectionIndex}
-                onSelect={onSelectDevice}
+                onSelect={(dev, ev) => {
+                  if (didDragNodeRef.current) {
+                    didDragNodeRef.current = false;
+                    return;
+                  }
+                  const effectiveEv =
+                    ctrlHeldOnMouseDownRef.current && ev && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey
+                      ? ({ ...ev, ctrlKey: true } as React.MouseEvent)
+                      : ev;
+                  ctrlHeldOnMouseDownRef.current = false;
+                  onSelectDevice(dev, effectiveEv);
+                }}
                 onEdit={onEditDevice}
                 onPing={onPingDevice}
                 onQuickLink={(dev) => setLinkingDevice(dev)}

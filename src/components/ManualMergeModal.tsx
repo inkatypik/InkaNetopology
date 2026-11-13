@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Device } from '../types/network';
 import { GitMerge, X, Check, Search, ArrowRight, ShieldCheck, Tag, Cpu, Network, Info } from 'lucide-react';
 import { getDeviceDefaultIcon, getDeviceTypeColor, resolveServiceIcon } from '../utils/hardwareIcons';
@@ -28,35 +28,40 @@ export const ManualMergeModal: React.FC<ManualMergeModalProps> = ({
   const [primaryIpChoice, setPrimaryIpChoice] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const wasOpenRef = useRef<boolean>(false);
 
-  // Initialize or update selection when modal opens
+  // Initialize selection ONLY when the modal transitions from closed -> open
+  // (never reset when devices array updates in background via SSE)
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !wasOpenRef.current) {
+      wasOpenRef.current = true;
+      setSearchA('');
+      setSearchB('');
       if (preselectedDevices && preselectedDevices.length >= 2) {
         setSelectedAId(preselectedDevices[0].id);
         setSelectedBId(preselectedDevices[1].id);
       } else if (preselectedDevice) {
         setSelectedAId(preselectedDevice.id);
-        // If candidate provided in preselectedDevices as 2nd element
         if (preselectedDevices && preselectedDevices.length === 1 && preselectedDevices[0].id !== preselectedDevice.id) {
           setSelectedBId(preselectedDevices[0].id);
         } else {
-          // If a candidate with same IP or shared host exists, auto-suggest
           const candidateB = devices.find(
             (d) =>
               d.id !== preselectedDevice.id &&
-              (d.ip === preselectedDevice.ip ||
+              ((preselectedDevice.ip && d.ip === preselectedDevice.ip) ||
                 d.name.toLowerCase().includes(preselectedDevice.name.toLowerCase()) ||
-                (d.metadata && d.metadata['IP Hôte'] === preselectedDevice.ip))
+                (d.metadata && preselectedDevice.ip && d.metadata['IP Hôte'] === preselectedDevice.ip))
           );
           if (candidateB) setSelectedBId(candidateB.id);
           else setSelectedBId('');
         }
       } else {
-        setSelectedAId(devices[0]?.id || '');
-        setSelectedBId(devices[1]?.id || '');
+        setSelectedAId('');
+        setSelectedBId('');
       }
       setErrorMessage(null);
+    } else if (!isOpen) {
+      wasOpenRef.current = false;
     }
   }, [isOpen, preselectedDevice, preselectedDevices, devices]);
 
@@ -232,12 +237,19 @@ export const ManualMergeModal: React.FC<ManualMergeModalProps> = ({
             {/* Dropdown Selector A */}
             <select
               value={selectedAId}
-              onChange={(e) => setSelectedAId(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSelectedAId(val);
+                if (val && val === selectedBId) {
+                  setSelectedBId('');
+                }
+              }}
               className="w-full p-2 text-xs bg-slate-900 border border-slate-700 rounded-lg text-slate-200 focus:outline-hidden focus:border-cyan-500 cursor-pointer"
             >
+              <option value="">-- Sélectionner l'équipement principal (A) --</option>
               {filteredDevicesA.map((d) => (
                 <option key={d.id} value={d.id}>
-                  {d.name} — {d.ip} ({d.deviceType})
+                  {d.name} — {d.ip || 'Sans IP'} ({d.deviceType})
                 </option>
               ))}
             </select>
@@ -305,9 +317,10 @@ export const ManualMergeModal: React.FC<ManualMergeModalProps> = ({
               onChange={(e) => setSelectedBId(e.target.value)}
               className="w-full p-2 text-xs bg-slate-900 border border-slate-700 rounded-lg text-slate-200 focus:outline-hidden focus:border-indigo-500 cursor-pointer"
             >
+              <option value="">-- Sélectionner l'équipement à fusionner (B) --</option>
               {filteredDevicesB.map((d) => (
                 <option key={d.id} value={d.id}>
-                  {d.name} — {d.ip} ({d.deviceType})
+                  {d.name} — {d.ip || 'Sans IP'} ({d.deviceType})
                 </option>
               ))}
             </select>
@@ -412,8 +425,8 @@ export const ManualMergeModal: React.FC<ManualMergeModalProps> = ({
                     onChange={(e) => setPrimaryIpChoice(e.target.value)}
                     className="flex-1 p-2 text-xs bg-slate-900 border border-slate-700 rounded-lg text-white font-mono cursor-pointer"
                   >
-                    <option value={devA.ip}>{devA.ip} (IP de {devA.name})</option>
-                    <option value={devB.ip}>{devB.ip} (IP de {devB.name})</option>
+                    <option value={devA.ip}>{devA.ip || 'Sans IP'} (IP de {devA.name})</option>
+                    <option value={devB.ip}>{devB.ip || 'Sans IP'} (IP de {devB.name})</option>
                   </select>
                 </div>
               </div>

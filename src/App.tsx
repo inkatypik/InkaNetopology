@@ -106,8 +106,15 @@ export default function App() {
 
     fetch('/api/types')
       .then((res) => res.json())
-      .then((data: DeviceTypeDefinition[]) => {
-        if (Array.isArray(data)) setDeviceTypes(data);
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setDeviceTypes(data);
+        } else if (data && Array.isArray(data.types)) {
+          setDeviceTypes(data.types);
+          if (Array.isArray(data.subTypes)) {
+            setDeviceSubTypes(data.subTypes);
+          }
+        }
       })
       .catch((err) => console.error('Erreur chargement types:', err));
 
@@ -212,14 +219,13 @@ export default function App() {
       evtSource.addEventListener('device_updated', (e) => {
         const updated: Device = JSON.parse(e.data);
         setDevices((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
-        if (selectedDevice?.id === updated.id) {
-          setSelectedDevice(updated);
-        }
+        setSelectedDevice((prev) => (prev?.id === updated.id ? updated : prev));
+        setSelectedDevices((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
       });
 
       evtSource.addEventListener('device_added', (e) => {
         const added: Device = JSON.parse(e.data);
-        setDevices((prev) => [...prev, added]);
+        setDevices((prev) => (prev.some((d) => d.id === added.id) ? prev : [...prev, added]));
       });
 
       evtSource.addEventListener('device_deleted', (e) => {
@@ -317,7 +323,7 @@ export default function App() {
     return () => {
       if (evtSource) evtSource.close();
     };
-  }, [selectedDevice]);
+  }, []);
 
   // Trigger network scan
   const handleTriggerScan = async () => {
@@ -596,33 +602,26 @@ export default function App() {
     const isCtrlOrCmd = event ? (event.ctrlKey || event.metaKey || event.shiftKey) : false;
 
     if (isCtrlOrCmd) {
-      setSelectedDevices((prev) => {
-        // If already selected, deselect
-        if (prev.some((d) => d.id === device.id)) {
-          const filtered = prev.filter((d) => d.id !== device.id);
-          setSelectedDevice(filtered[0] || null);
-          return filtered;
-        }
-        // If 0 previously selected, but selectedDevice exists
-        let baseList = [...prev];
-        if (baseList.length === 0 && selectedDevice && selectedDevice.id !== device.id) {
-          baseList = [selectedDevice];
-        }
-        // Limit to max 2 equipment for fusion
-        if (baseList.length >= 2) {
-          // Replace second device
-          const updated = [baseList[0], device];
-          setSelectedDevice(device);
-          showToast(`2 équipements sélectionnés pour la fusion : "${updated[0].name}" et "${updated[1].name}".`);
-          return updated;
-        }
-        const updated = [...baseList, device];
-        setSelectedDevice(device);
-        if (updated.length === 2) {
-          showToast(`2 équipements sélectionnés pour la fusion : "${updated[0].name}" et "${updated[1].name}". Cliquez sur "Fusion manuelle" pour les fusionner.`);
-        }
-        return updated;
-      });
+      let baseList = [...selectedDevices];
+      if (baseList.length === 0 && selectedDevice && selectedDevice.id !== device.id) {
+        baseList = [selectedDevice];
+      }
+
+      if (baseList.some((d) => d.id === device.id)) {
+        const filtered = baseList.filter((d) => d.id !== device.id);
+        setSelectedDevices(filtered);
+        setSelectedDevice(filtered[filtered.length - 1] || null);
+        return;
+      }
+
+      const updated = baseList.length >= 2 ? [baseList[0], device] : [...baseList, device];
+      setSelectedDevices(updated);
+      setSelectedDevice(device);
+      if (updated.length === 2) {
+        showToast(
+          `2 équipements sélectionnés pour la fusion : "${updated[0].name}" et "${updated[1].name}". Cliquez sur "Fusion manuelle" pour les fusionner.`
+        );
+      }
     } else {
       // Normal single click: selects equipment #1
       setSelectedDevice(device);
@@ -722,8 +721,8 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          sourceDeviceId: sourceId,
-          targetDeviceId: targetId,
+          sourceId,
+          targetId,
           preferredName,
           primaryIpChoice
         })
@@ -737,6 +736,9 @@ export default function App() {
       }
       if (data.mergedDevice) {
         setSelectedDevice(data.mergedDevice);
+        setSelectedDevices([data.mergedDevice]);
+      } else {
+        setSelectedDevices([]);
       }
       showToast(
         data.message ||
