@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Documentation InkaNetopology - Scanner Réseau & Topologie en Étoile</title>
-  <meta name="description" content="Guide complet GitHub, Docker Compose GHCR, topologie en étoile, zones géographiques, rôles métier et mention Google AI Studio.">
+  <meta name="description" content="Guide complet InkaNetopology : scan réseau unifié, fusion manuelle persistante, équipements sans IP, icônes services, zones géographiques, rôles métier et déploiement Docker.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -18,29 +18,55 @@
       --accent: #06b6d4;
       --accent-glow: rgba(6, 182, 212, 0.15);
       --code-bg: #030712;
-      --sidebar-w: 290px;
+      --sidebar-w: 295px;
     }
 
     @media print {
       body {
         background: #ffffff !important;
         color: #0f172a !important;
+        font-size: 12.5px !important;
       }
       .no-print {
         display: none !important;
       }
       .main-content {
         margin-left: 0 !important;
+        padding: 20px 24px !important;
         max-width: 100% !important;
       }
-      pre {
+      h1, h2, h3 {
+        color: #0f172a !important;
+        border-color: #cbd5e1 !important;
+        page-break-after: avoid;
+      }
+      p, li, td {
+        color: #1e293b !important;
+      }
+      th {
         background: #f1f5f9 !important;
         color: #0f172a !important;
-        border: 1px solid #cbd5e1 !important;
       }
-      .card {
+      pre {
+        background: #f8fafc !important;
+        color: #0f172a !important;
+        border: 1px solid #cbd5e1 !important;
+        page-break-inside: avoid;
+      }
+      .card, .callout-info, .callout-ai, table {
         background: #ffffff !important;
         border: 1px solid #cbd5e1 !important;
+        page-break-inside: avoid;
+      }
+      .callout-ai p, .callout-ai-title {
+        color: #4c1d95 !important;
+      }
+      p code, li code, td code {
+        background: #f1f5f9 !important;
+        color: #0369a1 !important;
+      }
+      a {
+        color: #0284c7 !important;
       }
     }
 
@@ -159,6 +185,7 @@
       margin-bottom: 36px;
       padding-bottom: 20px;
       border-bottom: 1px solid var(--surface-border);
+      gap: 16px;
     }
 
     .btn-print {
@@ -201,8 +228,8 @@
     h3 {
       font-size: 17px;
       font-weight: 600;
-      margin-top: 28px;
-      margin-bottom: 12px;
+      margin-top: 24px;
+      margin-bottom: 10px;
       color: #e2e8f0;
     }
 
@@ -314,7 +341,7 @@
       color: #e2e8f0;
     }
 
-    p code, li code {
+    p code, li code, td code {
       background: rgba(255, 255, 255, 0.08);
       padding: 2px 6px;
       border-radius: 4px;
@@ -348,6 +375,7 @@
       padding: 12px 16px;
       border-bottom: 1px solid var(--surface-border);
       color: #cbd5e1;
+      vertical-align: top;
     }
 
     tr:last-child td {
@@ -385,18 +413,21 @@
     <ul class="toc-list">
       <li><a class="toc-link" href="#mention-ia">⭐ Mention IA & Google AI Studio</a></li>
       <li><a class="toc-link" href="#presentation">1. Présentation Générale</a></li>
-      <li><a class="toc-link" href="#github-ghcr">2. GitHub & Image GHCR</a></li>
-      <li><a class="toc-link" href="#compose">3. Fichier Docker Compose</a></li>
-      <li><a class="toc-link" href="#installation">4. Procédure d'Installation</a></li>
-      <li><a class="toc-link" href="#etoile">5. Topologie en Étoile & Cœur</a></li>
-      <li><a class="toc-link" href="#zones">6. Zones Géographiques</a></li>
-      <li><a class="toc-link" href="#groupes">7. Groupes Hôtes & Machines</a></li>
-      <li><a class="toc-link" href="#types-roles">8. Types & Rôles Métier</a></li>
-      <li><a class="toc-link" href="#icones">9. Icônes & Import Local</a></li>
-      <li><a class="toc-link" href="#imports-exports">10. Exports & Imports (JSON, PNG, PDF)</a></li>
-      <li><a class="toc-link" href="#presence-retention">11. Test de Présence (Keepalive) & Rétention</a></li>
-      <li><a class="toc-link" href="#proxy">12. Reverse Proxy HTTPS</a></li>
-      <li><a class="toc-link" href="#faq">13. Dépannage & FAQ</a></li>
+      <li><a class="toc-link" href="#interface">2. Interface Fixe & Barre d'Outils</a></li>
+      <li><a class="toc-link" href="#scan-unifie">3. Scan Réseau Unifié & Préservation</a></li>
+      <li><a class="toc-link" href="#github-ghcr">4. GitHub & Image GHCR</a></li>
+      <li><a class="toc-link" href="#compose">5. Docker Compose & Persistance</a></li>
+      <li><a class="toc-link" href="#installation">6. Procédure d'Installation</a></li>
+      <li><a class="toc-link" href="#etoile">7. Topologie en Étoile & Cœur Immuable</a></li>
+      <li><a class="toc-link" href="#fusion">8. Fusion Auto & Fusion Manuelle</a></li>
+      <li><a class="toc-link" href="#zones">9. Zones Géographiques</a></li>
+      <li><a class="toc-link" href="#groupes">10. Groupes Hôtes (Physiques & VMs)</a></li>
+      <li><a class="toc-link" href="#types-roles">11. Types & Rôles Métier Persistants</a></li>
+      <li><a class="toc-link" href="#icones">12. Fiches Unifiées & Icônes Services</a></li>
+      <li><a class="toc-link" href="#imports-exports">13. Exports & Imports (JSON, PNG, PDF)</a></li>
+      <li><a class="toc-link" href="#presence-retention">14. Test de Présence & Rétention</a></li>
+      <li><a class="toc-link" href="#proxy">15. Reverse Proxy HTTPS</a></li>
+      <li><a class="toc-link" href="#faq">16. Dépannage & FAQ</a></li>
     </ul>
 
     <div style="margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--surface-border);">
@@ -411,7 +442,7 @@
     <div class="top-actions">
       <div>
         <div style="display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap;">
-          <span class="badge badge-cyan">Documentation Officielle v1.5</span>
+          <span class="badge badge-cyan">Documentation Officielle v2.0</span>
           <span class="badge badge-purple">Créé avec Google AI Studio</span>
         </div>
         <h1 style="margin-bottom: 0;">InkaNetopology - Scanner Réseau & Cartographie</h1>
@@ -438,7 +469,7 @@
         <strong>L'ensemble du projet InkaNetopology est créé via Google AI Studio et tout le code produit est intégralement généré par intelligence artificielle.</strong>
       </p>
       <p style="color: #d8b4fe; font-size: 13px; margin-bottom: 0;">
-        De l'architecture modulaire React 19 et du serveur Node.js jusqu'aux algorithmes géométriques de disposition en étoile, de clustering anti-chevauchement, du streaming temps réel SSE, des flux d'exportation vectoriels et des configurations Docker/CI, chaque ligne de code a été générée et itérée sous Google AI Studio selon les spécifications et besoins de l'utilisateur.
+        De l'architecture modulaire React 19 et du serveur Node.js jusqu'aux algorithmes géométriques de disposition en étoile, de clustering anti-chevauchement, du moteur de fusion persistante, du streaming temps réel SSE, des flux d'exportation vectoriels et des configurations Docker/CI, chaque ligne de code a été générée et itérée sous Google AI Studio selon les spécifications et besoins de l'utilisateur.
       </p>
     </section>
 
@@ -446,16 +477,68 @@
     <section id="presentation">
       <h2>1. Présentation Générale</h2>
       <p>
-        <strong>InkaNetopology</strong> est une solution logicielle tout-en-un conteneurisée sous Docker qui permet d'explorer, de cartographier et de superviser graphiquement un réseau local (LAN). L'application modélise avec une grande clarté les topologies complexes et hybrides : machines physiques, hyperviseurs de virtualisation (Proxmox, VMware ESXi, KVM), conteneurs microservices (Docker) et parcs d'objets connectés (IoT).
+        <strong>InkaNetopology</strong> est une solution logicielle tout-en-un conteneurisée sous Docker permettant d'explorer, de cartographier et de superviser graphiquement un réseau local (LAN) dans une interface <strong>entièrement en mode sombre</strong>. L'application modélise les infrastructures hybrides : machines physiques, hyperviseurs (Proxmox, VMware ESXi, KVM), conteneurs Docker (sur hôte physique ou sur VM), objets connectés (IoT) et équipements manuels sans adresse IP (capteurs Zigbee, Z-Wave, Thread...).
       </p>
       <p>
-        Au démarrage, l'application propose un <strong>inventaire initial vide</strong> pour vous laisser cartographier fidèlement votre réseau sans données factices imposées. Un bouton de réinitialisation permet de charger à tout moment une topologie de démonstration pour les tests.
+        Au démarrage, l'application propose un <strong>inventaire initial vierge</strong> sans aucune donnée de démonstration factice : vous lancez directement un scan sur votre réseau, ajoutez vos équipements manuellement ou restaurez une sauvegarde JSON.
       </p>
     </section>
 
-    <!-- 2. GitHub & Image GHCR -->
+    <!-- 2. Interface Fixe & Barre d'Outils -->
+    <section id="interface">
+      <h2>2. Interface Fixe & Barre d'Outils Unifiée</h2>
+      <p>
+        Le bandeau supérieur reste <strong>fixe en haut de l'écran</strong> quelle que soit la vue consultée afin d'offrir une navigation fluide et constante dans toute l'application :
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Zone du Bandeau</th>
+            <th>Éléments & Commandes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Barre de Navigation (Navbar)</strong></td>
+            <td>
+              Logo & compteur <code>X/Y en ligne</code> · Onglets : <strong>Topologie Réseau</strong>, <strong>Hôtes & Dépendances</strong>, <strong>Inventaire Équipements</strong>, <strong>Journal</strong>, <strong>Docs & Docker</strong>.<br>
+              À droite : bouton bascule <strong>« Aperçu & Liaisons » / « Aperçu masqué »</strong> pour afficher ou masquer la fiche résumé flottante en bas à gauche, la surbrillance des liens et le bouton rapide <code>Liaisons : &lt;nom&gt;</code> au clic sur un nœud.
+            </td>
+          </tr>
+          <tr>
+            <td><strong>Barre d'Outils — Ligne 1</strong></td>
+            <td>
+              <strong>Gauche :</strong> Champ de recherche (nom, IP, MAC, port...) suivi de <strong>3 listes déroulantes côte à côte</strong> : filtre par <em>Type d'équipement</em> (<code>Tous les équipements (N)</code> + types dynamiques), filtre par <em>Statut</em> (<code>Tous statuts</code>, <code>En ligne</code>, <code>Hors ligne</code>) et filtre par <em>VLAN</em> (<code>Tous les VLANs</code>).<br>
+              <strong>Droite :</strong> <strong>Générer le schéma</strong>, <strong>Fusionner</strong>, <strong>Fusion manuelle</strong>, <strong>Ajouter</strong>, <strong>Hôtes</strong>, <strong>Zones</strong>.
+            </td>
+          </tr>
+          <tr>
+            <td><strong>Barre d'Outils — Ligne 2</strong></td>
+            <td>
+              <strong>Gauche :</strong> Champ <strong>Scope IP:</strong> (ex: <code>192.168.1.0/24</code>) aligné au même niveau que le bouton <strong>Scan</strong> (et bouton d'interruption pendant l'analyse).<br>
+              <strong>Droite :</strong> <strong>Importer JSON</strong>, <strong>Exporter JSON</strong>, <strong>PNG</strong>, <strong>PDF</strong>, <strong>Zones (N)</strong>, <strong>Rôles</strong>, <strong>Replier / Déplier</strong>, bouton unique <strong>Paramètres</strong> (engrenage) et <strong>Vider l'inventaire</strong>.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 3. Scan Réseau Unifié & Préservation -->
+    <section id="scan-unifie">
+      <h2>3. Scan Réseau Unifié & Préservation des Éditions Manuelles</h2>
+      <p>
+        InkaNetopology propose un <strong>scan unique pleinement efficace</strong> remplaçant toute séparation artificielle entre modes de scan :
+      </p>
+      <ul>
+        <li><strong>Découverte complète en une passe</strong> : Renseignez le CIDR dans <strong>Scope IP:</strong> puis cliquez sur <strong>« Scan »</strong>. Le moteur combine découverte ARP broadcast, requêtes ICMP, scan de ports TCP, inspection des titres HTTP/HTTPS, résolution OUI/mDNS, détection IoT/domotique (RTSP, MQTT...) et énumération Docker locale/distante.</li>
+        <li><strong>Préservation stricte des éditions manuelles</strong> : Les modifications effectuées sur un équipement — notamment son <strong>icône personnalisée</strong>, sa <strong>zone géographique</strong>, son nom ou son type/sous-type — sont protégées et ne sont jamais écrasées lors des scans ultérieurs.</li>
+        <li><strong>Équipements manuels sans adresse IP</strong> : Lors de la création via <strong>« Ajouter »</strong> ou de l'édition, l'adresse IP est <strong>optionnelle</strong>. Vous pouvez ajouter des capteurs Zigbee, Z-Wave ou équipements passifs sans IP : ils sont maintenus automatiquement d'un scan à l'autre et protégés de la purge automatique.</li>
+      </ul>
+    </section>
+
+    <!-- 4. GitHub & Image GHCR -->
     <section id="github-ghcr">
-      <h2>2. Dépôt GitHub & Image GitHub Container Registry (GHCR)</h2>
+      <h2>4. Dépôt GitHub & Image GitHub Container Registry (GHCR)</h2>
       <div class="callout-info">
         <div class="callout-title">📦 Intégration GitHub & Registre GHCR</div>
         <ul style="margin-bottom: 0;">
@@ -476,9 +559,9 @@
       </div>
     </section>
 
-    <!-- 3. Docker Compose -->
+    <!-- 5. Docker Compose -->
     <section id="compose">
-      <h2>3. Fichier Docker Compose (`docker-compose.yml`)</h2>
+      <h2>5. Fichier Docker Compose & Persistance (<code>/app/data</code>)</h2>
       <div class="code-container">
         <div class="code-header">
           <span>docker-compose.yml</span>
@@ -507,7 +590,7 @@
       - PORT=3000
 
     volumes:
-      # Persistance de la topologie, des zones, types et rôles
+      # Persistance de la topologie, des fusions, zones, types et rôles
       - /chemin/vers/votre/dossier/data:/app/data
       # Montage optionnel du socket Docker pour l'inventaire dynamique
       - /var/run/docker.sock:/var/run/docker.sock:ro</pre>
@@ -524,31 +607,31 @@
         <tbody>
           <tr>
             <td><code>data/devices.json</code></td>
-            <td>Liste de tous les équipements réseau, liaisons, adresses IP/MAC, coordonnées spatiales et appartenance aux zones.</td>
+            <td>Base des équipements (avec ou sans IP), liaisons, coordonnées spatiales, icônes personnalisées et historique des identités fusionnées.</td>
           </tr>
           <tr>
             <td><code>data/zones.json</code></td>
-            <td>Définition des zones géographiques (pièces, baies de brassage, sous-répartiteurs, sites) avec leurs couleurs et dimensions.</td>
+            <td>Définition des zones géographiques (pièces, baies de brassage, sous-répartiteurs, sites) avec couleurs et types.</td>
           </tr>
           <tr>
             <td><code>data/device-types.json</code></td>
-            <td>Catalogue dynamique des types d'équipements configurés avec leurs styles visuels.</td>
+            <td>Les 4 types natifs prédéfinis + types personnalisés ajoutés par l'utilisateur (conservés entre mises à jour).</td>
           </tr>
           <tr>
             <td><code>data/device-subtypes.json</code></td>
-            <td>Catalogue des sous-types et rôles métier, incluant les rôles restreints à un équipement particulier.</td>
+            <td>Catalogue des sous-types natifs et rôles métier personnalisés (globaux ou liés à un équipement spécifique).</td>
           </tr>
           <tr>
-            <td><code>data/network-logs.json</code></td>
-            <td>Historique persistant des événements réseau et alertes.</td>
+            <td><code>data/settings.json</code></td>
+            <td>Paramètres de test de présence (keepalive), durée de rétention, protection cœur de réseau et Scope IP par défaut.</td>
           </tr>
         </tbody>
       </table>
     </section>
 
-    <!-- 4. Installation -->
+    <!-- 6. Installation -->
     <section id="installation">
-      <h2>4. Procédure d'Installation</h2>
+      <h2>6. Procédure d'Installation</h2>
       <h3>Méthode rapide sans clonage (Recommandé)</h3>
       <div class="code-container">
         <div class="code-header">
@@ -562,127 +645,132 @@ docker compose up -d</pre>
       </div>
     </section>
 
-    <!-- 5. Topologie en Étoile -->
+    <!-- 7. Topologie en Étoile & Cœur Immuable -->
     <section id="etoile">
-      <h2>5. Topologie en Étoile & Cœur de Réseau (Centre de l'Étoile)</h2>
-      <p>
-        InkaNetopology intègre un moteur de disposition automatique en étoile :
-      </p>
+      <h2>7. Topologie en Étoile & Cœur de Réseau Immuable</h2>
       <ul>
         <li>
-          <strong>Cœur de Réseau au Centre</strong> : Un ou plusieurs équipements peuvent être désignés manuellement comme cœur de réseau via l'option <em>« Cœur de réseau (Centre de l'étoile) »</em> dans leur fiche d'édition.
+          <strong>Générer le schéma</strong> : Cliquez sur <strong>« Générer le schéma »</strong> dans la barre d'outils pour disposer automatiquement tous les nœuds, clusters hôtes et zones en étoile sans chevauchement autour du cœur de réseau.
         </li>
         <li>
-          <strong>Bouton « Topologie en étoile »</strong> : Situé dans la barre d'outils, il réorganise instantanément tous les nœuds de manière harmonieuse autour du cœur central.
+          <strong>Cœur de réseau immuable (<code>isCore</code>)</strong> : Activez l'option <em>« Équipement Cœur de Réseau »</em> dans la fiche d'édition d'un équipement. Ce statut reste strictement attaché à cet équipement, qu'il soit affiché, sélectionné ou masqué par les filtres actifs (il n'est jamais attribué arbitrairement à un autre équipement visible).
         </li>
         <li>
-          <strong>Rayons et Liaisons</strong> : Les liens de communication rayonnent avec fluidité depuis le switch/routeur central vers les équipements périphériques et les zones.
+          <strong>Filtrage respectueux des liaisons</strong> : Filtrer par type, statut ou VLAN ne modifie jamais les liaisons enregistrées : si un équipement est masqué par un filtre, seules les lignes qui y mènent sont temporairement cachées à l'écran.
         </li>
         <li>
-          <strong>Légende Déplaçable & Réductible</strong> : La légende explicative de la topologie peut être déplacée à la souris et compactée pour libérer l'espace visuel.
+          <strong>Aperçu & Surbrillance activables</strong> : Le bouton <strong>« Aperçu & Liaisons »</strong> de la barre de navigation contrôle l'affichage de la fiche résumé latérale, la mise en surbrillance des liens et le bouton rapide <code>Liaisons : &lt;nom&gt;</code> au clic sur un nœud.
+        </li>
+        <li>
+          <strong>Légende déplaçable & réductible</strong> : Repositionnable à la souris, compactable, avec 4 onglets (<em>Général</em>, <em>Zones</em>, <em>Types</em>, <em>Rôles</em>).
         </li>
       </ul>
     </section>
 
-    <!-- 6. Zones Géographiques -->
+    <!-- 8. Fusion Auto & Fusion Manuelle Persistante -->
+    <section id="fusion">
+      <h2>8. Fusion Automatique & Fusion Manuelle Persistante</h2>
+      <div class="card">
+        <h3>Fusion Automatique (<code>Fusionner</code>)</h3>
+        <p>Détecte et consolide automatiquement les doublons multi-identifiants partageant adresses MAC, IP hôte/conteneur, noms d'hôtes, ports exposés ou métadonnées Docker.</p>
+
+        <h3>Fusion Manuelle (<code>Fusion manuelle</code>)</h3>
+        <p>Ouvre la modale de consolidation pour fusionner deux équipements quelconques (A et B) choisis via recherche et listes déroulantes :</p>
+        <ul>
+          <li><strong>Consolidation maximale</strong> : Réunit ports ouverts, tags, métadonnées, IP secondaires (conservées en métadonnées), adresses MAC et rattachements hôte/zone.</li>
+          <li><strong>Icône personnalisée conservée</strong> : Si l'un des deux équipements dispose d'une icône personnalisée, elle est strictement préservée sur l'équipement fusionné.</li>
+          <li><strong>Choix du nom final et de l'IP principale</strong> avec aperçu prévisionnel en direct avant validation.</li>
+        </ul>
+
+        <h3>Persistance d'un scan à l'autre</h3>
+        <p style="margin-bottom: 0;">Les identités fusionnées (<code>mergedIds</code>, adresses IP, MAC, noms d'hôtes, identifiants de conteneurs) sont mémorisées sur l'équipement consolidé : lors des scans suivants, aucun doublon n'est recréé pour ces équipements.</p>
+      </div>
+    </section>
+
+    <!-- 9. Zones Géographiques -->
     <section id="zones">
-      <h2>6. Zones Géographiques Éditables & Déplaçables</h2>
-      <p>
-        Organisez spatialement votre réseau selon la réalité de vos locaux :
-      </p>
+      <h2>9. Zones Géographiques Éditables & Déplaçables</h2>
       <div class="card">
         <ul>
-          <li><strong>Types de zones</strong> : Pièces (Bureau, Salon, Cave), Sous-répartiteurs, Baies de brassage informatiques, Sites distants, ou zones libres.</li>
-          <li><strong>Déplacement en bloc</strong> : Glissez l'en-tête d'une zone géographique pour déplacer tous ses équipements simultanément.</li>
-          <li><strong>Renommage direct</strong> : Cliquez sur le nom de n'importe quelle zone directement sur le schéma pour la renommer en un clin d'œil.</li>
-          <li><strong>Replier / Déplier</strong> : Chaque zone dispose d'un bouton pour masquer/déplier son contenu et éviter la surcharge visuelle.</li>
-          <li><strong>Affectation immédiate</strong> : Lorsqu'un équipement change de zone géographique dans sa fiche, il est immédiatement repositionné à l'intérieur de sa nouvelle zone sur la topologie.</li>
+          <li><strong>Création & Gestion</strong> : Bouton <strong>« Zones (N) »</strong> sur la ligne 2 de la barre d'outils pour gérer pièces, baies de brassage, sous-répartiteurs et sites.</li>
+          <li><strong>Affichage rapide</strong> : Bouton <strong>« Zones »</strong> sur la ligne 1 pour afficher ou masquer les enclos géographiques.</li>
+          <li><strong>Déplacement en bloc & Renommage direct</strong> : Glissez l'en-tête d'une zone pour déplacer tout son contenu, ou cliquez sur son titre pour la renommer directement sur le schéma.</li>
+          <li><strong>Replier / Déplier</strong> : Réduisez une zone individuellement depuis son en-tête ou globalement via <strong>« Replier » / « Déplier »</strong>.</li>
         </ul>
       </div>
     </section>
 
-    <!-- 7. Groupes Hôtes & Machines -->
+    <!-- 10. Groupes Hôtes & Machines -->
     <section id="groupes">
-      <h2>7. Groupes Hôtes & Machines (VMs et Docker)</h2>
-      <p>
-        Pour les environnements de virtualisation Proxmox, VMware ou Docker :
-      </p>
+      <h2>10. Groupes Hôtes & Conteneurs (Physiques & Machines Virtuelles)</h2>
       <ul>
-        <li><strong>Clusters visuels</strong> : Un enclos pointillé regroupe automatiquement l'hôte physique et toutes ses machines virtuelles ou conteneurs.</li>
-        <li><strong>Déplacement du groupe</strong> : Déplacez l'ensemble en glissant l'en-tête du groupe hôte.</li>
-        <li><strong>Pliage / Dépliage</strong> : Réduisez les conteneurs ou VMs d'un hôte pour compacter le schéma, ou utilisez le bouton global <em>« Tout replier »</em> / <em>« Tout déplier »</em> dans la barre d'outils.</li>
-        <li><strong>Anti-chevauchement strict</strong> : Le moteur de rendu garantit qu'aucun équipement ne se superpose ou ne déborde de sa zone ou de son groupe hôte.</li>
-        <li><strong>Association corrigée</strong> : Les conteneurs découverts sont associés avec exactitude à leur véritable machine hôte d'exécution.</li>
+        <li><strong>Détection sur machines physiques ET VMs</strong> : Les conteneurs Docker découverts (localement ou sur des machines virtuelles hébergeant un moteur Docker) sont automatiquement rattachés à leur hôte d'exécution réel partageant leur IP ou leurs ports exposés.</li>
+        <li><strong>Clusters visuels</strong> : Activables via le bouton <strong>« Hôtes »</strong>, déplaçables en bloc par leur en-tête et repliables individuellement ou globalement via <strong>« Replier » / « Déplier »</strong>.</li>
+        <li><strong>Vue dédiée « Hôtes & Dépendances »</strong> : Liste chaque hôte avec ses VMs et conteneurs hébergés et permet de réaffecter ou détacher une charge virtuelle en un clic.</li>
       </ul>
     </section>
 
-    <!-- 8. Types & Rôles Métier -->
+    <!-- 11. Types & Rôles Métier Persistants -->
     <section id="types-roles">
-      <h2>8. Gestion des Types d'Équipements & Rôles Métier</h2>
+      <h2>11. Types, Sous-Types & Rôles Métier Persistants (<code>Rôles</code>)</h2>
       <p>
-        Accédez à la modale de gestion complète via le bouton <strong>« Types & Rôles »</strong> dans la barre d'outils :
+        Cliquez sur le bouton <strong>« Rôles »</strong> sur la ligne 2 de la barre d'outils pour ouvrir le gestionnaire complet :
       </p>
       <div class="card">
-        <h3>Gestion des Types</h3>
-        <p>Créez, modifiez ou supprimez des types d'équipements personnalisés. Attribuez-leur une couleur d'accentuation, une icône et une description. Les onglets de filtrage s'adaptent dynamiquement.</p>
+        <h3>Onglet « Types d'Équipements »</h3>
+        <p>Affiche systématiquement les <strong>4 types prédéfinis</strong> (<em>Machine Physique</em>, <em>Machine Virtuelle (VM)</em>, <em>Conteneur Docker</em>, <em>Périphérique IoT</em>) ainsi que tous vos types personnalisés. Chaque ajout ou modification est persisté dans <code>data/device-types.json</code> et conservé d'une mise à jour à l'autre. La liste déroulante de filtrage s'adapte en temps réel.</p>
         
-        <h3>Gestion des Sous-Types & Rôles Métier</h3>
-        <p>Gérez les rôles fonctionnels (Passerelle, Contrôleur AD, Reverse Proxy, SGBD, etc.). Un rôle peut être généraliste ou être lié spécifiquement à un équipement donné. Un badge de rôle s'affiche élégamment sur la fiche topologique du nœud.</p>
+        <h3>Onglet « Sous-Types & Rôles Métier »</h3>
+        <p style="margin-bottom: 0;">Gérez les rôles fonctionnels généraux ou liés à un équipement spécifique (<code>deviceId</code>), persistés dans <code>data/device-subtypes.json</code>. Des rôles peuvent également être créés à la volée directement dans la fiche d'édition d'un équipement.</p>
       </div>
     </section>
 
-    <!-- 9. Icônes & Import Local -->
+    <!-- 12. Fiches Unifiées & Icônes Services -->
     <section id="icones">
-      <h2>9. Icônes Génériques & Import d'Image Locale</h2>
-      <p>
-        Fini les icônes imposées :
-      </p>
+      <h2>12. Fiches Équipements Unifiées, Icônes Services & Import Local</h2>
       <ul>
-        <li><strong>Icônes génériques modernes</strong> : Sélection soignée d'icônes vectorielles claires adaptées à chaque catégorie de matériel.</li>
-        <li><strong>Import depuis la machine locale</strong> : Dans la fiche d'édition, le bouton <em>« Choisir un fichier local »</em> vous permet de sélectionner directement une image, un logo ou une photo sur votre ordinateur pour l'appliquer à l'équipement (sans hébergement externe requis).</li>
-        <li><strong>Édition au clic direct</strong> : Cliquez simplement sur le nom d'un équipement dans le schéma pour ouvrir immédiatement sa fiche de configuration.</li>
+        <li><strong>Fiches homogènes partout</strong> : La même fiche résumé détaillée (<code>DeviceSummaryCard</code>) s'affiche sur la topologie, dans <em>Hôtes & Dépendances</em> et dans l'<em>Inventaire Équipements</em>, avec accès direct aux boutons <strong>Éditer</strong>, <strong>Tester Ping</strong>, <strong>Fusionner</strong> et <strong>Supprimer</strong>.</li>
+        <li><strong>Icônes officielles automatiques</strong> : Attribution automatique de logos vectoriels officiels pour les services et conteneurs reconnus (Portainer, Home Assistant, Proxmox, TrueNAS, Synology, Pi-hole, AdGuard, Plex, Jellyfin, Nextcloud, Traefik, Nginx Proxy Manager, Grafana, Uptime Kuma, Vaultwarden, Node-RED, Mosquitto, PostgreSQL, MariaDB, Redis, UniFi, WireGuard, pfSense, Immich, Frigate...).</li>
+        <li><strong>Import local & Préréglages</strong> : Choisissez un préréglage vectoriel par catégorie ou importez une image locale (PNG, SVG, JPG, WEBP, ICO) via <em>« Choisir une icône sur la machine locale... »</em> dans l'éditeur.</li>
       </ul>
     </section>
 
-    <!-- 10. Imports & Exports -->
+    <!-- 13. Imports & Exports -->
     <section id="imports-exports">
-      <h2>10. Exports & Imports Complets (JSON, PNG, PDF)</h2>
-      <p>
-        La barre d'outils intègre des options d'export et d'import haute fidélité :
-      </p>
+      <h2>13. Exports & Imports Complets (JSON, PNG, PDF)</h2>
       <table>
         <thead>
           <tr>
-            <th>Format</th>
+            <th>Commande (Ligne 2)</th>
             <th>Fonctionnalité</th>
           </tr>
         </thead>
         <tbody>
           <tr>
             <td><strong>Importer JSON</strong></td>
-            <td>Permet de charger un fichier JSON précédemment exporté pour restaurer immédiatement la totalité des équipements, liaisons, zones et types.</td>
+            <td>Restaure équipements, identités fusionnées, liaisons et zones depuis une sauvegarde JSON tout en conservant les types/rôles natifs et personnalisés.</td>
           </tr>
           <tr>
-            <td><strong>Export JSON</strong></td>
-            <td>Sauvegarde complète de la configuration et de l'état de l'application dans un fichier JSON portable avec synchronisation automatique.</td>
+            <td><strong>Exporter JSON</strong></td>
+            <td>Télécharge le fichier complet <code>inkanetopology-export.json</code>.</td>
           </tr>
           <tr>
-            <td><strong>Export PNG Intégral</strong></td>
-            <td>Capture d'une image haute résolution couvrant <strong>100% de la totalité du schéma topologique</strong> (tous les équipements, liaisons et zones) sans aucun tronquage à la taille de la fenêtre écran, et exempte des boutons de zoom ou contrôles d'interface.</td>
+            <td><strong>PNG</strong></td>
+            <td>Capture haute résolution de <strong>100% du schéma topologique</strong> sans tronquage ni contrôles d'interface.</td>
           </tr>
           <tr>
-            <td><strong>Export PDF Vectoriel</strong></td>
-            <td>Création instantanée d'un document PDF au format A4 paysage ajusté automatiquement à la taille globale de la topologie avec fond sombre soigné (#020617).</td>
+            <td><strong>PDF</strong></td>
+            <td>Document PDF vectoriel au format A4 paysage calibré sur l'ensemble du schéma en fond sombre.</td>
           </tr>
         </tbody>
       </table>
     </section>
 
-    <!-- 11. Test de Présence (Keepalive) & Rétention -->
+    <!-- 14. Test de Présence & Rétention -->
     <section id="presence-retention">
-      <h2>11. Test de Présence Régulier (Keepalive) & Rétention d'Inventaire</h2>
+      <h2>14. Test de Présence (Keepalive) & Rétention d'Inventaire</h2>
       <p>
-        InkaNetopology intègre un système automatisé de surveillance active et de nettoyage de l'inventaire matériel, entièrement configurable depuis la modale des <strong>Paramètres</strong> :
+        Accessible depuis l'icône unique <strong>Paramètres</strong> (à côté de <strong>Replier</strong>) sur la ligne 2 de la barre d'outils :
       </p>
       <table>
         <thead>
@@ -695,32 +783,28 @@ docker compose up -d</pre>
           <tr>
             <td><strong>Test de Présence Régulier (Keepalive)</strong></td>
             <td>
-              Exécute en arrière-plan des tests ICMP (ping) et des sondages de ports TCP sur chaque équipement inventorié.<br>
-              <strong>Fréquence réglable :</strong> 1 min, 2 min, 5 min (recommandé), 10 min, 15 min, 30 min ou 60 min.<br>
-              Met à jour en temps réel le statut (<em>En ligne</em> / <em>Hors ligne</em>), la latence RTT en millisecondes et la date de dernière activité (<code>lastSeen</code>).
+              Exécute en arrière-plan des tests ICMP et sondages TCP sur les équipements dotés d'une IP (y compris les IP secondaires des équipements fusionnés).<br>
+              <strong>Fréquences :</strong> 1 min, 2 min, 5 min (recommandé), 10 min, 15 min, 30 min ou 60 min + bouton <em>« Tester maintenant »</em>.
             </td>
           </tr>
           <tr>
-            <td><strong>Nettoyage Automatique d'Inventaire (Auto-Prune)</strong></td>
+            <td><strong>Nettoyage Automatique (Auto-Prune)</strong></td>
             <td>
-              Supprime automatiquement de l'inventaire et de la topologie le matériel qui n'a pas été vu actif depuis plus d'une durée paramétrable.<br>
-              <strong>Durées au choix :</strong> 1h (test rapide), 6h, 12h, 24h (1 jour), 48h, 72h, 1 semaine, 2 semaines ou 1 mois.<br>
-              <strong>Protection du Cœur de réseau :</strong> Empêche la suppression des commutateurs et routeurs vitaux même en cas d'inactivité temporaire.
+              Purge le matériel IP inactif au-delà d'une durée réglable (1h, 6h, 12h, 24h, 48h, 72h, 7 jours, 14 jours ou 30 jours) + bouton <em>« Purger maintenant »</em>.<br>
+              <strong>Protections intégrées :</strong> Préserve les cœurs de réseau ainsi que les équipements ajoutés manuellement ou sans IP (Zigbee, Z-Wave...).
             </td>
           </tr>
           <tr>
-            <td><strong>Actions Manuelles Immédiates</strong></td>
-            <td>
-              Boutons dédiés pour déclencher un test de présence global instantané (« Tester maintenant ») ou purger immédiatement les équipements inactifs dépassant le seuil (« Purger maintenant »).
-            </td>
+            <td><strong>Scope IP par défaut</strong></td>
+            <td>Définit la plage CIDR pré-remplie au démarrage de l'application dans le champ <strong>Scope IP:</strong>.</td>
           </tr>
         </tbody>
       </table>
     </section>
 
-    <!-- 12. Reverse Proxy HTTPS -->
+    <!-- 15. Reverse Proxy HTTPS -->
     <section id="proxy">
-      <h2>12. Intégration Reverse Proxy HTTPS (Nginx)</h2>
+      <h2>15. Intégration Reverse Proxy HTTPS (Nginx)</h2>
       <div class="code-container">
         <div class="code-header">
           <span>/etc/nginx/sites-available/inkanetopology.conf</span>
@@ -759,30 +843,35 @@ server {
       </div>
     </section>
 
-    <!-- 13. FAQ -->
+    <!-- 16. FAQ -->
     <section id="faq">
-      <h2>13. Dépannage & FAQ</h2>
+      <h2>16. Dépannage & FAQ</h2>
       <div class="card">
         <h3>Q1. Pourquoi aucun équipement n'est découvert lors d'un scan ?</h3>
         <p>
-          Assurez-vous que le conteneur est lancé en <code>network_mode: host</code>. Sans ce paramètre, les requêtes ARP broadcast ne peuvent pas interroger votre réseau local physique.
+          Assurez-vous que le conteneur est lancé en <code>network_mode: host</code> et que la plage CIDR saisie dans <strong>Scope IP:</strong> correspond à votre réseau physique.
         </p>
 
-        <h3>Q2. Comment mettre à jour vers la dernière version ?</h3>
+        <h3>Q2. Les équipements fusionnés restent-ils fusionnés aux prochains scans ?</h3>
         <p>
-          Exécutez simplement <code>docker compose pull && docker compose up -d</code> dans le répertoire du projet.
+          Oui. Les adresses IP, MAC, noms d'hôtes et identifiants Docker absorbés sont enregistrés dans l'équipement fusionné pour éviter toute recréation de doublon lors des scans suivants.
         </p>
 
-        <h3>Q3. Pourquoi l'inventaire est vide au premier lancement ?</h3>
+        <h3>Q3. Comment référencer des capteurs Zigbee ou Z-Wave sans adresse IP ?</h3>
+        <p>
+          Utilisez le bouton <strong>Ajouter</strong> et laissez le champ <em>Adresse IP</em> vide. Ces équipements sont conservés d'un scan à l'autre et ne sont pas supprimés par le nettoyage automatique.
+        </p>
+
+        <h3>Q4. Comment mettre à jour tout en conservant mes types personnalisés et données ?</h3>
         <p style="margin-bottom: 0;">
-          L'application a été conçue pour démarrer proprement sans équipements fictifs imposés. Vous pouvez immédiatement lancer un scan ou charger une topologie de démo via l'icône de réinitialisation.
+          Exécutez <code>docker compose pull && docker compose up -d</code> : le volume <code>/app/data</code> conserve vos équipements, fusions, zones, types natifs et personnalisés, sous-types/rôles et paramètres.
         </p>
       </div>
     </section>
 
     <footer style="margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--surface-border); font-size: 13px; color: var(--text-muted); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
       <span>InkaNetopology · Créé avec <strong>Google AI Studio</strong> (100% code généré par IA) · Licence Apache 2.0</span>
-      <span>Documentation actualisée pour déploiement Docker & GHCR</span>
+      <span>Documentation actualisée · HTML & Export PDF</span>
     </footer>
   </main>
 </div>

@@ -303,31 +303,30 @@ server {
               <div className="space-y-3">
                 <h4 className="text-sm font-bold text-slate-200 flex items-center gap-2">
                   <span className="w-6 h-6 rounded-full bg-cyan-500/20 text-cyan-300 flex items-center justify-center text-xs font-mono">1</span>
-                  <span>Lancer un scan réseau</span>
+                  <span>Lancer un scan réseau unifié ou ajouter un équipement sans IP</span>
                 </h4>
                 <p className="text-slate-300 leading-relaxed pl-8">
-                  Dans la barre d'outils supérieure, renseignez le sous-réseau souhaité (ex: <code className="font-mono text-cyan-300">192.168.1.0/24</code>) et choisissez votre mode de scan :
+                  Sur la ligne 2 de la barre d'outils fixe, renseignez le champ <strong>« Scope IP: »</strong> (ex: <code className="font-mono text-cyan-300">192.168.1.0/24</code>) puis cliquez sur <strong>« Scan »</strong> :
                 </p>
                 <ul className="list-disc pl-12 space-y-1 text-slate-400">
-                  <li><strong className="text-slate-200">Découverte Rapide (ARP/ICMP)</strong> : Balayage immédiat des adresses IP actives et récupération des adresses MAC.</li>
-                  <li><strong className="text-slate-200">Scan Approfondi (Ports & OS)</strong> : Analyse des ports ouverts (80, 443, 22, 8006, 5000) pour déterminer le rôle de la machine et le système d'exploitation.</li>
-                  <li><strong className="text-slate-200">Audit Spécialisé IoT</strong> : Recherche ciblée sur les flux RTSP (caméras IP), les brokers MQTT (Mosquitto) et les capteurs domotiques (ESP32, Zigbee/Matter).</li>
+                  <li><strong className="text-slate-200">Analyse complète en une passe</strong> : Balayage ARP/ICMP, scan des ports TCP, titres HTTP/HTTPS, constructeurs OUI, détection Docker (sur machines physiques et VMs) et protocoles IoT (RTSP, MQTT).</li>
+                  <li><strong className="text-slate-200">Préservation des personnalisations</strong> : Vos icônes personnalisées, zones géographiques et équipements ajoutés manuellement (même sans adresse IP, comme les capteurs Zigbee/Z-Wave) sont conservés d'un scan à l'autre.</li>
                 </ul>
               </div>
 
               <div className="space-y-3">
                 <h4 className="text-sm font-bold text-slate-200 flex items-center gap-2">
                   <span className="w-6 h-6 rounded-full bg-cyan-500/20 text-cyan-300 flex items-center justify-center text-xs font-mono">2</span>
-                  <span>Naviguer et manipuler la cartographie interactive</span>
+                  <span>Naviguer, filtrer et fusionner les équipements</span>
                 </h4>
                 <div className="text-slate-300 leading-relaxed pl-8 space-y-2">
                   <p>
-                    L'onglet <strong>« Topologie Réseau »</strong> affiche la topologie complète sous forme de graphe dynamique :
+                    L'onglet <strong>« Topologie Réseau »</strong> affiche la topologie complète en étoile autour de votre cœur de réseau (immuable même lorsque les filtres le masquent) :
                   </p>
                   <ul className="list-disc pl-4 space-y-1 text-slate-400">
-                    <li><strong>Déplacement & Zoom</strong> : Cliquez et glissez sur l'arrière-plan pour déplacer la vue. Utilisez la molette ou les commandes en bas à droite pour zoomer.</li>
-                    <li><strong>Glisser-Déposer (Drag & Drop)</strong> : Cliquez sur n'importe quel équipement pour le déplacer où vous voulez. Les coordonnées sont enregistrées automatiquement.</li>
-                    <li><strong>Liaisons physiques vs virtuelles</strong> : Les traits continus bleus représentent les câbles réseau avec port/débit ; les lignes courbes pointillées relient chaque machine virtuelle ou conteneur Docker à son hôte physique.</li>
+                    <li><strong>Filtres côte à côte</strong> : Recherche dynamique et 3 listes déroulantes (Types, Statuts, VLANs) sur la ligne 1.</li>
+                    <li><strong>Aperçu &amp; Liaisons</strong> : Activez ou masquez la fiche résumé flottante et la surbrillance des liens depuis le bouton en haut à droite de la barre de navigation.</li>
+                    <li><strong>Fusion Auto &amp; Fusion Manuelle</strong> : Consolidez automatiquement les doublons via <strong>« Fusionner »</strong> ou sélectionnez deux équipements A et B via <strong>« Fusion manuelle »</strong> ; les identités fusionnées le restent aux scans suivants.</li>
                   </ul>
                 </div>
               </div>
@@ -335,20 +334,20 @@ server {
               <div className="space-y-3">
                 <h4 className="text-sm font-bold text-slate-200 flex items-center gap-2">
                   <span className="w-6 h-6 rounded-full bg-cyan-500/20 text-cyan-300 flex items-center justify-center text-xs font-mono">3</span>
-                  <span>Gérer les dépendances de virtualisation (Hôtes & Dépendances)</span>
+                  <span>Gérer les dépendances (Hôtes &amp; Dépendances) et les Rôles</span>
                 </h4>
                 <p className="text-slate-300 leading-relaxed pl-8">
-                  L'onglet <strong>« Hôtes & Dépendances »</strong> regroupe vos serveurs physiques (serveurs Proxmox, serveurs Docker, NAS). Chaque carte liste les machines virtuelles et conteneurs qui y sont exécutés. Un menu déroulant direct sur chaque VM ou conteneur permet de le transférer immédiatement sur un autre hôte ou de le détacher en équipement autonome.
+                  L'onglet <strong>« Hôtes &amp; Dépendances »</strong> regroupe vos serveurs physiques et VMs hébergeant des conteneurs Docker. Le bouton <strong>« Rôles »</strong> de la barre d'outils permet de gérer durablement les 4 types natifs, vos types personnalisés et vos rôles métier.
                 </p>
               </div>
 
               <div className="space-y-3">
                 <h4 className="text-sm font-bold text-slate-200 flex items-center gap-2">
                   <span className="w-6 h-6 rounded-full bg-cyan-500/20 text-cyan-300 flex items-center justify-center text-xs font-mono">4</span>
-                  <span>Personnaliser les images, étiquettes et métadonnées</span>
+                  <span>Personnaliser icônes, zones et métadonnées</span>
                 </h4>
                 <p className="text-slate-300 leading-relaxed pl-8">
-                  Cliquez sur l'icône <strong>Crayon (Éditer)</strong> sur un équipement pour ouvrir l'inspecteur. Vous pouvez y définir une <strong>image personnalisée</strong> (URL ou préréglage de matériel réaliste), gérer les <strong>étiquettes (Tags)</strong> et ajouter des <strong>métadonnées techniques clé-valeur</strong> (vCPU, RAM, consommation en watts, flux RTSP).
+                  Ouvrez la fiche d'édition unifiée depuis n'importe quelle vue pour appliquer une icône officielle de service détectée, importer une icône locale (PNG/SVG), assigner une zone géographique, gérer les tags/métadonnées ou supprimer l'équipement.
                 </p>
               </div>
             </div>
@@ -358,7 +357,7 @@ server {
           {activeDocTab === 'proxy' && (
             <div className="space-y-5">
               <p className="text-slate-300 leading-relaxed">
-                Pour sécuriser l'accès à NetTopology avec un nom de domaine et un certificat SSL/TLS valide (Let's Encrypt), configurez un reverse proxy comme <strong>Nginx</strong> ou <strong>Nginx Proxy Manager</strong> :
+                Pour sécuriser l'accès à InkaNetopology avec un nom de domaine et un certificat SSL/TLS valide (Let's Encrypt), configurez un reverse proxy comme <strong>Nginx</strong> ou <strong>Nginx Proxy Manager</strong> :
               </p>
 
               <div className="space-y-2">
@@ -421,7 +420,7 @@ server {
                   Comment sauvegarder ou exporter ma cartographie ?
                 </span>
                 <p className="text-slate-400 leading-relaxed text-[11px]">
-                  Utilisez le bouton de téléchargement dans la barre d'outils. Un fichier JSON contenant l'inventaire complet des nœuds, leurs coordonnées, métadonnées, liaisons de dépendance et logs d'événements sera généré.
+                  Utilisez le bouton <strong>« Exporter JSON »</strong> dans la ligne 2 de la barre d'outils (ou <strong>PNG</strong> / <strong>PDF</strong> pour l'export graphique). Le fichier JSON contient l'inventaire complet des nœuds, leurs identités fusionnées, zones, types, rôles et paramètres.
                 </p>
               </div>
             </div>
