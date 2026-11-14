@@ -531,6 +531,112 @@ function shouldMergeContainers(
   return { match: false, reason: '' };
 }
 
+// Collects all absorbed identifiers (IDs, IPs, MACs, hostnames, names, container IDs, web titles)
+// so any future network/Docker scan recognizes merged equipment without creating duplicates
+function collectMergedAliases(a: Device, b: Device) {
+  const isRealIp = (ip?: string) => Boolean(ip && ip.trim() && ip.trim() !== '127.0.0.1' && ip.trim() !== 'sans IP');
+  const isGenericDeviceName = (n?: string) => !n || /^(Équipement|Machine|Device)\s+/i.test(n.trim());
+
+  const splitList = (val?: string) =>
+    (val || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+  const mergedIds = Array.from(
+    new Set([
+      ...(a.mergedIds || []),
+      ...(b.mergedIds || []),
+      a.id,
+      b.id
+    ].filter(Boolean))
+  );
+
+  const mergedIps = Array.from(
+    new Set([
+      ...(a.mergedIps || []),
+      ...(b.mergedIps || []),
+      a.ip,
+      b.ip,
+      a.metadata?.['Adresse IP secondaire'],
+      b.metadata?.['Adresse IP secondaire'],
+      a.metadata?.['IP Conteneur'],
+      b.metadata?.['IP Conteneur'],
+      ...splitList(a.metadata?.['Adresses IP associées']),
+      ...splitList(b.metadata?.['Adresses IP associées']),
+      ...splitList(a.metadata?.['Anciennes adresses IP']),
+      ...splitList(b.metadata?.['Anciennes adresses IP'])
+    ].filter(isRealIp) as string[])
+  );
+
+  const mergedMacs = Array.from(
+    new Set([
+      ...(a.mergedMacs || []),
+      ...(b.mergedMacs || []),
+      a.mac,
+      b.mac,
+      a.metadata?.['MAC secondaire'],
+      b.metadata?.['MAC secondaire']
+    ]
+      .filter((m) => isRealHardwareMac(m))
+      .map((m) => m!.trim().toLowerCase()))
+  );
+
+  const mergedHostnames = Array.from(
+    new Set([
+      ...(a.mergedHostnames || []),
+      ...(b.mergedHostnames || []),
+      a.metadata?.['Nom d\'hôte'],
+      b.metadata?.['Nom d\'hôte']
+    ]
+      .map((h) => (h || '').trim())
+      .filter(Boolean))
+  );
+
+  const mergedNames = Array.from(
+    new Set([
+      ...(a.mergedNames || []),
+      ...(b.mergedNames || []),
+      !isGenericDeviceName(a.name) ? a.name.trim() : '',
+      !isGenericDeviceName(b.name) ? b.name.trim() : ''
+    ].filter(Boolean))
+  );
+
+  const mergedContainerIds = Array.from(
+    new Set([
+      ...(a.mergedContainerIds || []),
+      ...(b.mergedContainerIds || []),
+      a.metadata?.['ContainerID'],
+      b.metadata?.['ContainerID'],
+      a.id.startsWith('docker-') ? a.id.replace(/^docker-/, '') : '',
+      b.id.startsWith('docker-') ? b.id.replace(/^docker-/, '') : ''
+    ]
+      .map((c) => (c || '').trim())
+      .filter(Boolean))
+  );
+
+  const mergedWebTitles = Array.from(
+    new Set([
+      ...(a.mergedWebTitles || []),
+      ...(b.mergedWebTitles || []),
+      a.metadata?.['Titre Web'],
+      b.metadata?.['Titre Web']
+    ]
+      .map((t) => (t || '').trim())
+      .filter((t) => t.length >= 4))
+  );
+
+  return {
+    mergedIds,
+    mergedIps,
+    mergedMacs,
+    mergedHostnames,
+    mergedNames,
+    mergedContainerIds,
+    mergedWebTitles
+  };
+}
+
 // Merges two matching container entities into a single unified device
 function mergeContainerEntities(
   target: Device,
@@ -628,6 +734,7 @@ function mergeContainerEntities(
   );
 
   const isOnline = target.status === 'online' || source.status === 'online';
+  const aliases = collectMergedAliases(target, source);
 
   return {
     ...target,
@@ -647,6 +754,9 @@ function mergeContainerEntities(
     isCustomZone,
     isCustomName: target.isCustomName || source.isCustomName,
     isCustomType: target.isCustomType || source.isCustomType,
+    isManualAdded: Boolean(target.isManualAdded || source.isManualAdded),
+    isManuallyMerged: Boolean(target.isManuallyMerged || source.isManuallyMerged),
+    ...aliases,
     location: hostDevice ? `Conteneur sur ${hostDevice.name}` : (target.location || `Conteneur sur hôte ${hostIp}`),
     tags: mergedTags,
     metadata: combinedMetadata,
@@ -908,6 +1018,8 @@ function mergeTwoDevices(
     ...(isCustomZone ? { 'Zone Manuelle': 'true' } : {})
   };
 
+  const aliases = collectMergedAliases(target, source);
+
   return {
     ...target,
     name: chosenName,
@@ -927,6 +1039,9 @@ function mergeTwoDevices(
     isCustomZone,
     isCustomName: target.isCustomName || source.isCustomName,
     isCustomType: target.isCustomType || source.isCustomType,
+    isManualAdded: Boolean(target.isManualAdded || source.isManualAdded),
+    isManuallyMerged: Boolean(target.isManuallyMerged || source.isManuallyMerged),
+    ...aliases,
     metadata: combinedMetadata,
     lastSeen: new Date().toISOString(),
     latencyMs: chosenLatency === 999 ? undefined : chosenLatency
@@ -1556,13 +1671,29 @@ function loadDevicesFromFile() {
       const content = fs.readFileSync(DEVICES_FILE, 'utf-8');
       const parsed = JSON.parse(content);
       if (Array.isArray(parsed)) {
-        const mergeRes = mergeDuplicateContainers(parsed);
+        // Backfill merged aliases for any devices previously merged so future scans never recreate duplicates
+        const normalized = parsed.map((d: Device) => {
+          const isMergedMeta = Boolean(
+            d.isManuallyMerged ||
+            d.metadata?.['Statut fusion'] ||
+            d.metadata?.['Adresse IP secondaire'] ||
+            d.metadata?.['Adresses IP associées']
+          );
+          if (!isMergedMeta) return d;
+          const aliases = collectMergedAliases(d, d);
+          return {
+            ...d,
+            isManuallyMerged: d.isManuallyMerged || Boolean(d.metadata?.['Statut fusion']?.includes('manuellement')),
+            ...aliases
+          };
+        });
+        const mergeRes = mergeDuplicateContainers(normalized);
         if (mergeRes.mergedCount > 0) {
           devices = mergeRes.devices;
           console.log(`[InkaNetopology] ${mergeRes.mergedCount} conteneur(s) doublons fusionnés au chargement.`);
           saveDevicesToFile();
         } else {
-          devices = parsed;
+          devices = normalized;
         }
         console.log(`[InkaNetopology] ${devices.length} équipements chargés depuis ${DEVICES_FILE}`);
         return;
@@ -2186,17 +2317,32 @@ async function executePresenceCheck(manual = false): Promise<{ checkedCount: num
             }
           }
 
-          // 3. For fused Docker containers: probe exposed service port on Host IP if container internal IP did not respond
-          if (!alive && dev.metadata?.['IP Hôte'] && dev.metadata['IP Hôte'] !== dev.ip) {
-            const hostIp = dev.metadata['IP Hôte'];
+          // 3. For fused Docker containers or multi-IP merged equipment: probe secondary / merged IPs if primary did not respond
+          if (!alive) {
+            const extraIps = Array.from(
+              new Set([
+                ...(dev.metadata?.['IP Hôte'] ? [dev.metadata['IP Hôte']] : []),
+                ...(dev.metadata?.['Adresse IP secondaire'] ? [dev.metadata['Adresse IP secondaire']] : []),
+                ...(dev.mergedIps || [])
+              ].filter((x) => x && x !== dev.ip && x !== '127.0.0.1'))
+            );
             const portsToTry = dev.openPorts && dev.openPorts.length > 0 ? dev.openPorts.slice(0, 3) : [80, 443, 8080, 9000];
-            for (const port of portsToTry) {
-              const probe = await probePort(hostIp, port, 300);
-              if (probe.open) {
+            for (const altIp of extraIps) {
+              const altPing = await pingIp(altIp);
+              if (altPing.alive) {
                 alive = true;
-                rtt = probe.rtt;
+                rtt = altPing.rtt;
                 break;
               }
+              for (const port of portsToTry) {
+                const probe = await probePort(altIp, port, 300);
+                if (probe.open) {
+                  alive = true;
+                  rtt = probe.rtt;
+                  break;
+                }
+              }
+              if (alive) break;
             }
           }
 
@@ -3627,20 +3773,42 @@ app.post('/api/scan', async (req, res) => {
         // Check if MAC is unique (appears only once in the scan) or shared (proxy-ARP/gateway MAC)
         const isMacUnique = rawMac && (macCounts.get(rawMac.toLowerCase()) || 0) <= 1;
 
-        // Multi-ID Matching against existing inventory:
-        // 1. Exact IP match
-        // 2. Real Hardware MAC match (handles DHCP IP migration without duplicate!)
-        // 3. Resolved Hostname match with shared ports / profile
-        // 4. Web Service Title match
+        // Multi-ID Matching against existing inventory (including previously merged identities):
+        // 1. Exact primary IP match
+        // 2. Merged / secondary IP alias match (manually or automatically merged equipment)
+        // 3. Real Hardware MAC match (primary or merged MACs, handles DHCP IP migration without duplicate)
+        // 4. Resolved Hostname match (primary or merged hostnames/names)
+        // 5. Web Service Title match (primary or merged web titles)
         let existingIndex = devices.findIndex((d) => d.ip === ip);
         let matchReason = `Adresse IP (${ip})`;
+        let matchedViaMergedAlias = false;
+
+        if (existingIndex === -1) {
+          const idx = devices.findIndex(
+            (d) =>
+              d.mergedIps?.includes(ip) ||
+              d.metadata?.['Adresse IP secondaire'] === ip ||
+              d.metadata?.['IP Conteneur'] === ip
+          );
+          if (idx !== -1) {
+            existingIndex = idx;
+            matchedViaMergedAlias = true;
+            matchReason = `Identité fusionnée persistante (IP ${ip} rattachée à "${devices[idx].name}")`;
+          }
+        }
 
         if (existingIndex === -1 && rawMac && isMacUnique && isRealHardwareMac(rawMac)) {
           const normRaw = rawMac.toLowerCase();
-          const idx = devices.findIndex((d) => d.mac && d.mac.toLowerCase() === normRaw && isRealHardwareMac(d.mac));
+          const idx = devices.findIndex(
+            (d) =>
+              (d.mac && d.mac.toLowerCase() === normRaw && isRealHardwareMac(d.mac)) ||
+              Boolean(d.mergedMacs?.includes(normRaw))
+          );
           if (idx !== -1) {
             existingIndex = idx;
-            matchReason = `Adresse MAC matérielle (${rawMac}) - renouvellement IP (${devices[idx].ip} → ${ip})`;
+            matchReason = devices[idx].mergedMacs?.includes(normRaw) && devices[idx].mac?.toLowerCase() !== normRaw
+              ? `Adresse MAC fusionnée (${rawMac})`
+              : `Adresse MAC matérielle (${rawMac}) - renouvellement IP (${devices[idx].ip} → ${ip})`;
           }
         }
 
@@ -3648,10 +3816,16 @@ app.post('/api/scan', async (req, res) => {
           const normH = normalizeServiceName(hostInfo.hostname);
           if (normH.length >= 4 && !/^(device|equipement|inconnu|unknown|machine|linux|server|serveur|host|hote|ip|lan)\b/i.test(normH)) {
             const idx = devices.findIndex((d) => {
-              const dNorm = normalizeServiceName(d.metadata?.['Nom d\'hôte'] || d.name);
-              if (dNorm === normH) {
+              const candidates = [
+                d.metadata?.['Nom d\'hôte'] || '',
+                d.name || '',
+                ...(d.mergedHostnames || []),
+                ...(d.mergedNames || [])
+              ].filter(Boolean);
+              const nameMatched = candidates.some((c) => normalizeServiceName(c) === normH);
+              if (nameMatched) {
                 const shared = (d.openPorts || []).filter((p) => hostInfo.openPorts.includes(p));
-                return shared.length > 0 || d.deviceType === 'physical' || d.deviceType === 'vm';
+                return shared.length > 0 || d.deviceType === 'physical' || d.deviceType === 'vm' || Boolean(d.isManuallyMerged);
               }
               return false;
             });
@@ -3666,10 +3840,14 @@ app.post('/api/scan', async (req, res) => {
           const normT = normalizeServiceName(hostInfo.webTitle);
           if (normT.length >= 5) {
             const idx = devices.findIndex((d) => {
-              const dTitle = normalizeServiceName(d.metadata?.['Titre Web'] || '');
-              if (dTitle === normT) {
+              const titleCandidates = [
+                d.metadata?.['Titre Web'] || '',
+                ...(d.mergedWebTitles || [])
+              ].filter(Boolean);
+              const titleMatched = titleCandidates.some((t) => normalizeServiceName(t) === normT);
+              if (titleMatched) {
                 const shared = (d.openPorts || []).filter((p) => hostInfo.openPorts.includes(p));
-                return shared.length > 0;
+                return shared.length > 0 || Boolean(d.isManuallyMerged);
               }
               return false;
             });
@@ -3681,21 +3859,42 @@ app.post('/api/scan', async (req, res) => {
         }
 
         if (existingIndex !== -1) {
-          // Device exists -> Update status, latency, openPorts, lastSeen AND update IP in case device moved
+          // Device exists -> Update status, latency, openPorts, lastSeen
           const existing = devices[existingIndex];
           const mergedPorts = Array.from(new Set([...(existing.openPorts || []), ...hostInfo.openPorts])).sort((a, b) => a - b);
+
+          // Keep primary IP if matched via merged alias OR if existing primary IP is currently alive on the network
+          const keepExistingPrimaryIp = Boolean(
+            existing.ip &&
+            existing.ip !== 'sans IP' &&
+            (matchedViaMergedAlias || existing.isManuallyMerged || aliveHosts.has(existing.ip))
+          );
+          const nextIp = keepExistingPrimaryIp ? existing.ip : ip;
           const oldIp = existing.ip;
-          const isIpChanged = oldIp && oldIp !== ip;
+          const isIpChanged = Boolean(oldIp && oldIp !== nextIp);
 
           const previousIps = Array.from(new Set([
             ...(existing.metadata?.['Anciennes adresses IP']?.split(', ') || []),
             ...(isIpChanged ? [oldIp] : [])
           ])).filter(Boolean);
 
+          const updatedMergedIps = existing.mergedIps || ip !== nextIp
+            ? Array.from(new Set([...(existing.mergedIps || []), existing.ip, ip].filter((x) => Boolean(x) && x !== '127.0.0.1' && x !== 'sans IP')))
+            : existing.mergedIps;
+          const updatedMergedMacs = existing.mergedMacs || (rawMac && isRealHardwareMac(rawMac))
+            ? Array.from(new Set([...(existing.mergedMacs || []), ...(rawMac && isRealHardwareMac(rawMac) ? [rawMac.toLowerCase()] : [])]))
+            : existing.mergedMacs;
+          const updatedMergedHostnames = existing.mergedHostnames || hostInfo.hostname
+            ? Array.from(new Set([...(existing.mergedHostnames || []), ...(hostInfo.hostname ? [hostInfo.hostname] : [])]))
+            : existing.mergedHostnames;
+          const updatedMergedWebTitles = existing.mergedWebTitles || hostInfo.webTitle
+            ? Array.from(new Set([...(existing.mergedWebTitles || []), ...(hostInfo.webTitle ? [hostInfo.webTitle] : [])]))
+            : existing.mergedWebTitles;
+
           // Compute auto service icon from detected ports, title, and hostname
           const tempDev: Partial<Device> = {
             ...existing,
-            ip,
+            ip: nextIp,
             openPorts: mergedPorts,
             metadata: {
               ...(existing.metadata || {}),
@@ -3706,9 +3905,9 @@ app.post('/api/scan', async (req, res) => {
           const autoIcon = resolveServiceIcon(tempDev);
 
           let updatedName = existing.name;
-          if (!existing.isCustomName) {
+          if (!existing.isCustomName && !existing.isManuallyMerged) {
             if (isIpChanged && updatedName.includes(oldIp)) {
-              updatedName = updatedName.replace(oldIp, ip);
+              updatedName = updatedName.replace(oldIp, nextIp);
             } else if (hostInfo.hostname && (/^(Équipement|Machine|Device)\s+/i.test(updatedName) || /\(\d+\.\d+\.\d+\.\d+\)$/.test(updatedName))) {
               updatedName = hostInfo.hostname;
             }
@@ -3726,7 +3925,7 @@ app.post('/api/scan', async (req, res) => {
           devices[existingIndex] = {
             ...existing,
             name: updatedName,
-            ip, // Always keep the scanned IP up-to-date!
+            ip: nextIp,
             status: 'online',
             lastSeen: new Date().toISOString(),
             latencyMs: +(hostInfo.rtt || existing.latencyMs || 1.0).toFixed(1),
@@ -3740,6 +3939,11 @@ app.post('/api/scan', async (req, res) => {
             isCustomZone: existing.isCustomZone,
             isCustomName: existing.isCustomName,
             isCustomType: existing.isCustomType,
+            isManuallyMerged: existing.isManuallyMerged,
+            mergedIps: updatedMergedIps,
+            mergedMacs: updatedMergedMacs,
+            mergedHostnames: updatedMergedHostnames,
+            mergedWebTitles: updatedMergedWebTitles,
             position: existing.position, // Keep user placed position!
             metadata: {
               ...(existing.metadata || {}),
@@ -3873,9 +4077,6 @@ app.post('/api/scan', async (req, res) => {
       for (const ct of dockerContainers) {
         const ctId = ct.Id.substring(0, 12);
         const ctName = `Docker - ${(ct.Names[0] || ctId).replace(/^\//, '')}`;
-        const existingCt = devices.find(
-          (d) => d.id === `docker-${ctId}` || d.name === ctName
-        );
 
         const openPorts = (ct.Ports || [])
           .map((p: any) => p.PublicPort || p.PrivatePort)
@@ -3896,18 +4097,38 @@ app.post('/api/scan', async (req, res) => {
           ctIp = dockerHost.ip;
         }
 
+        const existingCt = devices.find(
+          (d) =>
+            d.id === `docker-${ctId}` ||
+            d.metadata?.['ContainerID'] === ctId ||
+            Boolean(d.mergedContainerIds?.includes(ctId)) ||
+            Boolean(d.mergedIds?.includes(`docker-${ctId}`)) ||
+            d.name === ctName ||
+            Boolean(d.mergedNames?.includes(ctName)) ||
+            (ctIp !== '127.0.0.1' && d.mergedIps?.includes(ctIp) && (d.deviceType === 'docker' || Boolean(d.isManuallyMerged)))
+        );
+
         const hostPortBinding = openPorts.length > 0
           ? `Hôte: ${dockerHost?.ip || '0.0.0.0'}:${openPorts[0]} → Conteneur: ${ctIp}:${openPorts[0]}`
           : `Docker Engine (${ct.Image})`;
 
         if (existingCt) {
-          existingCt.status = ct.State === 'running' ? 'online' : 'offline';
+          const isMergedTarget = Boolean(existingCt.isManuallyMerged || existingCt.id !== `docker-${ctId}`);
+          existingCt.status = ct.State === 'running' ? 'online' : (isMergedTarget && existingCt.status === 'online' ? 'online' : 'offline');
           existingCt.lastSeen = new Date().toISOString();
-          existingCt.openPorts = openPorts;
-          if (ctIp !== '127.0.0.1') existingCt.ip = ctIp;
+          existingCt.openPorts = Array.from(new Set([...(existingCt.openPorts || []), ...openPorts])).sort((a, b) => a - b);
+          if (!isMergedTarget && ctIp !== '127.0.0.1') {
+            existingCt.ip = ctIp;
+          }
+          existingCt.mergedContainerIds = Array.from(new Set([...(existingCt.mergedContainerIds || []), ctId]));
+          existingCt.mergedIds = Array.from(new Set([...(existingCt.mergedIds || []), `docker-${ctId}`]));
+          existingCt.mergedNames = Array.from(new Set([...(existingCt.mergedNames || []), ctName]));
+          if (ctIp !== '127.0.0.1') {
+            existingCt.mergedIps = Array.from(new Set([...(existingCt.mergedIps || []), existingCt.ip, ctIp].filter(Boolean)));
+          }
           const autoCtIcon = resolveServiceIcon({
             ...existingCt,
-            openPorts,
+            openPorts: existingCt.openPorts,
             os: ct.Image,
             metadata: { ...(existingCt.metadata || {}), 'Image': ct.Image }
           });
@@ -3915,12 +4136,13 @@ app.post('/api/scan', async (req, res) => {
           if (!existingCt.isCustomImage && !existingCt.customImage && autoCtIcon) {
             existingCt.customImage = autoCtIcon;
           }
-          if (dockerHost && !existingCt.parentHostId) {
+          if (!isMergedTarget && dockerHost && !existingCt.parentHostId) {
             existingCt.parentHostId = dockerHost.id;
             if (!existingCt.metadata) existingCt.metadata = {};
             existingCt.metadata['IP Hôte'] = dockerHost.ip;
             existingCt.metadata['Hôte d\'exécution'] = dockerHost.name;
           }
+          updatedCount++;
           broadcastSse('device_updated', existingCt);
         } else {
           const posX = 120 + (devices.length % 7) * 170;
@@ -4004,9 +4226,6 @@ app.post('/api/scan', async (req, res) => {
               for (const ct of remoteContainers) {
                 const ctId = ct.Id.substring(0, 12);
                 const ctName = `Docker - ${(ct.Names[0] || ctId).replace(/^\//, '')}`;
-                const existingCt = devices.find(
-                  (d) => d.id === `docker-${ctId}` || d.name === ctName
-                );
 
                 const openPorts = (ct.Ports || [])
                   .map((p: any) => p.PublicPort || p.PrivatePort)
@@ -4024,15 +4243,36 @@ app.post('/api/scan', async (req, res) => {
                 }
                 if (ctIp === '127.0.0.1') ctIp = hostIp;
 
+                const existingCt = devices.find(
+                  (d) =>
+                    d.id === `docker-${ctId}` ||
+                    d.metadata?.['ContainerID'] === ctId ||
+                    Boolean(d.mergedContainerIds?.includes(ctId)) ||
+                    Boolean(d.mergedIds?.includes(`docker-${ctId}`)) ||
+                    d.name === ctName ||
+                    Boolean(d.mergedNames?.includes(ctName)) ||
+                    (ctIp !== '127.0.0.1' && d.mergedIps?.includes(ctIp) && (d.deviceType === 'docker' || Boolean(d.isManuallyMerged)))
+                );
+
                 const hostPortBinding = openPorts.length > 0
                   ? `Hôte: ${hostIp}:${openPorts[0]} → Conteneur: ${ctIp}:${openPorts[0]}`
                   : `Docker Engine (${ct.Image})`;
 
                 if (existingCt) {
-                  existingCt.status = ct.State === 'running' ? 'online' : 'offline';
+                  const isMergedTarget = Boolean(existingCt.isManuallyMerged || existingCt.id !== `docker-${ctId}`);
+                  existingCt.status = ct.State === 'running' ? 'online' : (isMergedTarget && existingCt.status === 'online' ? 'online' : 'offline');
                   existingCt.lastSeen = new Date().toISOString();
-                  existingCt.openPorts = openPorts;
-                  if (matchedHost) existingCt.parentHostId = matchedHost.id;
+                  existingCt.openPorts = Array.from(new Set([...(existingCt.openPorts || []), ...openPorts])).sort((a, b) => a - b);
+                  existingCt.mergedContainerIds = Array.from(new Set([...(existingCt.mergedContainerIds || []), ctId]));
+                  existingCt.mergedIds = Array.from(new Set([...(existingCt.mergedIds || []), `docker-${ctId}`]));
+                  existingCt.mergedNames = Array.from(new Set([...(existingCt.mergedNames || []), ctName]));
+                  if (ctIp !== '127.0.0.1') {
+                    existingCt.mergedIps = Array.from(new Set([...(existingCt.mergedIps || []), existingCt.ip, ctIp].filter(Boolean)));
+                  }
+                  if (!isMergedTarget && matchedHost && !existingCt.parentHostId) {
+                    existingCt.parentHostId = matchedHost.id;
+                  }
+                  updatedCount++;
                   broadcastSse('device_updated', existingCt);
                 } else {
                   const posX = 120 + (devices.length % 7) * 170;
@@ -4301,6 +4541,12 @@ app.post('/api/inventory/merge-two', (req, res) => {
   const portOrInterface = devA.portOrInterface || devB.portOrInterface || undefined;
   const isCore = Boolean(devA.isCore || devB.isCore);
 
+  const aliases = collectMergedAliases(devA, devB);
+  const mergedMetadataWithAliases: Record<string, string> = {
+    ...mergedMetadata,
+    ...(aliases.mergedIps.length > 1 ? { 'Adresses IP associées': aliases.mergedIps.join(', ') } : {})
+  };
+
   const mergedDevice: Device = {
     ...devA,
     name,
@@ -4313,12 +4559,16 @@ app.post('/api/inventory/merge-two', (req, res) => {
     os: devA.os || devB.os || undefined,
     openPorts: mergedPorts,
     tags: mergedTags,
-    metadata: mergedMetadata,
+    metadata: mergedMetadataWithAliases,
     customImage,
     serviceIcon,
     isCustomImage,
     isCustomZone: Boolean(devA.isCustomZone || devB.isCustomZone),
-    isCustomName: Boolean(devA.isCustomName || devB.isCustomName),
+    isCustomName: Boolean(devA.isCustomName || devB.isCustomName || preferredName?.trim()),
+    isCustomType: Boolean(devA.isCustomType || devB.isCustomType),
+    isManualAdded: Boolean(devA.isManualAdded || devB.isManualAdded),
+    isManuallyMerged: true,
+    ...aliases,
     zoneId,
     parentHostId,
     connectedToSwitchId,
@@ -4519,6 +4769,19 @@ app.post('/api/import', (req, res) => {
       openPorts: Array.isArray(d.openPorts) ? d.openPorts : [],
       location: d.location ? String(d.location) : undefined,
       customImage: d.customImage ? String(d.customImage) : undefined,
+      isCustomImage: Boolean(d.isCustomImage),
+      isCustomZone: Boolean(d.isCustomZone),
+      isCustomName: Boolean(d.isCustomName),
+      isCustomType: Boolean(d.isCustomType),
+      isManualAdded: Boolean(d.isManualAdded),
+      isManuallyMerged: Boolean(d.isManuallyMerged),
+      ...(Array.isArray(d.mergedIds) ? { mergedIds: d.mergedIds.map(String) } : {}),
+      ...(Array.isArray(d.mergedIps) ? { mergedIps: d.mergedIps.map(String) } : {}),
+      ...(Array.isArray(d.mergedMacs) ? { mergedMacs: d.mergedMacs.map(String) } : {}),
+      ...(Array.isArray(d.mergedHostnames) ? { mergedHostnames: d.mergedHostnames.map(String) } : {}),
+      ...(Array.isArray(d.mergedNames) ? { mergedNames: d.mergedNames.map(String) } : {}),
+      ...(Array.isArray(d.mergedContainerIds) ? { mergedContainerIds: d.mergedContainerIds.map(String) } : {}),
+      ...(Array.isArray(d.mergedWebTitles) ? { mergedWebTitles: d.mergedWebTitles.map(String) } : {}),
       tags: Array.isArray(d.tags) ? d.tags : [],
       metadata: typeof d.metadata === 'object' && d.metadata !== null ? d.metadata : {},
       lastSeen: d.lastSeen ? String(d.lastSeen) : new Date().toISOString(),
@@ -4552,17 +4815,26 @@ app.post('/api/import', (req, res) => {
       hasValidPayload = true;
     }
 
-    // 3. Types extraction
+    // 3. Types extraction (always preserve the 4 built-in types + imported custom types)
     const rawTypes = body.types || body.deviceTypes || body.typeList || body.topology?.types || body.data?.types;
     if (Array.isArray(rawTypes)) {
-      deviceTypes = rawTypes.map((t: any, idx: number) => ({
-        id: String(t.id || `custom-type-${Date.now()}-${idx}`),
-        name: String(t.name || `Type ${idx + 1}`),
-        color: String(t.color || '#3b82f6'),
-        icon: t.icon ? String(t.icon) : 'Server',
-        description: t.description ? String(t.description) : undefined,
-        isBuiltin: Boolean(t.isBuiltin)
-      }));
+      const typeMap = new Map<string, DeviceTypeDefinition>();
+      defaultDeviceTypes.forEach((t) => typeMap.set(t.id, { ...t }));
+      rawTypes.forEach((t: any, idx: number) => {
+        if (!t) return;
+        const tid = String(t.id || `custom-type-${Date.now()}-${idx}`);
+        const existingBuiltin = typeMap.get(tid);
+        typeMap.set(tid, {
+          ...(existingBuiltin || {}),
+          id: tid,
+          name: String(t.name || existingBuiltin?.name || `Type ${idx + 1}`),
+          color: String(t.color || existingBuiltin?.color || '#3b82f6'),
+          icon: t.icon ? String(t.icon) : (existingBuiltin?.icon || 'Server'),
+          description: t.description ? String(t.description) : existingBuiltin?.description,
+          isBuiltin: Boolean(existingBuiltin || t.isBuiltin)
+        });
+      });
+      deviceTypes = Array.from(typeMap.values());
       saveTypesToFile();
       broadcastSse('types_updated', deviceTypes);
       hasValidPayload = true;

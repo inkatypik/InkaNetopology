@@ -69,6 +69,14 @@ export interface Device {
   isCustomName?: boolean; // True if user manually renamed the equipment
   isCustomType?: boolean; // True if user manually changed the equipment type/subtype
   isManualAdded?: boolean; // True if equipment was added manually (Zigbee, Z-Wave, non-IP sensor, etc.)
+  isManuallyMerged?: boolean; // True if equipment absorbed another equipment via manual merge
+  mergedIds?: string[]; // All previously merged device IDs
+  mergedIps?: string[]; // All absorbed/secondary IP addresses mapped to this device
+  mergedMacs?: string[]; // All absorbed MAC addresses mapped to this device
+  mergedHostnames?: string[]; // All absorbed hostnames mapped to this device
+  mergedNames?: string[]; // All absorbed device names mapped to this device
+  mergedContainerIds?: string[]; // All absorbed Docker ContainerIDs mapped to this device
+  mergedWebTitles?: string[]; // All absorbed web titles mapped to this device
   tags: string[];
   metadata: Record<string, string>;
   lastSeen: string;

@@ -8,7 +8,6 @@ interface ManualMergeModalProps {
   onClose: () => void;
   devices: Device[];
   preselectedDevice?: Device | null;
-  preselectedDevices?: Device[] | null;
   onMerge: (sourceId: string, targetId: string, preferredName?: string, primaryIpChoice?: string) => Promise<void>;
 }
 
@@ -17,7 +16,6 @@ export const ManualMergeModal: React.FC<ManualMergeModalProps> = ({
   onClose,
   devices,
   preselectedDevice,
-  preselectedDevices,
   onMerge
 }) => {
   const [selectedAId, setSelectedAId] = useState<string>('');
@@ -37,24 +35,16 @@ export const ManualMergeModal: React.FC<ManualMergeModalProps> = ({
       wasOpenRef.current = true;
       setSearchA('');
       setSearchB('');
-      if (preselectedDevices && preselectedDevices.length >= 2) {
-        setSelectedAId(preselectedDevices[0].id);
-        setSelectedBId(preselectedDevices[1].id);
-      } else if (preselectedDevice) {
+      if (preselectedDevice) {
         setSelectedAId(preselectedDevice.id);
-        if (preselectedDevices && preselectedDevices.length === 1 && preselectedDevices[0].id !== preselectedDevice.id) {
-          setSelectedBId(preselectedDevices[0].id);
-        } else {
-          const candidateB = devices.find(
-            (d) =>
-              d.id !== preselectedDevice.id &&
-              ((preselectedDevice.ip && d.ip === preselectedDevice.ip) ||
-                d.name.toLowerCase().includes(preselectedDevice.name.toLowerCase()) ||
-                (d.metadata && preselectedDevice.ip && d.metadata['IP Hôte'] === preselectedDevice.ip))
-          );
-          if (candidateB) setSelectedBId(candidateB.id);
-          else setSelectedBId('');
-        }
+        const candidateB = devices.find(
+          (d) =>
+            d.id !== preselectedDevice.id &&
+            ((preselectedDevice.ip && d.ip === preselectedDevice.ip) ||
+              d.name.toLowerCase().includes(preselectedDevice.name.toLowerCase()) ||
+              (d.metadata && preselectedDevice.ip && d.metadata['IP Hôte'] === preselectedDevice.ip))
+        );
+        setSelectedBId(candidateB ? candidateB.id : '');
       } else {
         setSelectedAId('');
         setSelectedBId('');
@@ -63,7 +53,7 @@ export const ManualMergeModal: React.FC<ManualMergeModalProps> = ({
     } else if (!isOpen) {
       wasOpenRef.current = false;
     }
-  }, [isOpen, preselectedDevice, preselectedDevices, devices]);
+  }, [isOpen, preselectedDevice, devices]);
 
   const devA = useMemo(() => devices.find((d) => d.id === selectedAId), [devices, selectedAId]);
   const devB = useMemo(() => devices.find((d) => d.id === selectedBId), [devices, selectedBId]);

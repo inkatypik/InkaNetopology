@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import type { DeviceTypeDefinition, DeviceSubTypeDefinition, Device } from '../types/network';
 import {
   X,
@@ -95,6 +95,12 @@ export const TypeManagerModal: React.FC<TypeManagerModalProps> = ({
   focusDeviceId
 }) => {
   const [activeTab, setActiveTab] = useState<'types' | 'subtypes'>(initialTab);
+
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
 
   // Filter states
   const [searchQuery, setSearchQuery] = useState('');
@@ -332,7 +338,7 @@ export const TypeManagerModal: React.FC<TypeManagerModalProps> = ({
         </div>
 
         {/* Modal Body */}
-        <div className="p-6 overflow-y-auto space-y-6 flex-1">
+        <div className="p-6 overflow-y-auto space-y-6 flex-1 min-h-0">
 
           {/* ================= TAB 1: TYPES D'ÉQUIPEMENTS ================= */}
           {activeTab === 'types' && (
@@ -469,6 +475,11 @@ export const TypeManagerModal: React.FC<TypeManagerModalProps> = ({
               )}
 
               {/* Liste des types existants */}
+              {types.length === 0 ? (
+                <div className="p-6 text-center rounded-xl border border-dashed border-slate-700 bg-slate-950/40 text-xs text-slate-400">
+                  Aucun type d'équipement chargé. Cliquez sur « Nouveau Type » ou rechargez la page.
+                </div>
+              ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {types.map((type) => {
                   const isEditing = editingTypeId === type.id;
@@ -636,6 +647,7 @@ export const TypeManagerModal: React.FC<TypeManagerModalProps> = ({
                   );
                 })}
               </div>
+              )}
             </div>
           )}
 

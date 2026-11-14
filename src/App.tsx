@@ -19,10 +19,17 @@ import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
 import { XCircle, Square } from 'lucide-react';
 
+const INITIAL_BUILTIN_TYPES: DeviceTypeDefinition[] = [
+  { id: 'physical', name: 'Machine Physique', color: '#3b82f6', icon: 'Server', description: 'Serveurs physiques, routeurs, switchs et baies', isBuiltin: true },
+  { id: 'vm', name: 'Machine Virtuelle (VM)', color: '#6366f1', icon: 'Layers', description: 'Hyperviseurs Proxmox, VMware ESXi, KVM', isBuiltin: true },
+  { id: 'docker', name: 'Conteneur Docker', color: '#06b6d4', icon: 'Box', description: 'Conteneurs Docker, microservices, Podman', isBuiltin: true },
+  { id: 'iot', name: 'Périphérique IoT', color: '#10b981', icon: 'Radio', description: 'Objets connectés, capteurs, caméras, domotique', isBuiltin: true }
+];
+
 export default function App() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [zones, setZones] = useState<GeographicZone[]>([]);
-  const [deviceTypes, setDeviceTypes] = useState<DeviceTypeDefinition[]>([]);
+  const [deviceTypes, setDeviceTypes] = useState<DeviceTypeDefinition[]>(INITIAL_BUILTIN_TYPES);
   const [deviceSubTypes, setDeviceSubTypes] = useState<DeviceSubTypeDefinition[]>([]);
   const [logs, setLogs] = useState<NetworkLog[]>([]);
   const [activeTab, setActiveTab] = useState<ActiveTab>('topology');
@@ -50,7 +57,6 @@ export default function App() {
 
   // Modals & Selection
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
-  const [selectedDevices, setSelectedDevices] = useState<Device[]>([]);
   const [editingDevice, setEditingDevice] = useState<Device | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
   const [isDockerModalOpen, setIsDockerModalOpen] = useState<boolean>(false);
@@ -60,7 +66,6 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isManualMergeModalOpen, setIsManualMergeModalOpen] = useState<boolean>(false);
   const [manualMergePresetDevice, setManualMergePresetDevice] = useState<Device | null>(null);
-  const [manualMergePresetDevices, setManualMergePresetDevices] = useState<Device[] | null>(null);
   const [showInspectorAndHighlight, setShowInspectorAndHighlight] = useState<boolean>(true);
   const [settings, setSettings] = useState<AppSettings>({
     presenceCheckEnabled: true,
@@ -154,6 +159,24 @@ export default function App() {
       .catch(() => {});
   }, []);
 
+  // Refresh types and subtypes whenever TypeManagerModal opens
+  useEffect(() => {
+    if (!isTypeManagerOpen) return;
+    fetch('/api/types')
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setDeviceTypes(data);
+        } else if (data && Array.isArray(data.types) && data.types.length > 0) {
+          setDeviceTypes(data.types);
+          if (Array.isArray(data.subTypes)) {
+            setDeviceSubTypes(data.subTypes);
+          }
+        }
+      })
+      .catch((err) => console.error('Erreur rafraîchissement types:', err));
+  }, [isTypeManagerOpen]);
+
   // Real-time Server-Sent Events (SSE) connection
   useEffect(() => {
     let evtSource: EventSource | null = null;
@@ -220,7 +243,6 @@ export default function App() {
         const updated: Device = JSON.parse(e.data);
         setDevices((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
         setSelectedDevice((prev) => (prev?.id === updated.id ? updated : prev));
-        setSelectedDevices((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
       });
 
       evtSource.addEventListener('device_added', (e) => {
@@ -231,6 +253,7 @@ export default function App() {
       evtSource.addEventListener('device_deleted', (e) => {
         const { id } = JSON.parse(e.data);
         setDevices((prev) => prev.filter((d) => d.id !== id));
+        setSelectedDevice((prev) => (prev?.id === id ? null : prev));
       });
 
       evtSource.addEventListener('zone_added', (e) => {
@@ -591,42 +614,9 @@ export default function App() {
     }
   };
 
-  // Multi-selection handler: support single click (device 1) and Ctrl+click (device 2) for direct manual merge
-  const handleDeviceSelection = (device: Device | null, event?: React.MouseEvent) => {
-    if (!device) {
-      setSelectedDevice(null);
-      setSelectedDevices([]);
-      return;
-    }
-
-    const isCtrlOrCmd = event ? (event.ctrlKey || event.metaKey || event.shiftKey) : false;
-
-    if (isCtrlOrCmd) {
-      let baseList = [...selectedDevices];
-      if (baseList.length === 0 && selectedDevice && selectedDevice.id !== device.id) {
-        baseList = [selectedDevice];
-      }
-
-      if (baseList.some((d) => d.id === device.id)) {
-        const filtered = baseList.filter((d) => d.id !== device.id);
-        setSelectedDevices(filtered);
-        setSelectedDevice(filtered[filtered.length - 1] || null);
-        return;
-      }
-
-      const updated = baseList.length >= 2 ? [baseList[0], device] : [...baseList, device];
-      setSelectedDevices(updated);
-      setSelectedDevice(device);
-      if (updated.length === 2) {
-        showToast(
-          `2 équipements sélectionnés pour la fusion : "${updated[0].name}" et "${updated[1].name}". Cliquez sur "Fusion manuelle" pour les fusionner.`
-        );
-      }
-    } else {
-      // Normal single click: selects equipment #1
-      setSelectedDevice(device);
-      setSelectedDevices([device]);
-    }
+  // Single-device selection handler
+  const handleDeviceSelection = (device: Device | null) => {
+    setSelectedDevice(device);
   };
 
   // Delete device
@@ -638,7 +628,6 @@ export default function App() {
       await fetch(`/api/devices/${id}`, { method: 'DELETE' });
       setDevices((prev) => prev.filter((d) => d.id !== id));
       if (selectedDevice?.id === id) setSelectedDevice(null);
-      setSelectedDevices((prev) => prev.filter((d) => d.id !== id));
       showToast('Équipement supprimé.');
     } catch (err) {
       console.error(err);
@@ -736,9 +725,6 @@ export default function App() {
       }
       if (data.mergedDevice) {
         setSelectedDevice(data.mergedDevice);
-        setSelectedDevices([data.mergedDevice]);
-      } else {
-        setSelectedDevices([]);
       }
       showToast(
         data.message ||
@@ -814,6 +800,10 @@ export default function App() {
         body: JSON.stringify(typeDef)
       });
       const saved = await res.json();
+      if (!res.ok) {
+        showToast(saved?.error || 'Erreur lors de l\'enregistrement du type.');
+        return;
+      }
       setDeviceTypes((prev) => {
         const idx = prev.findIndex((t) => t.id === saved.id);
         if (idx >= 0) {
@@ -833,7 +823,11 @@ export default function App() {
   // Delete Equipment Type
   const handleDeleteType = async (typeId: string) => {
     try {
-      await fetch(`/api/types/${typeId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/types/${typeId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        showToast('Erreur lors de la suppression du type.');
+        return;
+      }
       setDeviceTypes((prev) => prev.filter((t) => t.id !== typeId));
       showToast('Type d\'équipement supprimé.');
     } catch (err) {
@@ -854,6 +848,10 @@ export default function App() {
         body: JSON.stringify(subTypeDef)
       });
       const saved = await res.json();
+      if (!res.ok) {
+        showToast(saved?.error || 'Erreur lors de l\'enregistrement du sous-type.');
+        return;
+      }
       setDeviceSubTypes((prev) => {
         const idx = prev.findIndex((s) => s.id === saved.id);
         if (idx >= 0) {
@@ -1519,18 +1517,8 @@ export default function App() {
         onAutoLayout={handleStarTopologyLayout}
         onMergeDuplicates={handleMergeDuplicates}
         onMergeContainers={handleMergeDuplicates}
-        selectedCount={selectedDevices.length}
         onOpenManualMerge={() => {
-          if (selectedDevices.length >= 2) {
-            setManualMergePresetDevices([selectedDevices[0], selectedDevices[1]]);
-            setManualMergePresetDevice(selectedDevices[0]);
-          } else if (selectedDevices.length === 1) {
-            setManualMergePresetDevices([selectedDevices[0]]);
-            setManualMergePresetDevice(selectedDevices[0]);
-          } else {
-            setManualMergePresetDevices(null);
-            setManualMergePresetDevice(selectedDevice || null);
-          }
+          setManualMergePresetDevice(selectedDevice || null);
           setIsManualMergeModalOpen(true);
         }}
         onExport={handleExportTopology}
@@ -1562,13 +1550,11 @@ export default function App() {
             types={deviceTypes}
             subTypes={deviceSubTypes}
             selectedDevice={selectedDevice}
-            selectedDevices={selectedDevices}
             onSelectDevice={handleDeviceSelection}
             onEditDevice={(dev) => setEditingDevice(dev)}
             onDeleteDevice={handleDeleteDevice}
             onInitiateMerge={(dev) => {
               setManualMergePresetDevice(dev);
-              setManualMergePresetDevices([dev]);
               setIsManualMergeModalOpen(true);
             }}
             onPingDevice={handlePingDevice}
@@ -1655,17 +1641,15 @@ export default function App() {
         />
       )}
 
-      {/* Manual Merge Modal for Two Selected Equipment */}
+      {/* Manual Merge Modal for Two Equipment Records */}
       <ManualMergeModal
         isOpen={isManualMergeModalOpen}
         onClose={() => {
           setIsManualMergeModalOpen(false);
           setManualMergePresetDevice(null);
-          setManualMergePresetDevices(null);
         }}
         devices={devices}
         preselectedDevice={manualMergePresetDevice}
-        preselectedDevices={manualMergePresetDevices}
         onMerge={handleManualMerge}
       />
 

@@ -38,8 +38,7 @@ interface TopologyCanvasProps {
   types?: DeviceTypeDefinition[];
   subTypes?: DeviceSubTypeDefinition[];
   selectedDevice: Device | null;
-  selectedDevices?: Device[];
-  onSelectDevice: (device: Device | null, event?: React.MouseEvent) => void;
+  onSelectDevice: (device: Device | null) => void;
   onEditDevice: (device: Device) => void;
   onDeleteDevice?: (id: string) => void;
   onInitiateMerge?: (device: Device) => void;
@@ -72,7 +71,6 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   types = [],
   subTypes = [],
   selectedDevice,
-  selectedDevices = [],
   onSelectDevice,
   onEditDevice,
   onDeleteDevice,
@@ -109,7 +107,6 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const nodeMouseDownClientRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const didDragNodeRef = useRef<boolean>(false);
-  const ctrlHeldOnMouseDownRef = useRef<boolean>(false);
 
   // Group / Zone multi-node drag state
   const [draggedZoneId, setDraggedZoneId] = useState<string | null>(null);
@@ -291,9 +288,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
   // Pan handlers
   const handleMouseDown = (e: React.MouseEvent) => {
     if (e.target === containerRef.current || (e.target as HTMLElement).tagName === 'svg') {
-      if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
-        onSelectDevice(null);
-      }
+      onSelectDevice(null);
       setIsPanning(true);
       setPanStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
     }
@@ -417,13 +412,12 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
     };
   };
 
-  // Node drag start (selection is handled exclusively on click release so Ctrl+click doesn't double-toggle)
+  // Node drag start (selection is handled exclusively on click release when not dragged)
   const handleNodeMouseDown = (e: React.MouseEvent, dev: Device) => {
     e.stopPropagation();
     const pos = dev.position || { x: 100, y: 100 };
     nodeMouseDownClientRef.current = { x: e.clientX, y: e.clientY };
     didDragNodeRef.current = false;
-    ctrlHeldOnMouseDownRef.current = Boolean(e.ctrlKey || e.metaKey || e.shiftKey);
     if (containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
       const clickX = (e.clientX - rect.left - offset.x) / scale;
@@ -1643,9 +1637,7 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
           const isCollapsed = collapsedHostIds.has(device.id);
           const zone = device.zoneId ? zoneMap.get(device.zoneId) : undefined;
           const isCore = trueCoreNode ? device.id === trueCoreNode.id : false;
-          const multiIndex = selectedDevices.findIndex((d) => d.id === device.id);
-          const isSelected = multiIndex !== -1 || selectedDevice?.id === device.id;
-          const selectionIndex = multiIndex !== -1 ? multiIndex + 1 : undefined;
+          const isSelected = selectedDevice?.id === device.id;
 
           return (
             <div
@@ -1665,18 +1657,12 @@ export const TopologyCanvas: React.FC<TopologyCanvasProps> = ({
                 subTypes={subTypes}
                 isCore={isCore}
                 isSelected={isSelected}
-                selectionIndex={selectionIndex}
-                onSelect={(dev, ev) => {
+                onSelect={(dev) => {
                   if (didDragNodeRef.current) {
                     didDragNodeRef.current = false;
                     return;
                   }
-                  const effectiveEv =
-                    ctrlHeldOnMouseDownRef.current && ev && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey
-                      ? ({ ...ev, ctrlKey: true } as React.MouseEvent)
-                      : ev;
-                  ctrlHeldOnMouseDownRef.current = false;
-                  onSelectDevice(dev, effectiveEv);
+                  onSelectDevice(dev);
                 }}
                 onEdit={onEditDevice}
                 onPing={onPingDevice}
